@@ -138,6 +138,10 @@ async function connect(): Promise<ConnectClient> {
     scopes: OAUTH.scopes,
     redirectUri: "http://127.0.0.1/oauth/callback",
     store: stateStore,
+    // Late-bound so a test harness's globalThis.fetch stub is honored even though the
+    // client is memoized across calls (the SDK captures `fetch` at construction). Cast:
+    // the SDK only CALLS it; Bun's `typeof fetch` also declares a `preconnect` member.
+    fetch: ((...args: Parameters<typeof fetch>) => globalThis.fetch(...args)) as typeof fetch,
   });
   return connectClient;
 }
