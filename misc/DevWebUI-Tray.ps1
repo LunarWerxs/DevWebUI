@@ -1,12 +1,8 @@
-# DevWebUI system-tray host (Windows). THIN ADAPTER over the shared LunarWerx tray-host
-# engine (misc/Tray-Host.ps1 — kit-synced from lunarwerx-ui, DO NOT EDIT THAT FILE HERE).
-# This file declares only what makes DevWebUI different from its sibling apps
-# (ReDesign / RepoYeti / CC Manager UI): mutex name, icon, health-check shape, daemon
-# start command, shutdown protocol, first-run bootstrap, rebuild command, dev-tree gate,
-# and the full-shutdown sentinel. All shared machinery (mutex/icon lifecycle, watchdog,
-# background rebuild/restart worker, hide-tray live-sync, portable-window open path,
-# self-test) lives in the engine — see the big comment block at the top of Tray-Host.ps1
-# for the complete $TrayConfig contract.
+# DevWebUI system-tray host (Windows). Thin adapter over the shared Tray-Host engine
+# (misc/Tray-Host.ps1). This file owns only what's genuinely app-specific: names,
+# paths, the daemon start command, and a few documented behavior tweaks. Everything
+# else -- mutex/tray lifecycle, watchdog, rebuild/restart worker, hide-tray live-sync,
+# open path, full-shutdown sentinel -- lives in the shared engine.
 #
 # Launch it via DevWebUI.vbs (which sets the port) so there's no console flash. The
 # daemon serves the built GUI + API on one port. The shortcut launches FAST with the
