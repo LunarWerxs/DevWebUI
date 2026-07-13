@@ -6,6 +6,23 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-13
+
+### Added
+- **Edit project (rename + accent color).** The project ⋮ menu gains an **Edit project** action that
+  opens a small dialog to rename the project and pick an accent color — shown as a tint on the
+  project's stacked-servers icon in the panel header. Project color is a new optional top-level
+  `color` field in the `.devwebui` file (any CSS color string; the picker writes `#rrggbb`, and
+  clearing it falls back to the theme accent). Renaming or recoloring rewrites the file in place and
+  never restarts running servers. Backed by a new `PUT /api/projects/:id` endpoint.
+- **MCP server: 11 new tools (now 29 total).** The MCP server gained the config-editing and
+  observability tools it was missing, so an agent can do what the GUI can — not just start/stop.
+  New: `update_project` (rename/recolor), `add_process`, `update_process`, `remove_process`,
+  `set_process_starred`, `start_project` / `stop_project` (transient, distinct from
+  enable/disable), `free_port`, `get_log_file` (tail the persisted rotating log), `scan_projects`,
+  and `clone_project`. Native file-picker dialogs are intentionally excluded (they can't run
+  headless). `AI_GUIDE.md`'s tool reference was updated to match.
+
 ## [0.3.0] - 2026-07-13
 
 ### Changed
