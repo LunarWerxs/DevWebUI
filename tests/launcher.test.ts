@@ -357,15 +357,18 @@ test("engine: health probe validates body.ok, and honours a per-app service-id w
   );
   must(
     /return\s+\[bool\]\$r\.ok/.test(engine),
-    "Tray-Host.ps1's Test-Daemon doesn't fall back to a bare body.ok check when ServiceName is $null (DevWebUI's case)",
+    "Tray-Host.ps1's Test-Daemon doesn't fall back to a bare body.ok check when ServiceName is $null",
   );
 
-  // DevWebUI itself validates body.ok only (its health payload has no 'service' field) —
-  // assert the adapter declares that, not a service string.
+  // DevWebUI's health payload carried no 'service' field until 2026-07-15, so its adapter declared
+  // ServiceName = $null and the tray accepted ANY responder on the port. That is the same hole that
+  // let misc/Restart-Daemon.ps1 mistake a Vite dev server (which answers /api/health with a 200
+  // text/html SPA fallback) for an app daemon. The payload now stamps `service`, so the adapter
+  // names it and the tray can reject an impostor on a recycled port like every sibling app does.
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
   must(
-    /ServiceName\s*=\s*\$null/.test(tray),
-    "DevWebUI-Tray.ps1 must declare ServiceName = $null (its health payload carries no service field)",
+    /ServiceName\s*=\s*["']devwebui["']/.test(tray),
+    "DevWebUI-Tray.ps1 must declare ServiceName = 'devwebui' (its /api/health stamps that service id)",
   );
 });
 

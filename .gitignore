@@ -80,3 +80,6 @@ $RECYCLE.BIN/
 .claude/
 .saydeploy/
 .agents/
+
+# Local root rebuild convenience wrapper (delegates to misc/Rebuild.bat)
+/Rebuild.bat

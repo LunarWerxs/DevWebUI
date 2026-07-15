@@ -14,6 +14,10 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      // @vueuse/core ships /* #__PURE__ */ comments in positions rolldown can't bind to a call
+      // expression (e.g. before an object literal); it flags them as INVALID_ANNOTATION even
+      // though the annotation is inert there. Silence that one benign check to keep builds quiet.
+      checks: { invalidAnnotation: false },
       output: {
         // Split the heavy vendor libraries into their own chunks so no single
         // bundle blows past the 500 kB warning and the browser can cache each

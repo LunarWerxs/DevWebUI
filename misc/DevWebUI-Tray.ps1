@@ -21,7 +21,7 @@ $dwHome = if ($env:DEVWEBUI_HOME) { $env:DEVWEBUI_HOME } else { Join-Path $env:U
 
 $TrayConfig = @{
   DisplayName          = "DevWebUI"
-  ServiceName          = $null                                  # health payload has no 'service' field — body.ok only
+  ServiceName          = "devwebui"                            # /api/health stamps this; the tray requires it to match
   IconFile             = "DevWebUI.ico"
   Port                 = $Port
   UrlHost              = "localhost"

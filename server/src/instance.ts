@@ -16,6 +16,10 @@ const pointer = createInstancePointer({
   // dataDir() honors DEVWEBUI_HOME so tests (and side-by-side instances) don't touch the
   // real ~/.devwebui runtime pointer; see tests/setup.ts.
   configDir: dataDir(),
+  // Makes findLiveInstance require `service: "devwebui"` on the health body, so a stale pointer
+  // aimed at a port since recycled by a foreign server (a Vite dev server answers /api/health with
+  // its SPA fallback) reads as "not running" instead of "already running".
+  serviceName: "devwebui",
   host: "localhost",
 });
 
