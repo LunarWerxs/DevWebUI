@@ -1,6 +1,6 @@
 {
   "name": "devwebui",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "GUI + MCP control plane for your local dev servers. Click to start/stop/restart; agents drive the same daemon over MCP.",

@@ -6,6 +6,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-16
+
 ### Added
 - **Desktop shortcuts for one server (or a whole repo).** The process ⋮ menu gains **Add desktop
   shortcut**; the project ⋮ menu gains the same for every process in the codebase. Double-clicking
@@ -49,6 +51,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`devwebui start` from the compiled binary.** It hardcoded a spawn of `bun server/src/index.ts`,
   a path that doesn't exist outside a checkout. Daemon launches now resolve the right vector for the
   build they're running in.
+- **Restarting the daemon no longer hops it off its own port.** The chromeless window the shortcut
+  opens was launched via `cmd /c start ""`, whose `CreateProcess` inherits the parent's handles —
+  including the daemon's listening socket. The browser then pinned the daemon's port for as long as
+  its window stayed open, so a restart (or auto-update relaunch) found the port still held by the
+  dead daemon's ghost socket and moved to the next one. The launch now goes through WMI
+  (`Win32_Process.Create`), where the service creates the process and it inherits nothing of ours —
+  still fully detached from the daemon's tree, but no longer holding its socket.
 
 ### Changed
 - **The focus view moved from `/?process=<id>` to `/focus/<id>`.** Chromium keys a saved app-window
