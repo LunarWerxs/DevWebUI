@@ -8,7 +8,14 @@ import { readSettings, writeSettings, type RuntimePref } from "../runtime";
 import { applyUpdate, checkForUpdate } from "../updater";
 import { setAutoUpdateEnabled, setAutoUpdateIntervalSecs } from "../auto-update";
 import { ROUTES } from "../../../shared/routes";
-import { FOCUS_PATH_PREFIX, FOCUS_WINDOW_SIZE } from "../../../shared/constants";
+import {
+  DASHBOARD_WINDOW_SIZE,
+  FOCUS_PATH_PREFIX,
+  FOCUS_WINDOW_SIZE,
+  WINDOW_SIZE_HINT_PARAM,
+  formatWindowSizeHint,
+} from "../../../shared/constants";
+import { rememberedWindowSize } from "../window-size";
 import {
   instanceFilePath,
   readInstanceInfo,
@@ -283,13 +290,36 @@ export function registerSystemRoutes(app: Hono, manager: Manager, options: Creat
       // PS tray derives the identical path from the same runtime.json location so both
       // open paths share one profile.
       const profileDir = path.join(path.dirname(instanceFilePath()), "portable-profile");
-      // The focus view is a small single-process window, so give it a small first-run size
-      // — Chromium's default for a window it has never seen is close to the whole work
-      // area. Only the focus view gets one: the dashboard is a full UI and Chromium's
-      // default suits it. Either way this yields to the user's own resize once they make
-      // one (openPortableWindow checks the profile's saved placement).
-      const initialSize = rel.startsWith(FOCUS_PATH_PREFIX) ? FOCUS_WINDOW_SIZE : undefined;
-      const result = await openPortableWindow(url, { profileDir, initialSize });
+      // First-run sizes, measured per view (shared/constants.ts): the focus view is a
+      // small single-process launcher; every other path renders the dashboard, whose
+      // layout caps at --container-max, so Chromium's never-seen-window default (~the
+      // whole work area) is wrong for it too. Either way this yields to the user's own
+      // resize once they make one (openPortableWindow checks the profile's saved
+      // placement).
+      const initialSize = rel.startsWith(FOCUS_PATH_PREFIX)
+        ? FOCUS_WINDOW_SIZE
+        : DASHBOARD_WINDOW_SIZE;
+      // Neither of those mechanisms reaches a window whose profile already has a
+      // Chromium instance running: the forwarded --app launch inherits the EXISTING
+      // window's geometry, ignoring --window-size and the saved placement alike (the
+      // launcher's "Open dashboard" always lands here — the launcher is that instance).
+      // So also tell the page what size this window should be — its own remembered
+      // size when the user has set one, the measured first-run size otherwise — and it
+      // corrects itself with resizeTo (web/src/lib/window-size-hint.ts). The query
+      // string is not part of Chromium's placement key, so the hint can't re-key the
+      // window; a URL that won't parse just goes out without one.
+      let target = url;
+      try {
+        const u = new URL(url);
+        u.searchParams.set(
+          WINDOW_SIZE_HINT_PARAM,
+          formatWindowSizeHint(rememberedWindowSize(profileDir, url) ?? initialSize),
+        );
+        target = u.toString();
+      } catch {
+        /* unparseable base URL: open it un-hinted rather than fail the route */
+      }
+      const result = await openPortableWindow(target, { profileDir, initialSize });
       return c.json(result);
     });
   });

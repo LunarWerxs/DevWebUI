@@ -2,9 +2,16 @@
 import { Toaster } from "vue-sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useTheme } from "@/lib/theme";
+import { applyWindowSizeHint } from "@/lib/window-size-hint";
 import { processIdFromFocusPath } from "../../shared/constants";
 import AppShell from "./AppShell.vue";
 import FocusView from "./components/FocusView.vue";
+
+// Portable --app windows opened while a sibling window was already running inherit that
+// window's geometry (Chromium ignores --window-size AND the saved placement on a
+// forwarded launch), so the daemon tags their URL with the size they should be and the
+// page corrects itself before anything renders. No-op in a browser tab or un-hinted URL.
+applyWindowSizeHint();
 
 // Shared kit light/dark/system theme; drives the toaster theme. DevWebUI now defaults
 // to dark (was the lone OS-`auto` outlier). `mode` ("light" | "dark" | "system") maps

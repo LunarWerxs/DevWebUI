@@ -17,6 +17,7 @@
 // server-lib/portable-window.test.ts.
 import { expect, test } from "bun:test";
 import {
+  DASHBOARD_WINDOW_SIZE,
   FOCUS_PATH_PREFIX,
   FOCUS_WINDOW_SIZE,
   focusPath,
@@ -80,4 +81,20 @@ test("the focus window's first-run size is small enough to be a launcher", () =>
   expect(FOCUS_WINDOW_SIZE.width).toBeLessThan(900);
   expect(FOCUS_WINDOW_SIZE.height).toBeLessThan(700);
   expect(FOCUS_WINDOW_SIZE.height).toBeGreaterThanOrEqual(178); // must fit the card at all
+});
+
+test("the dashboard window's first-run size fits the measured layout", () => {
+  // Measured against the real dashboard (see shared/constants.ts): the layout caps
+  // content at --container-max = 800px, so 800 + 15 scrollbar + ~16 frame = 831 outer
+  // is the floor below which the design width gets cropped.
+  expect(DASHBOARD_WINDOW_SIZE.width).toBe(840);
+  expect(DASHBOARD_WINDOW_SIZE.height).toBe(760);
+  // Guard the intent, not just the digits: it must render the full 800px container…
+  expect(DASHBOARD_WINDOW_SIZE.width).toBeGreaterThanOrEqual(831);
+  // …without drifting back toward Chromium's whole-work-area default…
+  expect(DASHBOARD_WINDOW_SIZE.width).toBeLessThan(1200);
+  expect(DASHBOARD_WINDOW_SIZE.height).toBeLessThan(1100);
+  // …and it must dwarf the launcher: same slot-per-path system, opposite size need.
+  expect(DASHBOARD_WINDOW_SIZE.width).toBeGreaterThan(FOCUS_WINDOW_SIZE.width);
+  expect(DASHBOARD_WINDOW_SIZE.height).toBeGreaterThan(FOCUS_WINDOW_SIZE.height);
 });

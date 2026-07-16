@@ -16,6 +16,7 @@ import Hint from "./Hint.vue";
 import ProcessCard from "./ProcessCard.vue";
 import LogDrawer from "./LogDrawer.vue";
 import CloseFocusDialog from "./CloseFocusDialog.vue";
+import { openPortableWindow } from "@/api";
 import { useAppStore } from "@/store";
 import { useTooltipConfig } from "@/lib/tooltip-config";
 import type { ProcessView } from "@/types";
@@ -60,7 +61,26 @@ function requestClose() {
   else window.close();
 }
 
-function openDashboard() {
+/**
+ * The dashboard must NOT be reached by navigating THIS window: Chromium keys a saved
+ * app-window placement by the URL the window was CREATED with, so a navigated-then-
+ * resized dashboard would save its big size onto the launcher's own `/focus/<id>` slot
+ * and the mini viewer would open huge from then on. Ask the daemon to open `/` as its
+ * own portable window (its own slot, its own measured first-run size, its own
+ * remembered geometry) and close this one. Only when that can't work — no Chromium to
+ * spawn, or the daemon is unreachable — fall back to in-place navigation so the button
+ * is never a dead end; a cramped dashboard still beats no dashboard.
+ */
+async function openDashboard() {
+  try {
+    const r = await openPortableWindow("/");
+    if (r.ok) {
+      window.close(); // works in an --app window; harmless no-op in a plain tab
+      return;
+    }
+  } catch {
+    // daemon unreachable — same fallback as a failed spawn
+  }
   window.location.href = "/";
 }
 

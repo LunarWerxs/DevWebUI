@@ -6,6 +6,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **The launcher's "Open dashboard" button opens a real dashboard window, not a 440x220 one.**
+  It used to navigate the launcher window itself to `/`, cramming the full dashboard into the
+  launcher's mini-viewer geometry with zero room for any rows. It now asks the daemon to open `/`
+  as its own portable window — its own first-run size, its own remembered geometry, zero
+  interference with the launcher's — and closes the launcher; if no Chromium can be spawned it
+  falls back to the old in-place navigation so the button is never a dead end. The dashboard's
+  first-run size is a measured 840x760 (the layout caps content at 800px, so wider is dead
+  margin; 13 process rows visible), joining the launcher's measured 440x220.
+- **Portable windows opened while another one is already up now get their intended size.** A
+  forwarded `--app` launch into a running Chromium instance ignores both `--window-size` and the
+  window's own saved placement — it just inherits the existing window's geometry (verified,
+  Edge 150). That made "Open dashboard" produce a launcher-sized dashboard even with a first-run
+  size in place, since the launcher is by definition running when you click it. The daemon now
+  tags each portable window's URL with the size it should have (the user's remembered size when
+  one exists, the measured first-run size otherwise) and the page corrects itself once with
+  `window.resizeTo` — queries are not part of Chromium's geometry key, and a page-initiated
+  resize saves onto the window's own slot, so the hint can't disturb any other window.
+
 ## [0.5.0] - 2026-07-16
 
 ### Added
