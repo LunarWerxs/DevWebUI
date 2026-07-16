@@ -56,23 +56,10 @@ export function allowedOrigins(port?: number): string[] {
   return origins;
 }
 
-/**
- * CSRF guard for mutating requests: CORS alone only controls whether the BROWSER
- * lets the calling page read the response — a cross-origin "simple" request (e.g.
- * a bare POST with a text/plain body) still reaches and executes on the server
- * before the browser enforces same-origin policy. This middleware rejects any
- * request that carries an Origin header outside the allowlist before it reaches a
- * mutating handler. Non-browser clients (CLI/MCP/tray, curl) send no Origin header
- * at all and are unaffected.
- */
-export function requireAllowedOrigin(port?: number) {
-  const allowed = new Set(allowedOrigins(port));
-  return async (c: Context, next: () => Promise<void>) => {
-    const origin = c.req.header("origin");
-    if (origin && !allowed.has(origin)) return fail(c, "forbidden origin", 403);
-    await next();
-  };
-}
+// The cross-site (CSRF) guard is now the shared kit primitive — see server/src/loopback-guard.mjs,
+// wired in http/index.ts. `allowedOrigins` above stays: it still narrows the CORS allowlist
+// (defense-in-depth for reads). DevWebUI's former hand-rolled requireAllowedOrigin was removed when
+// it adopted the shared guard.
 
 /**
  * Run a block that may throw and turn any throw into a 400 `{ error }` (via {@link fail}).

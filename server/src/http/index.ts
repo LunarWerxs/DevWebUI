@@ -5,11 +5,11 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import type { Manager } from "../manager";
+import { loopbackGuard } from "../loopback-guard.mjs";
 import {
   allowedOrigins,
   registerRealtime,
   registerSystemRoutes,
-  requireAllowedOrigin,
   type CreateAppOptions,
 } from "./core";
 import { registerProjectRoutes } from "./project-routes";
@@ -23,11 +23,13 @@ export function createApp(manager: Manager, options: CreateAppOptions = {}) {
   // below stops the mutating request from running at all. Non-browser clients (no Origin
   // header) are unaffected by either.
   app.use("/api/*", cors({ origin: allowedOrigins(options.port) }));
-  app.use("/api/*", async (c, next) => {
-    if (c.req.method === "GET" || c.req.method === "HEAD" || c.req.method === "OPTIONS")
-      return next();
-    return requireAllowedOrigin(options.port)(c, next);
-  });
+  // Cross-site (CSRF) guard — the shared kit primitive (server/src/loopback-guard.mjs). Rejects
+  // browser cross-site requests (Sec-Fetch-Site: cross-site, or a present non-loopback Origin/Host)
+  // on every /api/* verb; same-origin (GUI), same-site (dev), and non-browser (CLI/tray/MCP) pass.
+  // Runs after cors so a preflight OPTIONS is answered by cors and never reaches the guard. Replaces
+  // DevWebUI's former hand-rolled requireAllowedOrigin (which gated only mutating verbs); the shared
+  // guard also blocks cross-site GET read-exfil.
+  app.use("/api/*", loopbackGuard);
 
   registerRealtime(app, manager);
   registerSystemRoutes(app, manager, options);
