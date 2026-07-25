@@ -6,6 +6,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Table rows now explain why they are dimmed.** A server excluded from autostart was signalled
+  only by a faded row, which read as an unexplained rendering quirk rather than a setting. Those
+  rows now carry a power-off indicator beside the name; hovering it states what the dimming means
+  and where to toggle it. The card view already showed this as a switch, so only the table needed it.
+
 ## [0.6.0] - 2026-07-24
 
 ### Added

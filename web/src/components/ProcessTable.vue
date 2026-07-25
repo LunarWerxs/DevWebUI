@@ -16,6 +16,7 @@ import {
   Pencil,
   Play,
   Power,
+  PowerOff,
   RotateCw,
   ScrollText,
   Square,
@@ -235,6 +236,13 @@ function onStop(p: ProcessView) {
               <Hint v-if="p.companion" :label="t('processTable.companionBadge')">
                 <span class="inline-flex shrink-0" tabindex="0">
                   <Magnet class="size-3 text-muted-foreground/70" aria-hidden="true" />
+                </span>
+              </Hint>
+              <!-- The row's dimming (opacity-60 above) is the at-a-glance signal; this icon is the
+                   *why* — without it a disabled row just looks arbitrarily greyer than its neighbours. -->
+              <Hint v-if="!p.enabled" :label="t('processTable.autostartOff')">
+                <span class="inline-flex shrink-0" tabindex="0">
+                  <PowerOff class="size-3 text-muted-foreground/70" aria-hidden="true" />
                 </span>
               </Hint>
               <a

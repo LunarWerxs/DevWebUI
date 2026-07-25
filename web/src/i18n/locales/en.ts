@@ -275,6 +275,8 @@ export default {
     unstar: "Unstar",
     linkedWith: "Linked — starts and stops together with {names}",
     companionBadge: "Companion — starts with any server in this project",
+    autostartOff:
+      "Autostart off — dimmed because it won't start on its own; toggle it in the ⋮ menu",
   },
   projectPanel: {
     triggerAriaLabel: "{name} — {running}/{total} running, {action}",
