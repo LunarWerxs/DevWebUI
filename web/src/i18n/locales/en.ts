@@ -10,12 +10,6 @@
  * referenced key is missing here or if any other locale drifts from this shape.
  */
 export default {
-  app: {
-    name: "DevWebUI",
-  },
-  common: {
-    close: "Close",
-  },
   time: {
     secondsAgo: "{n}s ago",
     minutesAgo: "{n}m ago",
@@ -55,19 +49,8 @@ export default {
     open: "Filters…",
     title: "Filter",
     description: "Choose which statuses appear. Click a table header to sort.",
-    sortBy: "Sort by",
-    descending: "Descending order",
-    descendingHint: "Largest / latest first",
     showStatus: "Show status",
     done: "Done",
-    sort: {
-      name: "Name",
-      status: "Status",
-      port: "Port",
-      cpu: "CPU",
-      memory: "Memory",
-      uptime: "Uptime",
-    },
     status: {
       running: "Running",
       busy: "Starting / stopping",
@@ -85,7 +68,6 @@ export default {
     shutdownFailed: "Shutdown failed",
     actionFailed: "Action failed",
     checkUpdates: "Check for updates",
-    updateAvailable: "Update available",
     updateCheckFailed: "Couldn't check for updates",
     updateNone: "DevWebUI is up to date",
     updateBlocked: "Update cannot be applied yet",
@@ -93,15 +75,9 @@ export default {
     updateRestart: "Restart DevWebUI to run the new code.",
     updateFailed: "Update failed",
   },
-  footer: {
-    sponsoredBy: "Sponsored by {sponsor}",
-  },
   home: {
     noProjectsYet: "No projects yet",
     addProject: "Add project",
-  },
-  infoHint: {
-    moreInfo: "More info",
   },
   logs: {
     title: "Logs",
@@ -215,7 +191,6 @@ export default {
     labelColor: "Color",
     colorHint: "Optional. The dot color shown on this process's card.",
     titlePickColor: "Pick a color",
-    placeholderColor: "#6366f1",
     labelRuntime: "Runtime",
     runtimeHint: "Which runtime launches this process. Auto uses the global default.",
     runtimeAuto: "Auto (global default)",
@@ -256,12 +231,7 @@ export default {
     openUrl: "Open {url} in a new tab",
     errorCountAriaLabel: "{count} error | {count} errors — view error log",
     freePortAriaLabel: "Free port {port}",
-    freePortBtn: "Free",
     waitingForPort: "Waiting for port {port}…",
-    switchAriaEnabled: "Enabled — toggle off",
-    switchAriaDisabled: "Disabled — toggle on",
-    switchTitleOn: "On — autostarts next load (preference only)",
-    switchTitleOff: "Off — will not autostart (preference only)",
     actionStart: "Start",
     actionStop: "Stop",
     actionEnable: "Enable autostart",
@@ -270,7 +240,6 @@ export default {
     actionRestart: "Restart",
     actionEdit: "Edit",
     actionLogs: "Logs",
-    addProcess: "Add process",
     star: "Star",
     unstar: "Unstar",
     linkedWith: "Linked — starts and stops together with {names}",
@@ -290,7 +259,6 @@ export default {
       "Stack off — nothing here auto-starts, whatever the individual toggles say. Turn on to restore them.",
     startAll: "Start all in this project",
     stopAll: "Stop all in this project",
-    confirmRemove: "Confirm remove",
     cancel: "Cancel",
     removeProject: "Remove project",
     moreActions: "Project actions",
@@ -330,16 +298,11 @@ export default {
     saved: "Settings saved",
     appearance: "Appearance",
     theme: "Theme",
-    themeLight: "Light",
-    themeDark: "Dark",
-    themeSystem: "System",
-    language: "Language",
     displayLanguage: "Display language",
     languageReview: "This translation is a machine-generated draft and may contain errors.",
     showTooltips: "Show tooltips",
     showTooltipsHelp:
       "Hover help across the app — icon buttons, status badges, info bubbles like this one. Turn off to keep the UI quiet; this row's own info bubble always stays reachable.",
-    runtime: "Runtime",
     defaultRuntime: "Default runtime",
     runtimeHelp:
       'Default for processes that don\'t pin a runtime. <strong class="text-foreground">Bun</strong> = faster Vite · <strong class="text-foreground">Node</strong> · <strong class="text-foreground">Auto</strong> = run as written.',
@@ -401,22 +364,17 @@ export default {
   },
   cloudSync: {
     title: "Cloud sync",
-    privacyNote:
-      "Syncs theme & preferences to your Connections account; optional; never syncs secrets or file paths.",
     connectButton: "Sync settings",
     loading: "Checking sync status…",
     enableToggle: "Sync settings",
-    signedInAs: "Signed in as {email}",
     syncedNow: "Synced ✓ · just now",
     syncedAgo: "Synced ✓ · {when}",
     neverSynced: "Not synced yet",
     syncNow: "Sync now",
-    syncing: "Syncing…",
     disconnect: "Disconnect",
     confirmDisconnect: "Click again to confirm",
     stopSyncing: "Stop syncing",
     error: "Couldn't sync",
-    retryHint: "Try again in {seconds}s",
   },
   addProject: {
     requestFailed: "Request failed",

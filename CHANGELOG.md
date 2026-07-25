@@ -13,6 +13,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rows now carry a power-off indicator beside the name; hovering it states what the dimming means
   and where to toggle it. The card view already showed this as a switch, so only the table needed it.
 
+### Changed
+
+- **`check:i18n` now fails on catalog keys nothing renders.** Its three guarantees become four:
+  alongside "every referenced key exists", every key must also be referenced. Dead copy used to
+  accumulate silently whenever a component dropped a control, and each stale line still costs a
+  translator a line to translate. Detection stays exact only while keys are static literals, which
+  the existing `dynamic-key` rule already reports; if a dynamic key ever appears, unused keys
+  degrade to warnings rather than failing the build on something the scan cannot see.
+- **Removed 31 unused strings from the English catalog** (384 keys down to 353), including the
+  filter panel's retired sort controls, the process table's removed inline switch, and stale cloud
+  sync and settings copy. Nothing rendered any of them.
+
 ## [0.6.0] - 2026-07-24
 
 ### Added

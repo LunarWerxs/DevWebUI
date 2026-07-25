@@ -2,13 +2,20 @@
 /**
  * i18n compliance checker. Run with `bun run check:i18n` (also gates `bun run build`).
  *
- * Three guarantees, each a hard failure (exit 1):
+ * Four guarantees, each a hard failure (exit 1):
  *   1. No hardcoded UI strings — rendered template text and user-facing static
  *      attributes (aria-label, title, placeholder, …) must go through i18n.
  *   2. Every referenced key resolves — every static `t("a.b")` / `keypath="a.b"`
  *      points at a real key in the English base catalog.
- *   3. Locale parity — every non-base locale has exactly the same key shape as
+ *   3. Every catalog key is referenced — a key nothing renders is dead copy that
+ *      still costs every translator a line. Delete it, or wire it up.
+ *   4. Locale parity — every non-base locale has exactly the same key shape as
  *      English (no missing, no extra keys); a missing locale file fails too.
+ *
+ * Guarantee 3 is only exact while every key is a static literal, which the
+ * `dynamic-key` rule below detects. If a dynamic `t(\`…\`)` key ever appears the
+ * referenced set is no longer complete, so unused keys downgrade to warnings
+ * rather than failing the build on a key the scan simply cannot see.
  *
  * Escape hatches for intentional literals:
  *   - Brand names / tokens listed in ALLOWLIST below.
@@ -168,11 +175,33 @@ const T_CALL = /(?<![\w.])\$?t\(\s*["']([\w.]+)["']/g;
 const KEYPATH = /keypath\s*=\s*["']([\w.]+)["']/g;
 const DYNAMIC_T = /(?<![\w.])\$?t\(\s*`/g;
 
+/**
+ * Every key the app actually asks for — the other half of the missing-key check.
+ * Deliberately fed by a WIDER net than T_CALL/KEYPATH (see collectKeyLiterals): those
+ * two only match a quote sitting immediately after `t(`, so they miss real call
+ * shapes like `t(cond ? "a.b" : "a.c")`. Under-collecting here would delete live
+ * copy, so this set errs toward over-collecting.
+ */
+const referencedKeys = new Set<string>();
+let dynamicKeySites = 0;
+
+/**
+ * Treat any string literal that exactly matches a catalog key as a reference,
+ * whatever syntax surrounds it. The cost is a dead key surviving because its name
+ * happens to appear elsewhere; the alternative cost is deleting copy the UI renders.
+ */
+const ANY_LITERAL = /["'`]([\w.]+)["'`]/g;
+function collectKeyLiterals(source: string) {
+  ANY_LITERAL.lastIndex = 0;
+  for (const m of source.matchAll(ANY_LITERAL)) if (enKeys.has(m[1])) referencedKeys.add(m[1]);
+}
+
 function checkKeyRefs(file: string, source: string) {
   for (const re of [T_CALL, KEYPATH]) {
     re.lastIndex = 0;
     for (const m of source.matchAll(re)) {
       const key = m[1];
+      referencedKeys.add(key);
       if (!enKeys.has(key)) {
         const line = source.slice(0, m.index).split("\n").length;
         add(file, line, "error", "missing-key", `t("${key}") has no entry in en.ts`);
@@ -181,8 +210,39 @@ function checkKeyRefs(file: string, source: string) {
   }
   DYNAMIC_T.lastIndex = 0;
   for (const m of source.matchAll(DYNAMIC_T)) {
+    dynamicKeySites++;
     const line = source.slice(0, m.index).split("\n").length;
     add(file, line, "warn", "dynamic-key", "dynamic t(`...`) key — not statically verified");
+  }
+}
+
+// --- unused keys ------------------------------------------------------------------
+/**
+ * Point the finding at the key's own line so it's clickable. The leaf name is
+ * searched rather than the dotted path (that's how it appears in the file); when a
+ * leaf is ambiguous across namespaces we fall back to line 1 rather than guess.
+ */
+function keyLine(catalog: string, key: string): number {
+  const leaf = key.slice(key.lastIndexOf(".") + 1);
+  const re = new RegExp(`^\\s*${leaf}:`, "gm");
+  const lines = [...catalog.matchAll(re)].map((m) => catalog.slice(0, m.index).split("\n").length);
+  return lines.length === 1 ? lines[0] : 1;
+}
+
+function checkUnusedKeys() {
+  const catalog = readFileSync("src/i18n/locales/en.ts", "utf8");
+  // A dynamic key means the referenced set is incomplete, so an "unused" verdict
+  // could be wrong — report it, but don't fail the build on a guess.
+  const severity: Severity = dynamicKeySites ? "warn" : "error";
+  for (const key of enKeys) {
+    if (referencedKeys.has(key)) continue;
+    add(
+      "src/i18n/locales/en.ts",
+      keyLine(catalog, key),
+      severity,
+      "unused-key",
+      `"${key}" is never referenced${dynamicKeySites ? " (unverified: dynamic keys present)" : ""}`,
+    );
   }
 }
 
@@ -232,6 +292,10 @@ async function checkLocaleParity() {
 // Vendored shadcn / LunarWerx-kit primitives (src/components/ui) are library code,
 // not app copy — their sr-only "Close" labels etc. are intentionally hardcoded and
 // synced from the kit, so they're exempt from the i18n scan.
+//
+// SKIP governs the AUTHORING rules only (hardcoded text, missing-key). A skipped file
+// can still legitimately call t(), so it must always contribute to referencedKeys —
+// otherwise the unused-key rule would condemn every key only the shell renders.
 const SKIP = (path: string) =>
   path.includes("i18n/locales") ||
   path.includes("i18n\\locales") ||
@@ -240,16 +304,20 @@ const SKIP = (path: string) =>
   path.includes("src/shell") ||
   path.includes("src\\shell");
 
-for (const path of new Glob("src/**/*.vue").scanSync(".")) {
-  if (SKIP(path)) continue;
-  const src = readFileSync(path, "utf8");
-  checkTemplate(path, src);
-  checkKeyRefs(path, src);
+const IS_CATALOG = (path: string) =>
+  path.includes("i18n/locales") || path.includes("i18n\\locales");
+
+for (const pattern of ["src/**/*.vue", "src/**/*.ts"]) {
+  for (const path of new Glob(pattern).scanSync(".")) {
+    const src = readFileSync(path, "utf8");
+    // The catalog naturally contains every key; counting it would make the rule vacuous.
+    if (!IS_CATALOG(path)) collectKeyLiterals(src);
+    if (SKIP(path)) continue;
+    if (path.endsWith(".vue")) checkTemplate(path, src);
+    checkKeyRefs(path, src);
+  }
 }
-for (const path of new Glob("src/**/*.ts").scanSync(".")) {
-  if (SKIP(path)) continue;
-  checkKeyRefs(path, readFileSync(path, "utf8"));
-}
+checkUnusedKeys(); // after every scan — needs the complete referenced set
 await checkLocaleParity();
 
 // --- report -----------------------------------------------------------------------
@@ -269,7 +337,7 @@ console.log(
 );
 if (errors.length) {
   console.log(
-    "Fix by routing the string through i18n (t() / <i18n-t>), or mark an intentional literal with <!-- i18n-ignore -->.",
+    "Fix by routing the string through i18n (t() / <i18n-t>), or mark an intentional literal with <!-- i18n-ignore -->. An unused-key means delete the entry from en.ts, or wire it up.",
   );
   process.exit(1);
 }
