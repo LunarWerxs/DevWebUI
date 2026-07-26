@@ -41,6 +41,7 @@ import { dataDir } from "./data-dir";
 import { findLiveInstance, readInstanceInfo, type InstanceInfo } from "./instance";
 import { daemonLaunchVector, isCompiledBinary } from "./launch-vector";
 import { projectIdFromPath } from "./projects/file-store";
+import pkg from "../../package.json";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", ".."); // server/src/cli.ts → repo root
@@ -602,6 +603,11 @@ export async function main(argv: string[]): Promise<void> {
   const ref = args._[0];
 
   switch (cmd) {
+    case "--version":
+    case "version":
+      console.log(pkg.version);
+      break;
+
     case "start":
       await startCmd(args);
       break;

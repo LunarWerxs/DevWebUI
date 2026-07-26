@@ -4,7 +4,7 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.1] - 2026-07-25
 
 ### Added
 
@@ -24,6 +24,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Removed 31 unused strings from the English catalog** (384 keys down to 353), including the
   filter panel's retired sort controls, the process table's removed inline switch, and stale cloud
   sync and settings copy. Nothing rendered any of them.
+- **Windows releases are self-contained GUI executables.** The dashboard is embedded, the
+  executable carries the app icon and opens without a console window, and the updater continues
+  to consume the compact ZIP rather than requiring loose `web` or `node_modules` folders.
+- **Connections sync uses the multi-device-safe 1.1 engine.** First-time seeding is atomic, nested
+  edits preserve unrelated remote preferences, and pending changes flush before shutdown.
 
 ## [0.6.0] - 2026-07-24
 

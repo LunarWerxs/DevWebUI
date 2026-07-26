@@ -1,6 +1,6 @@
 {
   "name": "devwebui",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "type": "module",
   "description": "GUI + MCP control plane for your local dev servers. Click to start/stop/restart; agents drive the same daemon over MCP.",
@@ -53,7 +53,7 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "@cnct/connect": "^1.0.0"
+    "@cnct/connect": "^1.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",

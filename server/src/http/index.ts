@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
@@ -15,6 +15,24 @@ import {
 import { registerProjectRoutes } from "./project-routes";
 import { registerProcessRoutes } from "./process-routes";
 import { registerConnectionsRoutes } from "./connections-routes";
+
+function embeddedContentType(pathname: string): string {
+  const ext = path.extname(pathname).toLowerCase();
+  return (
+    {
+      ".css": "text/css; charset=utf-8",
+      ".html": "text/html; charset=utf-8",
+      ".ico": "image/x-icon",
+      ".js": "text/javascript; charset=utf-8",
+      ".json": "application/json; charset=utf-8",
+      ".svg": "image/svg+xml",
+      ".ttf": "font/ttf",
+      ".webmanifest": "application/manifest+json; charset=utf-8",
+      ".woff": "font/woff",
+      ".woff2": "font/woff2",
+    }[ext] ?? "application/octet-stream"
+  );
+}
 
 export function createApp(manager: Manager, options: CreateAppOptions = {}) {
   const app = new Hono();
@@ -39,12 +57,39 @@ export function createApp(manager: Manager, options: CreateAppOptions = {}) {
 
   // Serve the built GUI from the daemon. Resolve web/dist in BOTH shapes: dev (relative to this
   // source) and compiled (a `web/dist` shipped next to the single-file binary — see scripts/build.ts).
+  const embedded = (
+    globalThis as {
+      __DEVWEBUI_EMBEDDED_WEB__?: Readonly<Record<string, string>>;
+    }
+  ).__DEVWEBUI_EMBEDDED_WEB__;
   const distCandidates = [
     path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../web/dist"),
     path.resolve(path.dirname(process.execPath), "web", "dist"),
   ];
   const dist = distCandidates.find((c) => existsSync(c));
-  if (dist) {
+  if (embedded) {
+    app.get("/*", async (c) => {
+      let pathname = decodeURIComponent(new URL(c.req.url).pathname);
+      if (pathname === "/" || pathname === "") pathname = "/index.html";
+      const lastSeg = pathname.slice(pathname.lastIndexOf("/") + 1);
+      const isAsset = pathname.startsWith("/assets/") || /\.[a-z0-9]+$/i.test(lastSeg);
+      const embeddedPath = embedded[pathname];
+      if (embeddedPath) {
+        return new Response(new Uint8Array(readFileSync(embeddedPath)), {
+          headers: {
+            "cache-control": pathname.startsWith("/assets/")
+              ? "public, max-age=31536000, immutable"
+              : "no-cache",
+            "content-type": embeddedContentType(pathname),
+          },
+        });
+      }
+      if (isAsset) return c.text("not found", 404, { "cache-control": "no-store" });
+      return new Response(new Uint8Array(readFileSync(embedded["/index.html"]!)), {
+        headers: { "cache-control": "no-cache", "content-type": "text/html; charset=utf-8" },
+      });
+    });
+  } else if (dist) {
     const root = path.relative(process.cwd(), dist);
     app.use("/assets/*", serveStatic({ root }));
     // A MISSING hashed chunk under /assets/ (a stale browser tab requesting an old chunk after a

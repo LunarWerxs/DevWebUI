@@ -49,11 +49,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            asset: devwebui-linux-x64
+            target: linux-x64
           - os: macos-latest
-            asset: devwebui-macos-arm64
+            target: macos-arm64
           - os: windows-latest
-            asset: devwebui-windows-x64.exe
+            target: windows-x64
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -61,22 +61,28 @@ jobs:
           bun-version: "1.3.14"
       - run: bun install --frozen-lockfile # root workspace install covers web/ too
       - run: bun run dist # scripts/build.ts — web build + `bun build --compile`
-      - name: Stage compiled binary
+      - name: Smoke-test the actual release executable
+        shell: bash
+        run: |
+          if [ -f dist/devwebui.exe ]; then bin=dist/devwebui.exe; else bin=dist/devwebui; fi
+          bun run scripts/smoke-release.ts "$bin"
+      - name: Package release assets
         shell: bash
         run: |
           mkdir -p out
+          target="${{ matrix.target }}"
           if [ -f dist/devwebui.exe ]; then
-            bin=dist/devwebui.exe
+            cp dist/devwebui.exe "out/devwebui-${target}.exe"
+            (cd dist && 7z a -tzip "$GITHUB_WORKSPACE/out/devwebui-${target}.zip" devwebui.exe > /dev/null)
           elif [ -f dist/devwebui ]; then
-            bin=dist/devwebui
+            tar -C dist -czf "out/devwebui-${target}.tar.gz" devwebui
           else
             echo "::error::no compiled binary found in dist/"; ls -la dist || true; exit 1
           fi
-          cp "$bin" "out/${{ matrix.asset }}"
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.asset }}
-          path: out/${{ matrix.asset }}
+          name: devwebui-${{ matrix.target }}
+          path: out/*
 
   release:
     name: publish release
@@ -103,9 +109,16 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
+      - name: Build checksums
+        shell: bash
+        run: |
+          find artifacts -type f -print0 | sort -z | xargs -0 sha256sum |
+            sed -E 's#  artifacts/[^/]+/#  #' > SHA256SUMS.txt
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: artifacts/**/*
+          files: |
+            artifacts/**/*
+            SHA256SUMS.txt
           body_path: RELEASE_NOTES.md
           fail_on_unmatched_files: true

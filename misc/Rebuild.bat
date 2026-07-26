@@ -8,7 +8,9 @@ call bun run build
 echo.
 if errorlevel 1 (
   echo Build FAILED — see the output above.
+  pause
+  exit /b 1
 ) else (
   echo Done. Restart DevWebUI ^(tray: Restart^) to serve the new build.
+  exit /b 0
 )
-pause

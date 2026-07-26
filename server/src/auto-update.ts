@@ -1,10 +1,10 @@
 /**
  * Auto-update timer — "keep the app current for me, silently".
  *
- * A single daemon-wide timer that, each time it fires, asks the shared updater engine whether a
- * newer commit is on the update remote AND the working tree is clean (`canApply`). If so it applies
- * the update (git pull --ff-only + reinstall + rebuild — see server/src/updater.ts) and then
- * SELF-RELAUNCHES so the freshly-pulled code takes over. The tray is a bare supervisor that does NOT
+ * A single daemon-wide timer asks server/src/updater.ts whether a newer version is available and
+ * applicable. Source checkouts fast-forward/rebuild; compiled releases download and verify the
+ * compressed platform archive. It then SELF-RELAUNCHES so the updated code takes over. The tray is
+ * a bare supervisor that does NOT
  * relaunch the daemon on exit, so the daemon must relaunch itself; the concrete relaunch (spawn a
  * detached copy of our launch command, then gracefully shut down) is injected from server/src/index.ts,
  * which owns the shutdown handle. The tray then finds the successor via ~/.devwebui/runtime.json +

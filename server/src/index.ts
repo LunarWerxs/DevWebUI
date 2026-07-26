@@ -5,7 +5,7 @@ import { applyToManager } from "./http/connections-routes";
 import { readDevWebUIFile, readRegistry } from "./projects";
 import { startProjectWatch } from "./project-watch";
 import { materializeSettings, readSettings } from "./runtime";
-import { initConnections, pullNow, syncStatus } from "./connections";
+import { flushPending, initConnections, pullNow, syncStatus } from "./connections";
 import { daemonPort } from "./constants";
 import { findFreePort, isPortListening } from "./ports";
 import { skipSingleInstanceGuard } from "./single-instance";
@@ -25,6 +25,8 @@ import {
 } from "./auto-update";
 import { initFileLogging } from "./log-file.mjs";
 import { dataDir } from "./data-dir";
+import { openUi } from "./open-ui";
+import { cleanupStaleUpdateArtifacts } from "./updater";
 
 // ---------------------------------------------------------------------------
 // CLI dispatch — must stay the FIRST side effect in this file.
@@ -47,6 +49,13 @@ if (process.argv.length > 2) {
   await run(process.argv.slice(2));
   process.exit(process.exitCode ?? 0);
 }
+
+cleanupStaleUpdateArtifacts();
+
+const releaseDoubleClick =
+  (globalThis as { __DEVWEBUI_RELEASE_BUILD__?: boolean }).__DEVWEBUI_RELEASE_BUILD__ === true &&
+  process.env.DEVWEBUI_RELAUNCH !== "1" &&
+  !process.env.DEVWEBUI_TRAY_SHUTDOWN_TOKEN;
 
 // Persist console output to <CONFIG_DIR>/logs/daemon.log BEFORE anything else can throw, so
 // the crash reason logged just below actually survives the process (the tray runs us with a
@@ -79,6 +88,7 @@ if (!skipSingleInstanceGuard()) {
     console.log(
       `\n  DevWebUI is already running  →  ${live.url}\n  Not starting a second instance.\n`,
     );
+    if (releaseDoubleClick && process.env.DEVWEBUI_NO_OPEN !== "1") openUi(live.url);
     process.exit(0);
   }
 }
@@ -162,6 +172,16 @@ async function shutdown(exitCode = 0, exitDelayMs = 0): Promise<void> {
   shuttingDown = true;
   let code = exitCode;
   try {
+    await Promise.race([
+      flushPending().catch((error) => {
+        console.error(
+          `[devwebui] final settings sync failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }),
+      new Promise<void>((resolve) => setTimeout(resolve, 6_000)),
+    ]);
     cleanup();
     stopAutoUpdate();
     projectWatcher.stop();
@@ -234,8 +254,25 @@ console.log(`
   loaded          →  ${loaded} project(s) from registry
 `);
 
-export default {
+const bunRuntime = (
+  globalThis as unknown as {
+    Bun: {
+      serve(options: {
+        port: number;
+        fetch: (request: Request) => Response | Promise<Response>;
+        idleTimeout: number;
+      }): { port: number };
+    };
+  }
+).Bun;
+const server = bunRuntime.serve({
   port: PORT,
   fetch: app.fetch,
   idleTimeout: 255, // keep SSE connections alive (Bun max)
-};
+});
+
+if (releaseDoubleClick && process.env.DEVWEBUI_NO_OPEN !== "1") {
+  const url = `http://127.0.0.1:${server.port}/`;
+  if (!openUi(url))
+    console.error(`[devwebui] Could not open a browser automatically. Open ${url} manually.`);
+}

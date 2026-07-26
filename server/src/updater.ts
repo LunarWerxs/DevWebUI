@@ -2,6 +2,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createUpdater } from "./updater-engine.mjs";
 import type { UpdateApplyResult, UpdateStatus } from "../../shared/dto";
+import {
+  applyUpdate as applyReleaseUpdate,
+  checkForUpdate as checkReleaseUpdate,
+  cleanupStaleUpdateArtifacts as cleanupReleaseArtifacts,
+} from "./github-updater";
+import { isCompiledBinary } from "./launch-vector";
 
 // Thin per-app adapter over the shared kit updater engine (synced in as
 // updater-engine.mjs). All the git / spawn / ls-remote / apply logic lives there;
@@ -17,5 +23,18 @@ const engine = createUpdater({
   buildCmd: ["bun", "run", "build"],
 });
 
-export const checkForUpdate = engine.checkForUpdate as () => Promise<UpdateStatus>;
-export const applyUpdate = engine.applyUpdate as () => Promise<UpdateApplyResult>;
+export function checkForUpdate(): Promise<UpdateStatus> {
+  return isCompiledBinary()
+    ? checkReleaseUpdate()
+    : (engine.checkForUpdate() as Promise<UpdateStatus>);
+}
+
+export function applyUpdate(): Promise<UpdateApplyResult> {
+  return isCompiledBinary()
+    ? applyReleaseUpdate()
+    : (engine.applyUpdate() as Promise<UpdateApplyResult>);
+}
+
+export function cleanupStaleUpdateArtifacts(): void {
+  if (isCompiledBinary()) cleanupReleaseArtifacts();
+}
