@@ -149,8 +149,9 @@ DevWebUI runs entirely on your machine — a single daemon on your localhost, op
 
 - **Settings sync** — sign in with a LunarWerx Connections account to sync a small allowlist of
   portable prefs + theme across machines. Off by default; only runs after you explicitly enable it
-  in Settings, and `@cnct/connect`/`@cnct/locker` (the SDKs it needs) are optional dependencies
-  that are installed but never imported or initialized unless you do.
+  in Settings, and `@cnct/connect` (the SDK it needs, which also ships the settings-store locker
+  client) is an optional dependency that is installed but never imported or initialized unless
+  you do.
 
 On the roadmap: macOS / Linux tray, an in-GUI env editor, log search, and multi-host.
 

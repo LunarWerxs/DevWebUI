@@ -7,9 +7,9 @@
 // settings-sync store (studio.connections.icu/v1/app-data/{clientId}). The browser
 // never holds a token.
 //
-// Since 2026-07-08 the OAuth/refresh/identity machinery is the OFFICIAL SDK —
-// @cnct/connect (+ @cnct/locker for the settings store) — instead of a hand-rolled
-// copy: single-flight rotation-safe refresh, per-attempt redirect_uri, server-side
+// Since 2026-07-08 the OAuth/refresh/identity machinery is the OFFICIAL SDK — @cnct/connect
+// (which also ships the settings-store locker client, since its 0.7.0) — instead of a
+// hand-rolled copy: single-flight rotation-safe refresh, per-attempt redirect_uri, server-side
 // revoke on forget, and id_token identity all come from the shared package. This
 // module keeps only the DevWebUI-specific parts: the state file (which also carries
 // the app's own sync prefs), the settings allowlist, and the sync orchestration.
@@ -21,19 +21,18 @@
 // small ALLOWLIST of portable prefs (PREF_KEYS) + the web's appearance blob (theme).
 // Never machine-specific or secret values.
 //
-// @cnct/connect + @cnct/locker are `optionalDependencies` (package.json), NOT statically
-// imported: a public `bun install` with no LunarWerx account still boots the daemon cleanly
-// even if the packages fail to install/resolve. Both are pulled in ONLY by `connect()`/
-// `locker()` below, via `await import()`, which only ever runs on a path the owner actually
-// triggered (sign-in, or boot's pullNow() when sync was already enabled) — never on a cold
-// boot with sync off. A missing install surfaces as `SdkUnavailableError`, caught by
-// `guardSync` in connections-routes.ts like any other sync failure — never a boot crash.
+// @cnct/connect is an `optionalDependency` (package.json), NOT statically imported: a public
+// `bun install` with no LunarWerx account still boots the daemon cleanly even if the package
+// fails to install/resolve. It is pulled in ONLY by `connect()`/`locker()` below, via
+// `await import()`, which only ever runs on a path the owner actually triggered (sign-in, or
+// boot's pullNow() when sync was already enabled) — never on a cold boot with sync off. A
+// missing install surfaces as `SdkUnavailableError`, caught by `guardSync` in
+// connections-routes.ts like any other sync failure — never a boot crash.
 // ---------------------------------------------------------------------------
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { dataDir } from "./data-dir";
-import type { ConnectClient, ConnectStore, TokenSet } from "@cnct/connect";
-import type { LockerClient } from "@cnct/locker";
+import type { ConnectClient, ConnectStore, LockerClient, TokenSet } from "@cnct/connect";
 import { readSettings, writeSettings, type Settings } from "./runtime";
 import { seal, unseal, wrapTokenStore } from "./dpapi-seal.mjs";
 
@@ -109,9 +108,9 @@ const stateStore: ConnectStore = {
   },
 };
 
-/** Thrown when a sync/sign-in op is attempted but @cnct/connect or @cnct/locker (both
- *  `optionalDependencies`) never installed — e.g. a public install where the optional native/
- *  peer resolution was skipped. Surfaces as a normal `guardSync` error, not a boot crash. */
+/** Thrown when a sync/sign-in op is attempted but @cnct/connect (an `optionalDependency`) never
+ *  installed — e.g. a public install where the optional native/peer resolution was skipped.
+ *  Surfaces as a normal `guardSync` error, not a boot crash. */
 class SdkUnavailableError extends Error {
   code = "sdk_unavailable";
   constructor(pkg: string, cause: unknown) {
@@ -236,13 +235,14 @@ async function backfillIdentity(): Promise<void> {
   }
 }
 
-/** Dynamically imports @cnct/locker — never pulled in on a boot where sync is off. */
+/** Dynamically imports @cnct/connect's locker client — never pulled in on a boot where sync is
+ *  off. (Since 0.7.0 the locker lives inside @cnct/connect; there is no separate package.) */
 async function locker(): Promise<LockerClient> {
-  let createLocker: typeof import("@cnct/locker").createLocker;
+  let createLocker: typeof import("@cnct/connect").createLocker;
   try {
-    ({ createLocker } = await import("@cnct/locker"));
+    ({ createLocker } = await import("@cnct/connect"));
   } catch (e) {
-    throw new SdkUnavailableError("@cnct/locker", e);
+    throw new SdkUnavailableError("@cnct/connect", e);
   }
   return createLocker({
     appId: OAUTH.clientId,
