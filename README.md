@@ -33,9 +33,14 @@ automate, and everyone works off a single source of truth.
 
 ## Run it
 
-**Windows** — double-click the **`DevWebUI`** shortcut. It runs hidden (no console window) with a
-tray icon: right-click for **Open / Rebuild & Restart / Restart / Quit**. The first launch builds
-once; after that it's instant. Changed the GUI? Hit **Rebuild & Restart**.
+**Prebuilt Windows app** — download `devwebui-windows-x64.exe` from
+[Releases](https://github.com/LunarWerxs/DevWebUI/releases) and run it directly. It is an
+icon-bearing GUI executable with the dashboard embedded and no console window or sidecar folders.
+The ZIP beside it is reserved for automatic updates.
+
+**Windows source checkout** — double-click the **`DevWebUI`** shortcut. It runs hidden with a tray
+icon: right-click for **Open / Rebuild & Restart / Restart / Quit**. The first launch builds once;
+after that it's instant. Changed the GUI? Hit **Rebuild & Restart**.
 
 **Any OS** — from a terminal:
 
