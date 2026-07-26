@@ -13,7 +13,7 @@
         "typescript": "^6.0.3",
       },
       "optionalDependencies": {
-        "@cnct/connect": "^1.1.0",
+        "@cnct/connect": "^1.2.0",
       },
     },
     "server": {
@@ -90,7 +90,7 @@
 
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.5.3", "", { "os": "win32", "cpu": "x64" }, "sha512-ExSaJWi4/u6+GXCszlSKpWSjKNbDseAYqqkCznsCsZ/4uidZ/BEqsCc5/3ctlq6dfIubdIIRSVLC/PG9xPl70Q=="],
 
-    "@cnct/connect": ["@cnct/connect@1.1.0", "", { "peerDependencies": { "react": ">=17", "vue": ">=3" }, "optionalPeers": ["react", "vue"], "bin": { "cnct-connect": "dist/cli.js", "connect": "dist/cli.js" } }, "sha512-HOZ14wsb5wMtm2OInFziZqLHHrZq2uTym+Rc+yDRDtwcyif8fBCoRMYgtnF3h900xMVphKg9WeXSq77ISRA8EA=="],
+    "@cnct/connect": ["@cnct/connect@1.2.0", "", { "peerDependencies": { "react": ">=17", "vue": ">=3" }, "optionalPeers": ["react", "vue"], "bin": { "cnct-connect": "dist/cli.js", "connect": "dist/cli.js" } }, "sha512-CNBqRtYqGdKoIFuG2kjtN0rTODRNwdEtvzaYj5ClRevWAgSr1j9y/GoswgL4sAH0pf21pagMAgml0XDvj6dnAA=="],
 
     "@devwebui/server": ["@devwebui/server@workspace:server"],
 

@@ -53,7 +53,7 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "@cnct/connect": "^1.1.0"
+    "@cnct/connect": "^1.2.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.1",

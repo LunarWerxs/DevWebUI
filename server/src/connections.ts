@@ -408,7 +408,7 @@ export async function updateAppearance(appearance: Record<string, unknown>): Pro
 /** Flush a pending debounce before daemon shutdown/relaunch. */
 export async function flushPending(): Promise<void> {
   if (state.enabled && hasConnection()) {
-    requireSuccess(await (await syncEngine()).flushAndStop());
+    requireSuccess(await (await syncEngine()).flushAndStop({ timeoutMs: 5_000 }));
     await backfillIdentity();
   }
 }

@@ -27,8 +27,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Windows releases are self-contained GUI executables.** The dashboard is embedded, the
   executable carries the app icon and opens without a console window, and the updater continues
   to consume the compact ZIP rather than requiring loose `web` or `node_modules` folders.
-- **Connections sync uses the multi-device-safe 1.1 engine.** First-time seeding is atomic, nested
-  edits preserve unrelated remote preferences, and pending changes flush before shutdown.
+- **Connections sync uses the multi-device-safe 1.2 engine.** First-time seeding is atomic, nested
+  edits preserve unrelated remote preferences, and shutdown gets five seconds to flush before a
+  stuck token or network request is cancelled.
 
 ## [0.6.0] - 2026-07-24
 
