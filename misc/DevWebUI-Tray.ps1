@@ -102,6 +102,17 @@ $TrayConfig = @{
   PortableWindowSize     = @{ Width = 840; Height = 760 }
   PortableWindowSizeHint = $true
 
+  # Tray "Stop all processes" — the same POST the web UI's More menu and `devwebui stop-all`
+  # make (shared/routes.ts stopAll). Labelled "processes" rather than the web UI's bare "Stop
+  # all" because in a tray menu that also holds Restart and Quit, "Stop all" reads as "stop
+  # DevWebUI itself"; this stops every managed dev server and LEAVES the daemon running.
+  # /api/* is unauthenticated on loopback (loopback-guard.mjs only blocks browser cross-site
+  # requests), so the tray needs no token for it — unlike /api/shutdown.
+  ActionPath           = "/api/processes/stop-all"
+  ActionLabel          = "Stop all processes"
+  ActionOkText         = "All managed processes stopped."
+  ActionFailText       = "Couldn't stop everything - open {APP} to check."
+
   SelfTestMarker       = "DEVWEBUI_TRAY_SELFTEST"
   MenuOpenLabel        = "Open DevWebUI"
   MutexName            = "DevWebUITrayHost"

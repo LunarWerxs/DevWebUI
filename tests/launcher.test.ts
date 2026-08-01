@@ -44,6 +44,7 @@
 import { test, expect } from "bun:test";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { ROUTES } from "../shared/routes";
 
 const ROOT = join(import.meta.dir, "..");
 const MISC = join(ROOT, "misc");
@@ -393,6 +394,50 @@ test("engine: full-shutdown sentinel is polled and cleared, reusing Quit's teard
   must(
     /SentinelFile\s*=\s*Join-Path \$dwHome "shutdown\.request"/.test(tray),
     "DevWebUI-Tray.ps1 doesn't declare its shutdown.request sentinel path (sibling of runtime.json)",
+  );
+});
+
+test("tray 'Stop all processes': posts the same route the GUI does, off the UI thread, without touching the daemon", () => {
+  const engine = read(join(MISC, "Tray-Host.ps1"));
+
+  // Opt-in: no ActionPath ⇒ no extra menu item at all (the sibling apps have none).
+  must(
+    /\$actionPath\s*=\s*Get-TrayConfigValue \$Config 'ActionPath' \$null/.test(engine),
+    "Tray-Host.ps1 doesn't read the optional ActionPath from config",
+  );
+  must(
+    /if \(\$actionItem\) \{\s*\$menu\.Items\.Add/.test(engine),
+    "Tray-Host.ps1 adds the app-action menu item unconditionally — it must exist only when ActionPath is configured",
+  );
+
+  // The POST runs in a background runspace and reports via its own poll timer. A daemon that
+  // takes seconds to answer (DevWebUI waits out each child's SIGTERM grace) must never freeze
+  // the tray menu, which is exactly what an Invoke-RestMethod on the UI thread would do.
+  const fn = engine.match(/function Invoke-AppAction[\s\S]*?\n {2}\}/);
+  must(fn, "Tray-Host.ps1 is missing Invoke-AppAction");
+  must(
+    /PowerShell\]::Create\(\)[\s\S]*?BeginInvoke\(\)/.test(fn[0]),
+    "Invoke-AppAction doesn't run the POST on a background runspace — a slow daemon would block the tray menu",
+  );
+  must(
+    /\$actionTimer\.Add_Tick\(\{[\s\S]*?EndInvoke[\s\S]*?ShowBalloonTip[\s\S]*?\}\)/.test(engine),
+    "Tray-Host.ps1 doesn't marshal the app-action result back to the UI thread with a balloon",
+  );
+  // It acts on what the daemon RUNS, never on the daemon process: no stop/kill/quit path here.
+  must(
+    !/Stop-DaemonHere|Invoke-QuitApp|taskkill/.test(fn[0]),
+    "Invoke-AppAction must not stop or kill the daemon — it only POSTs to it",
+  );
+
+  // The adapter points it at the same route the web UI's "Stop all" and `devwebui stop-all` use.
+  const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
+  must(
+    new RegExp(`ActionPath\\s*=\\s*"${ROUTES.stopAll}"`).test(tray),
+    `DevWebUI-Tray.ps1 must point ActionPath at ${ROUTES.stopAll} (shared/routes.ts stopAll)`,
+  );
+  must(
+    /ActionLabel\s*=\s*"Stop all processes"/.test(tray),
+    'DevWebUI-Tray.ps1 must label the item "Stop all processes" — a bare "Stop all" reads as "stop DevWebUI itself" next to Restart and Quit',
   );
 });
 

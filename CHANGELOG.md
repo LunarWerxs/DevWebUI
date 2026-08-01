@@ -4,6 +4,15 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **The tray menu can stop every managed process.** Right-click the tray icon and pick
+  **Stop all processes** to halt every dev server DevWebUI runs, without opening the dashboard.
+  It calls the same route as the dashboard's Stop all and `devwebui stop-all`, so it stops the
+  servers and leaves DevWebUI itself running; Restart and Quit still act on DevWebUI.
+
 ## [0.6.1] - 2026-07-26
 
 ### Added

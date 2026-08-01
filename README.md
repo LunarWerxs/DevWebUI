@@ -39,7 +39,8 @@ icon-bearing GUI executable with the dashboard embedded and no console window or
 The ZIP beside it is reserved for automatic updates.
 
 **Windows source checkout** — double-click the **`DevWebUI`** shortcut. It runs hidden with a tray
-icon: right-click for **Open / Rebuild & Restart / Restart / Quit**. The first launch builds once;
+icon: right-click for **Open / Rebuild & Restart / Restart / Stop all processes / Quit**
+(**Stop all processes** halts every dev server and leaves DevWebUI running). The first launch builds once;
 after that it's instant. Changed the GUI? Hit **Rebuild & Restart**.
 
 **Any OS** — from a terminal:
