@@ -185,7 +185,7 @@ async function updateApp() {
           </Button>
         </Hint>
 
-        <!-- Dedicated settings gear (family parity with ReDesign/CC Manager UI): settings is
+        <!-- Dedicated settings gear (family parity with ReDesign/AgentHydra): settings is
              too primary an action to live only inside the ⋮ overflow. Toggles the panel. -->
         <Hint :label="t('actions.settings')">
           <Button
