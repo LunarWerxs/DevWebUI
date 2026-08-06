@@ -11,6 +11,13 @@ on:
   push:
     tags: ["v*"]
 
+  # Manual runs, so a commit or tag can be built without waiting on a webhook. Added 2026-08-06
+  # during a GitHub Actions incident whose recovery plan was to THROTTLE webhook triggers: pushes
+  # and tag pushes landed and produced no run at all. Dispatching on a TAG ref still satisfies the
+  # `github.ref_type == 'tag'` gate on the publish job below, so it is a real release; dispatching
+  # on a branch builds and smoke-tests without publishing anything.
+  workflow_dispatch:
+
 permissions:
   contents: write
 
@@ -86,6 +93,9 @@ jobs:
 
   release:
     name: publish release
+    # Only a TAG publishes. A workflow_dispatch on a branch is a build + smoke validation
+    # of the pipeline; dispatching on a tag ref still lands here and publishes for real.
+    if: github.ref_type == 'tag'
     needs: build
     runs-on: ubuntu-latest
     permissions:

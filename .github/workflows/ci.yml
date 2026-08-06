@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+  # Manual runs, so a commit can be verified without a dummy push. Added 2026-08-06 during a
+  # GitHub Actions incident whose recovery plan was to throttle webhook triggers: pushes landed on
+  # main and produced no run at all, leaving nothing to gate a release on.
+  workflow_dispatch:
+
 # A newer push to the same ref supersedes an in-flight run.
 concurrency:
   group: ci-${{ github.ref }}
