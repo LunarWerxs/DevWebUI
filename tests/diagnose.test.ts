@@ -68,40 +68,60 @@ function portOf(srv: net.Server): number {
 
 // ---- heuristic 1: port-in-use ---------------------------------------------
 
-test("diagnose: port-in-use names the squatter with high confidence", async () => {
-  const holder = await listenOn(0);
-  const port = portOf(holder);
-  try {
+// The two tests below are the only ones here that reach portOwners(), and on Windows that shells
+// out to `powershell -NoProfile -Command` running Get-NetTCPConnection + Get-Process +
+// Get-CimInstance. The first such call on a cold machine pays PowerShell startup AND the
+// autoloading of the NetTCPIP and CimCmdlets modules, which locally is ~1.5s but on a loaded
+// windows-latest runner repeatedly blew past bun's 5s default and failed CI on `main` — with the
+// late assertion then surfacing as a confusing "unhandled error between tests" rather than as the
+// timeout it was. The product is not slow in a way anybody feels (a diagnosis runs once, after a
+// crash), so the honest fix is to stop holding a real process-enumeration round trip to a timeout
+// meant for in-memory tests. Matches the 10s explicit timeouts already used in links.test.ts and
+// errors-current.test.ts, with more headroom because this path spawns a shell.
+const PORT_OWNER_TIMEOUT_MS = 30_000;
+
+test(
+  "diagnose: port-in-use names the squatter with high confidence",
+  async () => {
+    const holder = await listenOn(0);
+    const port = portOf(holder);
+    try {
+      const result = await diagnose({
+        def: def({ port }),
+        status: "crashed",
+        exitCode: 1,
+        errors: [],
+      });
+      expect(result.confidence).toBe("high");
+      expect(result.rootCause).toContain(`port ${port}`);
+      expect(result.rootCause).toContain("already in use");
+      expect(result.remediation?.suggestedTool).toBe("start_process");
+      expect(result.remediation?.params).toMatchObject({ port, id: "project.web" });
+      expect(result.evidence.some((e) => e.includes(String(port)))).toBe(true);
+    } finally {
+      await close(holder);
+    }
+  },
+  PORT_OWNER_TIMEOUT_MS,
+);
+
+test(
+  "diagnose: a free declared port does not trigger the port-in-use heuristic",
+  async () => {
+    const probe = await listenOn(0);
+    const port = portOf(probe);
+    await close(probe); // free again
+
     const result = await diagnose({
       def: def({ port }),
       status: "crashed",
       exitCode: 1,
       errors: [],
     });
-    expect(result.confidence).toBe("high");
-    expect(result.rootCause).toContain(`port ${port}`);
-    expect(result.rootCause).toContain("already in use");
-    expect(result.remediation?.suggestedTool).toBe("start_process");
-    expect(result.remediation?.params).toMatchObject({ port, id: "project.web" });
-    expect(result.evidence.some((e) => e.includes(String(port)))).toBe(true);
-  } finally {
-    await close(holder);
-  }
-});
-
-test("diagnose: a free declared port does not trigger the port-in-use heuristic", async () => {
-  const probe = await listenOn(0);
-  const port = portOf(probe);
-  await close(probe); // free again
-
-  const result = await diagnose({
-    def: def({ port }),
-    status: "crashed",
-    exitCode: 1,
-    errors: [],
-  });
-  expect(result.rootCause).not.toContain("already in use");
-});
+    expect(result.rootCause).not.toContain("already in use");
+  },
+  PORT_OWNER_TIMEOUT_MS,
+);
 
 // ---- heuristic 2: known exit-code / error-pattern table --------------------
 

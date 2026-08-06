@@ -14,8 +14,10 @@ on:
   # Manual runs, so a commit or tag can be built without waiting on a webhook. Added 2026-08-06
   # during a GitHub Actions incident whose recovery plan was to THROTTLE webhook triggers: pushes
   # and tag pushes landed and produced no run at all. Dispatching on a TAG ref still satisfies the
-  # `github.ref_type == 'tag'` gate on the publish job below, so it is a real release; dispatching
-  # on a branch builds and smoke-tests without publishing anything.
+  # `github.ref_type == 'tag'` gate on the publish job below, so it is a real release.
+  # Dispatching on a BRANCH is not a supported path here: the validate job resolves the version
+  # from the ref name, so it fails fast on the metadata check rather than publishing anything.
+  # The gate is what guarantees the second half of that, whatever the ref turns out to be.
   workflow_dispatch:
 
 permissions:

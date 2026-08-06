@@ -4,7 +4,7 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-08-06
 
 ### Added
 
@@ -12,6 +12,37 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **Stop all processes** to halt every dev server DevWebUI runs, without opening the dashboard.
   It calls the same route as the dashboard's Stop all and `devwebui stop-all`, so it stops the
   servers and leaves DevWebUI itself running; Restart and Quit still act on DevWebUI.
+
+### Changed
+
+- **Inter is served by DevWebUI, not fetched from the Google Fonts CDN.** The shared kit's base
+  stylesheet opened with an `@import` of `fonts.googleapis.com`, and a remote `@import` at the head
+  of a render-blocking stylesheet blocks first paint on a round trip to the internet. Free on a warm
+  HTTP cache, which is why it went unnoticed, but dead time on a first run or after a cache
+  eviction, and an outright stall with no network, on a local dashboard that otherwise never needs
+  to be online. The two Latin subsets of Inter's variable woff2 now ship under `web/public/fonts/`.
+  Same typeface, no flash of fallback text, and the dashboard renders offline.
+
+### Fixed
+
+- **CI is green on Windows again.** `diagnose: port-in-use names the squatter` was failing on
+  `windows-latest` against bun's 5s default timeout. It is one of only two tests that reach
+  `portOwners()`, which on Windows shells out to PowerShell for Get-NetTCPConnection +
+  Get-CimInstance; the first such call on a cold runner also pays PowerShell startup and module
+  autoloading. Locally that is ~1.5s, on a loaded runner it exceeded 5s, and the assertion then
+  landed after the timeout and surfaced as a confusing "unhandled error between tests" rather than
+  as the timeout it was. Both port-touching tests now carry an explicit timeout. Nothing about the
+  product changed: a diagnosis runs once, after a crash.
+
+### Internal
+
+- **CI and Release can be dispatched manually.** GitHub's standard mitigation for an Actions
+  incident is to throttle webhook triggers, which means a push lands on `origin` and no workflow run
+  is ever created: nothing goes red, there is simply nothing, and a release stalls waiting on a run
+  that will never exist. `workflow_dispatch` is not throttled alongside the webhooks. Release's
+  publish job is additionally gated on `github.ref_type == 'tag'` rather than on the triggering
+  event, so dispatching against a tag ref publishes for real and no dispatch can ever publish for
+  the wrong one.
 
 ## [0.6.1] - 2026-07-26
 
