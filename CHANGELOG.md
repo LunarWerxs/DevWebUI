@@ -25,14 +25,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **CI is green on Windows again.** `diagnose: port-in-use names the squatter` was failing on
-  `windows-latest` against bun's 5s default timeout. It is one of only two tests that reach
-  `portOwners()`, which on Windows shells out to PowerShell for Get-NetTCPConnection +
-  Get-CimInstance; the first such call on a cold runner also pays PowerShell startup and module
-  autoloading. Locally that is ~1.5s, on a loaded runner it exceeded 5s, and the assertion then
-  landed after the timeout and surfaced as a confusing "unhandled error between tests" rather than
-  as the timeout it was. Both port-touching tests now carry an explicit timeout. Nothing about the
-  product changed: a diagnosis runs once, after a crash.
+- **A busy port could be reported as having no owner on Windows.** `portOwners()` shells out to
+  PowerShell for Get-NetTCPConnection + Get-CimInstance, and the shared capture helper bounded that
+  at 5 seconds while RESOLVING WITH WHAT IT HAD on expiry rather than reporting a timeout. Starting
+  a PowerShell and making it autoload NetTCPIP and CimCmdlets is ~1.5s warm but goes well past 5s
+  cold, so the probe returned an empty string, `portOwners()` returned no owners, and a port that
+  was plainly occupied looked free. `diagnose()` then downgraded a straightforward port-in-use
+  crash to "low confidence, cause unknown" — the exact case the heuristic exists for, failing
+  precisely when the machine is busy enough to make port conflicts likely. The Windows probe now
+  gets 20 seconds, because here a slow answer beats a confidently wrong one.
+  - This is what had CI red on `windows-latest` on `main` since 2026-08-03: both port tests were
+    landing at ~5010ms, i.e. exactly the internal timeout. The two tests that reach this path also
+    now carry explicit timeouts of their own, since the call they make can legitimately outlast
+    bun's 5s default.
 
 ### Internal
 

@@ -8,7 +8,27 @@ export type { PortOwner };
 
 /** Spawn a command, capture stdout, resolve on close (bounded by a short timeout). Port-owner
  *  output (cmdlines) is small, so this caps well below collectStdout's 1 MiB default. */
-const collect = (cmd: string, args: string[]) => collectStdout(cmd, args, { maxBytes: 1 << 16 });
+const collect = (cmd: string, args: string[], timeoutMs?: number) =>
+  collectStdout(cmd, args, { maxBytes: 1 << 16, ...(timeoutMs ? { timeoutMs } : {}) });
+
+/**
+ * How long the WINDOWS owner probe may take, overriding collectStdout's 5s default.
+ *
+ * That default is fine for the unix path (`lsof`, `ps` — tiny static binaries) but is not enough
+ * for this one, which starts a whole PowerShell and makes it autoload NetTCPIP and CimCmdlets. On a
+ * warm developer machine the round trip is ~1.5s; on a cold or loaded one it goes past 5s, and
+ * collectStdout RESOLVES WITH WHAT IT HAS on timeout rather than reporting one. So the probe came
+ * back empty, portOwners returned [], and a port that was plainly occupied was reported as having
+ * no owner — diagnose() then downgraded a port-in-use crash to "low confidence, cause unknown".
+ * Reproduced continuously on windows-latest CI (both port tests landing at ~5010ms, i.e. exactly
+ * the timeout) and red on main from 2026-08-03 until 2026-08-06.
+ *
+ * 20s because the failure mode is a WRONG ANSWER, not a slow one: this runs after a crash, or when
+ * freeing a port the user asked to free, and in both cases waiting is strictly better than
+ * confidently reporting nobody is there. Still bounded, so a genuinely wedged PowerShell can't hang
+ * a diagnosis forever.
+ */
+const WIN_OWNER_PROBE_TIMEOUT_MS = 20_000;
 
 // Field separator for the one-line-per-owner PowerShell/ps output below. "::" avoids both the
 // PowerShell backtick-tab escape headaches in a JS template AND collisions with a Windows
@@ -30,7 +50,11 @@ export async function portOwners(port: number): Promise<PortOwner[]> {
       `$cmd = if ($ci -and $ci.CommandLine) { ($ci.CommandLine -replace '[\\r\\n]+', ' ') } else { "" }; ` +
       `$created = if ($ci -and $ci.CreationDate) { $ci.CreationDate.ToFileTimeUtc() } else { "" }; ` +
       `Write-Output "$($p.Id)${FIELD_SEP}$($p.ProcessName)${FIELD_SEP}$cmd${FIELD_SEP}$created" } }`;
-    const out = await collect("powershell", ["-NoProfile", "-Command", ps]);
+    const out = await collect(
+      "powershell",
+      ["-NoProfile", "-Command", ps],
+      WIN_OWNER_PROBE_TIMEOUT_MS,
+    );
     return parseWinOwners(out);
   }
   const pidsOut = await collect("sh", ["-c", `lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null`]);
