@@ -578,22 +578,34 @@ test.skipIf(!isWin)(
       `$s = $ws.CreateShortcut('${lnk.replace(/'/g, "''")}');`,
       `$icon = ($s.IconLocation -split ',')[0];`,
       `$arg = $s.Arguments.Trim([char]34);`,
-      `[pscustomobject]@{ target=$s.TargetPath; args=$s.Arguments; iconExists=[bool](Test-Path $icon); vbsExists=[bool](Test-Path $arg) } | ConvertTo-Json -Compress`,
+      // Resolved relative to the EXE's folder, which is how the host itself resolves it.
+      `$cfg = Join-Path (Split-Path -Parent $s.TargetPath) $arg;`,
+      `[pscustomobject]@{ target=$s.TargetPath; args=$s.Arguments; iconExists=[bool](Test-Path $icon); targetExists=[bool](Test-Path $s.TargetPath); configExists=[bool](Test-Path $cfg) } | ConvertTo-Json -Compress`,
     ].join(" ");
     const r = Bun.spawnSync(["powershell", "-NoProfile", "-Command", resolve], { cwd: ROOT });
     const info = JSON.parse((r.stdout?.toString() ?? "{}").trim()) as {
       target: string;
       args: string;
       iconExists: boolean;
-      vbsExists: boolean;
+      targetExists: boolean;
+      configExists: boolean;
     };
-    must(/wscript/i.test(info.target), `shortcut target isn't wscript: ${info.target}`);
+    // The shortcut now runs the NATIVE tray host directly. wscript + Tray-Launch.vbs existed only
+    // to start PowerShell without a console flash, and the native host suppresses its own console,
+    // so both layers are gone: the daemon is created at ~25ms instead of ~475ms.
     must(
-      /Tray-Launch\.vbs/i.test(info.args),
-      `shortcut doesn't launch the shared Tray-Launch.vbs: ${info.args}`,
+      /lunarwerx-tray\.exe$/i.test(info.target),
+      `shortcut target isn't the native tray host: ${info.target}`,
     );
-    must(info.vbsExists, "shortcut points at a Tray-Launch.vbs that doesn't exist");
+    must(!/wscript/i.test(info.target), `shortcut still goes through wscript: ${info.target}`);
+    // The config filename IS the per-app surface: the binary is generic and shared.
+    must(
+      /DevWebUI-Tray\.json/i.test(info.args),
+      `shortcut doesn't pass DevWebUI-Tray.json: ${info.args}`,
+    );
+    must(info.targetExists, "shortcut points at a lunarwerx-tray.exe that doesn't exist");
+    must(info.configExists, "shortcut names a DevWebUI-Tray.json that doesn't exist");
     must(info.iconExists, "shortcut's tray icon (DevWebUI.ico) doesn't exist");
-    expect(info.iconExists && info.vbsExists).toBe(true);
+    expect(info.iconExists && info.targetExists && info.configExists).toBe(true);
   },
 );
