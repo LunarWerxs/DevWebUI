@@ -4,6 +4,17 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-08-09
+
+### Security
+
+- **Hardened how DevWebUI launches detached processes on Windows.** The fallback path used by
+  desktop shortcuts and the auto-update relaunch handed its command line to `cmd.exe`, which
+  re-parsed `&`, `|` and `^`. Those are legal in Windows paths, so a repo or profile folder
+  containing one was re-split by a second parser on its way to the process launcher. The
+  fallback now passes an argument array straight through with no shell in the middle. Shared
+  with the other LunarWerx apps; DevWebUI had been running behind that fix.
+
 ## [0.8.0] - 2026-08-09
 
 ### Security
@@ -499,7 +510,8 @@ First public, open-source release.
   `zod` is intentionally held at 3.x — `@modelcontextprotocol/sdk` is not yet
   zod-4 compatible, so bumping it would break the MCP server.
 
-[Unreleased]: https://github.com/LunarWerxs/devwebui/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/LunarWerxs/devwebui/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/LunarWerxs/devwebui/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/LunarWerxs/devwebui/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/LunarWerxs/devwebui/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/LunarWerxs/devwebui/compare/v0.6.0...v0.6.1
