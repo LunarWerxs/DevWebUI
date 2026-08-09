@@ -61,6 +61,7 @@ export const ROUTES = {
   projectsBrowseFolder: "/api/projects/browse-folder",
   projectsSuggestDest: "/api/projects/suggest-dest",
   projectsTakeOver: "/api/projects/take-over",
+  projectsRestoreAutostart: "/api/projects/restore-autostart",
 
   // ---- processes (collection + bulk actions) ----
   processes: "/api/processes",

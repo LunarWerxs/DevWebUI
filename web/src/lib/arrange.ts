@@ -31,11 +31,16 @@ export interface ArrangeOptions {
   statusFilter: StatusBucket[];
   /** Shared clock, only needed for the "uptime" sort. */
   now: number;
+  /** Case-insensitive process-name filter (the toolbar search box); blank matches everything. */
+  search?: string;
 }
 
 export function arrangeProcesses(list: ProcessView[], opts: ArrangeOptions): ProcessView[] {
   const allowed = new Set(opts.statusFilter);
-  const filtered = list.filter((p) => allowed.has(statusBucket(p.status)));
+  const q = opts.search?.trim().toLowerCase();
+  const filtered = list.filter(
+    (p) => allowed.has(statusBucket(p.status)) && (!q || p.name.toLowerCase().includes(q)),
+  );
 
   // Missing numeric values sort to the very bottom regardless of direction.
   const num = (v: number | null | undefined) => (v == null ? Number.NEGATIVE_INFINITY : v);

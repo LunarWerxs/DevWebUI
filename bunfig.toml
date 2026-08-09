@@ -2,11 +2,3 @@
 # pollute the real ~/.devwebui error log / runtime pointer. See tests/setup.ts.
 [test]
 preload = ["./tests/setup.ts"]
-
-# Isolated linker + global virtual store: package files live once on the machine and
-# node_modules is almost entirely symlinks into that store. Both keys are required;
-# the isolated linker alone still materialises every file and saves nothing.
-# Store location is machine-wide in ~/.bunfig.toml. See D:\NEWProjects\BUN_MIGRATION.md.
-[install]
-linker = "isolated"
-globalStore = true

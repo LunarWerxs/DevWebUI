@@ -16,8 +16,10 @@ import {
   Settings,
   Square,
   Table,
+  X,
 } from "@lucide/vue";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import Hint from "@/components/Hint.vue";
 import { useTooltipConfig } from "@/lib/tooltip-config";
 import { Label } from "@/components/ui/label";
@@ -52,7 +54,7 @@ const emit = defineEmits<{ add: []; notifications: []; settings: []; scan: [] }>
 const { t } = useI18n({ useScope: "global" });
 const { enabled: tooltipsEnabled } = useTooltipConfig();
 const store = useAppStore();
-const { errors, viewMode, statusFilter, unreadNotifications } = storeToRefs(store);
+const { errors, viewMode, statusFilter, unreadNotifications, searchQuery } = storeToRefs(store);
 const running = computed(() => props.processes.filter((p) => p.status === "running").length);
 const errorCount = computed(() => errors.value.length);
 // Bell badge: errors + unread notifications; red when there are errors, else accent.
@@ -61,6 +63,8 @@ const bellCount = computed(() => errorCount.value + unreadNotifications.value);
 // Filters live in a modal now (opened from the ⋮ menu) rather than the toolbar.
 const filtersOpen = ref(false);
 const shuttingDown = ref(false);
+const stopAllConfirmOpen = ref(false);
+const shutdownConfirmOpen = ref(false);
 
 const statusOptions = computed<{ value: StatusBucket; label: string }[]>(() => [
   { value: "running", label: t("filters.status.running") },
@@ -86,11 +90,32 @@ async function runShutdown() {
   }
 }
 
+// "Stop all" and "Shut down" sat in the same dropdown as harmless items (view toggle,
+// filters) and fired instantly — a stray click could take down every dev server or the
+// whole daemon. Confirm both; skip the confirm for Stop all when nothing is even running
+// (there's nothing destructive to warn about).
+function onStopAllClick() {
+  if (running.value > 0) stopAllConfirmOpen.value = true;
+  else void runAction(stopAll);
+}
+async function confirmStopAll() {
+  stopAllConfirmOpen.value = false;
+  await runAction(stopAll);
+}
+function onShutdownClick() {
+  shutdownConfirmOpen.value = true;
+}
+async function confirmShutdown() {
+  shutdownConfirmOpen.value = false;
+  await runShutdown();
+}
+
 async function updateApp() {
   if (store.updateChecking || store.updateApplying) return;
   try {
-    let status = store.updateStatus;
-    if (!status) status = await store.checkForUpdate();
+    // The explicit menu action bypasses the daemon's 5-minute status cache rather than
+    // silently reusing whatever the last background check found (see store.ts).
+    const status = await store.checkForUpdateFresh();
     if (!status?.ok) {
       toast.warning(t("actions.updateCheckFailed"), {
         description: status?.reason ?? undefined,
@@ -153,6 +178,28 @@ async function updateApp() {
           </span>
         </div>
       </Hint>
+
+      <!-- Narrows every project/process by name; the status filter above is separate. -->
+      <div class="relative mx-1 hidden items-center md:flex md:w-40 lg:w-56">
+        <Search class="pointer-events-none absolute left-2 size-3.5 text-muted-foreground" aria-hidden="true" />
+        <Input
+          v-model="searchQuery"
+          type="search"
+          class="h-8 pl-7"
+          :class="searchQuery ? 'pr-7' : 'pr-2'"
+          :placeholder="t('header.searchPlaceholder')"
+          :aria-label="t('header.searchAriaLabel')"
+        />
+        <button
+          v-if="searchQuery"
+          type="button"
+          class="absolute right-1.5 cursor-pointer rounded p-0.5 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          :aria-label="t('header.searchClear')"
+          @click="searchQuery = ''"
+        >
+          <X class="size-3.5" />
+        </button>
+      </div>
 
       <div class="ml-auto flex items-center gap-2">
         <Button
@@ -247,7 +294,7 @@ async function updateApp() {
 
             <DropdownMenuSeparator />
             <DropdownMenuItem @select="runAction(startAll)"><Play class="size-4" /> {{ t("actions.startAll") }}</DropdownMenuItem>
-            <DropdownMenuItem @select="runAction(stopAll)"><Square class="size-4" /> {{ t("actions.stopAll") }}</DropdownMenuItem>
+            <DropdownMenuItem @select="onStopAllClick"><Square class="size-4" /> {{ t("actions.stopAll") }}</DropdownMenuItem>
             <DropdownMenuItem :disabled="store.updateChecking || store.updateApplying" @select="updateApp">
               <Loader2 v-if="store.updateChecking || store.updateApplying" class="size-4 animate-spin" />
               <DownloadCloud v-else class="size-4" />
@@ -258,7 +305,7 @@ async function updateApp() {
             <DropdownMenuItem @select="emit('scan')">
               <Search class="size-4" /> {{ t("actions.scan") }}
             </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" :disabled="shuttingDown" @select="runShutdown">
+            <DropdownMenuItem variant="destructive" :disabled="shuttingDown" @select="onShutdownClick">
               <Power class="size-4" /> {{ t("actions.shutdown") }}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -300,6 +347,38 @@ async function updateApp() {
           <DialogClose as-child>
             <Button variant="outline">{{ t("filters.done") }}</Button>
           </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Confirm — Stop all (only shown when something is actually running) -->
+    <Dialog v-model:open="stopAllConfirmOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{{ t("actions.confirmStopAllTitle") }}</DialogTitle>
+          <DialogDescription>
+            {{ t("actions.confirmStopAllDescription", { count: running }, running) }}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" @click="stopAllConfirmOpen = false">{{ t("actions.cancel") }}</Button>
+          <Button variant="destructive" @click="confirmStopAll">{{ t("actions.stopAll") }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Confirm — Shut down (always confirmed; it takes the whole daemon down) -->
+    <Dialog v-model:open="shutdownConfirmOpen">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{{ t("actions.confirmShutdownTitle") }}</DialogTitle>
+          <DialogDescription>{{ t("actions.confirmShutdownDescription") }}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" @click="shutdownConfirmOpen = false">{{ t("actions.cancel") }}</Button>
+          <Button variant="destructive" :disabled="shuttingDown" @click="confirmShutdown">
+            {{ t("actions.shutdown") }}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

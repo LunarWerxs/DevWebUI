@@ -29,7 +29,8 @@
 // missing install surfaces as `SdkUnavailableError`, caught by `guardSync` in
 // connections-routes.ts like any other sync failure — never a boot crash.
 // ---------------------------------------------------------------------------
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { writeJsonAtomic } from "./atomic-write";
 import path from "node:path";
 import { dataDir } from "./data-dir";
 import type {
@@ -40,7 +41,7 @@ import type {
   TokenSet,
 } from "@cnct/connect";
 import { readSettings, writeSettings, type Settings } from "./runtime";
-import { seal, unseal, wrapTokenStore } from "./dpapi-seal.mjs";
+import { seal, sealingActive, unseal, wrapTokenStore } from "./dpapi-seal.mjs";
 
 /** DevWebUI's own public "Sign in with Connections" OAuth client (PKCE — no secret). Its client_id
  *  doubles as the settings-sync store `appId`, so DevWebUI's synced data is namespaced to itself. */
@@ -81,19 +82,7 @@ let loaded = false;
 
 function persist(): void {
   mkdirSync(dataDir(), { recursive: true });
-  const file = stateFile();
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  try {
-    writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
-    renameSync(tmp, file);
-  } catch (e) {
-    try {
-      rmSync(tmp, { force: true });
-    } catch {
-      /* best-effort temp cleanup */
-    }
-    throw e;
-  }
+  writeJsonAtomic(stateFile(), state, { mode: 0o600, trailingNewline: false });
 }
 
 // The SDK's persistence rides THIS module's state file (one 0600 JSON for everything), via a
@@ -173,6 +162,16 @@ export function initConnections(): void {
     state.sdk[TOKEN_KEY] = seal(JSON.stringify(seed)); // seal the seeded token at rest (Windows)
     delete state.refreshToken;
     persist();
+  }
+  // Say it out loud where at-rest sealing isn't available. dpapi-seal.mjs degrades to a
+  // plaintext passthrough off Windows by design, which is defensible — but silently, which
+  // is not: the user's refresh token is then only as protected as the file mode, and they
+  // had no way to find that out. Only warn when there is actually a token on disk to protect.
+  if (!sealingActive() && state.sdk?.[TOKEN_KEY]) {
+    console.warn(
+      "[devwebui] Connections sign-in token is stored UNENCRYPTED at rest on this platform " +
+        "(file permissions only). At-rest sealing is currently Windows-only.",
+    );
   }
 }
 
@@ -269,6 +268,15 @@ export interface SyncStatus {
   lastSyncedAt: string | null;
   version: number;
   appearance: Record<string, unknown> | null;
+  /**
+   * Whether the durable OAuth refresh token is encrypted AT REST. True on Windows, where
+   * dpapi-seal.mjs seals it with DPAPI (CurrentUser scope). Everywhere else that module
+   * degrades to a plaintext passthrough, so the token sits in ~/.devwebui protected only
+   * by file mode 0600 — readable by anything running as the same user. That degradation
+   * was previously invisible: a macOS/Linux user had no way to know the protection the
+   * docs describe does not apply to them. Surfaced so the GUI can say so plainly.
+   */
+  tokenSealed: boolean;
 }
 
 export function syncStatus(): SyncStatus {
@@ -281,6 +289,7 @@ export function syncStatus(): SyncStatus {
     lastSyncedAt: state.lastSyncedAt ?? null,
     version: state.version ?? 0,
     appearance: state.appearance ?? null,
+    tokenSealed: sealingActive(),
   };
 }
 

@@ -224,7 +224,10 @@ test("adding a process to the file leaves a RUNNING sibling untouched (same pid)
   }
 });
 
-test("changing a running process's COMMAND does restart it (the deliberate half)", async () => {
+test("changing a running process's COMMAND is HELD, not applied — restart applies it", async () => {
+  // A .devwebui landing on disk (a git pull, a branch switch, a teammate's commit) must
+  // never be able to relaunch a running server on a new command by itself. The watch
+  // registers the change and flags it; only an explicit restart re-execs.
   const dir = mkdtempSync(path.join(os.tmpdir(), "devwebui-watch-restart-"));
   const file = path.join(dir, ".devwebui");
   writeFileSync(file, projectJson(["web"], "Live", keepAliveCommand()));
@@ -239,11 +242,57 @@ test("changing a running process's COMMAND does restart it (the deliberate half)
     await waitFor(() => viewOf("web")?.status === "running");
     const pidBefore = viewOf("web")?.pid;
 
-    // A different keep-alive command: same shape, different exec → must re-exec.
+    // A different keep-alive command: same shape, different exec.
     const changed = `${quote(process.execPath)} -e ${quote("setInterval(() => {}, 999)")}`;
     writeFileSync(file, projectJson(["web"], "Live", changed));
+    await waitFor(() => viewOf("web")?.configChanged === true);
+
+    // Still the ORIGINAL process, on the original command.
+    expect(viewOf("web")?.status).toBe("running");
+    expect(viewOf("web")?.pid).toBe(pidBefore);
+    expect(viewOf("web")?.command).toBe(changed); // the new def IS registered…
+    expect(viewOf("web")?.configChanged).toBe(true); // …but flagged as not yet applied
+
+    // An explicit restart is what re-execs, and it clears the flag.
+    await manager.restart(viewOf("web")!.id);
     await waitFor(() => viewOf("web")?.status === "running" && viewOf("web")?.pid !== pidBefore);
     expect(viewOf("web")?.pid).not.toBe(pidBefore);
+    expect(viewOf("web")?.configChanged).toBeUndefined();
+  } finally {
+    await manager.stopAll();
+    watcher.stop();
+    manager.dispose();
+  }
+});
+
+test("a process ADDED to the file by a watch reload does not auto-start, even with autostart:true", async () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "devwebui-watch-newproc-"));
+  const file = path.join(dir, ".devwebui");
+  writeFileSync(file, projectJson(["web"], "Live", keepAliveCommand()));
+  const manager = new Manager();
+  manager.addProject(readDevWebUIFile(file), { autostart: false });
+  const watcher = new ProjectWatcher(manager);
+  watcher.start();
+  const viewOf = (localId: string) =>
+    manager.listProjects()[0]?.processes.find((x) => x.localId === localId);
+  try {
+    // `api` arrives with autostart:true. It must appear, and stay stopped.
+    const withAutostart = JSON.stringify(
+      {
+        name: "Live",
+        processes: [
+          { id: "web", name: "web", command: keepAliveCommand() },
+          { id: "api", name: "api", command: keepAliveCommand(), autostart: true },
+        ],
+      },
+      null,
+      2,
+    );
+    writeFileSync(file, withAutostart);
+    await waitFor(() => !!viewOf("api"));
+    await settle();
+    expect(viewOf("api")?.status).toBe("stopped");
+    expect(viewOf("api")?.pid).toBeNull();
   } finally {
     await manager.stopAll();
     watcher.stop();

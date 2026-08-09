@@ -51,8 +51,24 @@ jobs:
       - name: Build (i18n gate + vue-tsc + vite)
         run: bun run build
 
-      - name: Test
-        run: bun test
+      # Two runners, two suites, deliberately scoped so they never scan each other's files:
+      # `bun test` owns the daemon suites (tests/, server/tests/), Vitest owns web/src.
+      # Unscoped, `bun test` also picked up web/src/*.test.ts and ran Vitest specs under Bun —
+      # which happens to pass today and would break the moment a spec uses a Vitest-only API.
+      - name: Test (daemon)
+        run: bun run test
+
+      - name: Test (web)
+        run: bun run test:web
+
+      - name: Build release binary
+        run: bun run dist # scripts/build.ts — web build + `bun build --compile`
+
+      - name: Smoke-test the compiled binary
+        shell: bash
+        run: |
+          if [ -f dist/devwebui.exe ]; then bin=dist/devwebui.exe; else bin=dist/devwebui; fi
+          bun run scripts/smoke-release.ts "$bin"
 
     # NOTE: the windows-latest leg exercises the daemon's Windows-only metrics path
     # (bun:ffi, instead of the pidusage fallback used on Linux/macOS) AND the tray's

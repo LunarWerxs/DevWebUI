@@ -7,8 +7,10 @@ import {
   browseForFolder,
   cloneRepo,
   ignoreProject,
+  projectIdFromPath,
   readDevWebUIFile,
   readIgnoredProjects,
+  readRegistry,
   registryAdd,
   resolveLoadTarget,
   scaffoldDevWebUIFile,
@@ -16,7 +18,12 @@ import {
   unignoreProject,
 } from "../projects";
 import type { LoadTarget } from "../projects";
-import { detectAutostartTriggers, takeOverAutostart } from "../takeover";
+import {
+  canRestoreAutostart,
+  detectAutostartTriggers,
+  restoreAutostart,
+  takeOverAutostart,
+} from "../takeover";
 import { scanForDevWebUI, SCAN_PRESETS, type ScanPreset } from "../scan";
 import { readSettings } from "../runtime";
 import type { ProjectView } from "../types";
@@ -25,12 +32,30 @@ import { fail, guard, readBody } from "./core";
 
 /** Register project discovery/load/scaffold/take-over/clone/scan routes. */
 export function registerProjectRoutes(app: Hono, manager: Manager) {
-  /** Read a .devwebui file, register it, persist it to the registry. */
-  function loadProject(filePath: string): ProjectView {
+  /** True the first time a given .devwebui path is loaded on this machine. */
+  const isFirstLoad = (absPath: string): boolean => {
+    const id = projectIdFromPath(absPath);
+    return !readRegistry().some((p) => projectIdFromPath(p) === id);
+  };
+
+  /**
+   * Read a .devwebui file, register it, persist it to the registry.
+   *
+   * A FIRST-EVER load never auto-starts, even for processes marked `autostart: true`.
+   * "Add project" reads to a user as *register this*, not *execute this* — but a
+   * `.devwebui` is arbitrary shell, and the clone flow's whole purpose is pointing this
+   * at a repo the user hasn't read yet. Registering it silently ran that repo's command
+   * as the user, with no preview. Now the processes appear stopped, with their commands
+   * visible, and starting them is an explicit click. Re-loads of an ALREADY-known project
+   * keep auto-starting per their toggles (the user has seen it before, and the boot loop
+   * has its own `autoStartOnLaunch` gate).
+   */
+  function loadProject(filePath: string): { project: ProjectView; firstLoad: boolean } {
     const lp = readDevWebUIFile(filePath);
-    manager.addProject(lp);
+    const firstLoad = isFirstLoad(lp.path);
+    manager.addProject(lp, { autostart: !firstLoad });
     registryAdd(lp.path);
-    return manager.listProjects().find((p) => p.id === lp.id)!;
+    return { project: manager.listProjects().find((p) => p.id === lp.id)!, firstLoad };
   }
 
   /**
@@ -49,7 +74,7 @@ export function registerProjectRoutes(app: Hono, manager: Manager) {
     const file = await browseForDevWebUIFile(c.req.raw.signal);
     if (!file) return c.json({ cancelled: true });
     return guard(c, () =>
-      c.json(withTriggers({ ok: true, project: loadProject(file) }, path.dirname(file))),
+      c.json(withTriggers({ ok: true, ...loadProject(file) }, path.dirname(file))),
     );
   });
 
@@ -58,7 +83,7 @@ export function registerProjectRoutes(app: Hono, manager: Manager) {
     if (t.kind === "file") {
       try {
         const body = withTriggers(
-          { ok: true, project: loadProject(t.file), ...extra },
+          { ok: true, ...loadProject(t.file), ...extra },
           path.dirname(t.file),
         );
         return { body, status: 200 as const };
@@ -102,7 +127,7 @@ export function registerProjectRoutes(app: Hono, manager: Manager) {
       return fail(c, (e as Error).message);
     }
     try {
-      return c.json(withTriggers({ ok: true, project: loadProject(file), created: file }, dir));
+      return c.json(withTriggers({ ok: true, ...loadProject(file), created: file }, dir));
     } catch (e) {
       // We wrote the file but couldn't load it — don't leave an orphan that blocks retries.
       try {
@@ -121,7 +146,19 @@ export function registerProjectRoutes(app: Hono, manager: Manager) {
     const dir = String(body.dir ?? "").trim();
     if (!dir) return fail(c, "dir required");
     if (!existsSync(dir)) return fail(c, `Path not found: ${dir}`);
-    return guard(c, () => c.json({ ok: true, ...takeOverAutostart(dir) }));
+    return guard(c, () =>
+      c.json({ ok: true, ...takeOverAutostart(dir), canRestore: canRestoreAutostart(dir) }),
+    );
+  });
+
+  // Undo a take-over: put the backed-up VS Code config back. The backups have always been
+  // written; until now nothing could restore them.
+  app.post(ROUTES.projectsRestoreAutostart, async (c) => {
+    const body = await readBody(c);
+    const dir = String(body.dir ?? "").trim();
+    if (!dir) return fail(c, "dir required");
+    if (!existsSync(dir)) return fail(c, `Path not found: ${dir}`);
+    return guard(c, () => c.json({ ok: true, ...restoreAutostart(dir) }));
   });
 
   // Clone a git repo into `dest`, then load (or offer to scaffold) inside the clone.

@@ -23,9 +23,14 @@ const engine = createUpdater({
   buildCmd: ["bun", "run", "build"],
 });
 
-export function checkForUpdate(): Promise<UpdateStatus> {
+/**
+ * `opts.fresh` bypasses the 5-minute status cache, for a user who explicitly clicked
+ * "Check for updates". Only the compiled-binary (GitHub Releases) path caches at all —
+ * the git engine re-runs `ls-remote` every call — so the flag stops here for source checkouts.
+ */
+export function checkForUpdate(opts: { fresh?: boolean } = {}): Promise<UpdateStatus> {
   return isCompiledBinary()
-    ? checkReleaseUpdate()
+    ? checkReleaseUpdate(opts)
     : (engine.checkForUpdate() as Promise<UpdateStatus>);
 }
 

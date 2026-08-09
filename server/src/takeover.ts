@@ -12,7 +12,7 @@
 //   tasks.json    "runOn": "folderOpen"   -> "runOn": "default"  (manual-run only)
 //   settings.json "vite.autoStart": true  -> "vite.autoStart": false
 // ---------------------------------------------------------------------------
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parse as parseJsonc } from "jsonc-parser";
 import type { AutostartTrigger, TakeOverResult } from "../../shared/dto";
@@ -139,4 +139,45 @@ export function takeOverAutostart(dir: string): TakeOverResult {
   }
 
   return { disabled, backups, skipped };
+}
+
+export interface RestoreResult {
+  restored: string[];
+  skipped: { file: string; reason: string }[];
+}
+
+/**
+ * Undo a take-over: copy each `<file>${BACKUP_SUFFIX}` back over its original and remove the
+ * backup, so a later take-over can capture a fresh pristine copy.
+ *
+ * takeOverAutostart has always backed the originals up, but nothing could ever put them back —
+ * a user who took over by mistake, or who wants VS Code's folderOpen launch again, had to find
+ * the .bak files and rename them by hand. The backups were only half a feature without this.
+ */
+/** The VS Code files take-over may have rewritten, and so may need to restore. */
+const restorableFiles = (dir: string): string[] => [
+  path.join(dir, ".vscode", "tasks.json"),
+  path.join(dir, ".vscode", "settings.json"),
+];
+
+export function restoreAutostart(dir: string): RestoreResult {
+  const restored: string[] = [];
+  const skipped: { file: string; reason: string }[] = [];
+  for (const file of restorableFiles(dir)) {
+    const bak = file + BACKUP_SUFFIX;
+    if (!existsSync(bak)) continue;
+    try {
+      copyFileSync(bak, file);
+      rmSync(bak, { force: true });
+      restored.push(file);
+    } catch (e) {
+      skipped.push({ file, reason: (e as Error).message });
+    }
+  }
+  return { restored, skipped };
+}
+
+/** Whether a take-over of `dir` can be undone (a backup is still on disk). */
+export function canRestoreAutostart(dir: string): boolean {
+  return restorableFiles(dir).some((f) => existsSync(f + BACKUP_SUFFIX));
 }

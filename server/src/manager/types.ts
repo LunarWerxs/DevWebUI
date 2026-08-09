@@ -25,10 +25,22 @@ export interface Entry {
   /** While status is "waiting": the resolved port number being waited on (for the GUI hint). */
   waitingOnPort: number | null;
   logs: LogLine[];
+  /**
+   * The `.devwebui` changed this process's command/cwd/env/runtime while it was RUNNING,
+   * and the change came from a live file-watch reload rather than a user action — so it
+   * was recorded, not applied. Cleared on the next start. See ManagerWithProjects.reconcileProject.
+   */
+  configChanged: boolean;
   stopping: boolean;
   pendingStart: boolean; // start() is awaiting the async free-port step (no child yet)
   exitWaiters: Array<() => void>;
   stopTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * Bumped by every start()/stop() on this entry. `restart()` claims a generation after
+   * its stop resolves and re-checks it after the settle delay, so a stop() issued during
+   * that window cancels the pending re-start instead of being silently overridden.
+   */
+  generation: number;
 }
 
 export interface Project {

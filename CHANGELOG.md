@@ -4,6 +4,49 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **The daemon only binds to `127.0.0.1`.** It previously bound `0.0.0.0`, so it was reachable by
+  anything else on the same network, not just the local machine.
+- **The auto-updater verifies `SHA256SUMS.txt` before extracting or executing anything from a
+  downloaded release.**
+
+### Added
+
+- **The GUI can search logs, including on-disk log history**, not just the in-memory buffer.
+- **A config-drift badge.** If a project's `.devwebui` file changes on disk while its processes are
+  running, DevWebUI now holds the running configuration and flags it (`configChanged`) instead of
+  silently relaunching the server on the new command; the badge tells you a reload is waiting and
+  lets you take it.
+- **Name search**, plus confirmation prompts for stop-all and shutdown, and a re-runnable autostart
+  take-over action.
+- **New test coverage:** HTTP routes, MCP tools, autostart take-over, `.devwebui` file-store
+  integrity, updater checksum verification, and the daemon's bind address.
+
+### Changed
+
+- **Adding or cloning a project no longer auto-runs its commands on first load.** Registering a new
+  project used to start it immediately; it's now added inert like any other project.
+- **`update_process` merges instead of overwriting.** Omitting an optional field from an
+  `update_process` call now leaves the existing value alone rather than clearing it.
+- **`.devwebui` writes are atomic and preserve unknown keys.** Saves go through a temp file plus
+  rename, and any hand-added keys the schema doesn't know about survive a round-trip instead of
+  being dropped.
+- **Auto-update relaunches resume whatever was running before the update.**
+- **Port-conflict probing pauses when nothing is running and no client is connected**, instead of
+  polling in the background for no one.
+
+### Fixed
+
+- **Crash handlers no longer orphan managed child processes.** They now kill the whole managed
+  process tree instead of leaving it behind.
+- **Log vault files are deleted when a project is removed**, instead of being left on disk.
+- **`bun install` works again on a fresh machine.** The repo's `bunfig.toml` no longer forces Bun's
+  isolated linker and global store, which had been breaking CI and release builds on machines that
+  didn't already have that store set up.
+
 ## [0.7.0] - 2026-08-06
 
 ### Added

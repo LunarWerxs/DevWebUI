@@ -12,6 +12,7 @@ import { MAX_LOG_LINES } from "../../shared/constants";
 import type {
   AppNotification,
   ErrorEvent,
+  LogEntry,
   LogLine,
   ProcessView,
   ProjectView,
@@ -26,6 +27,9 @@ const VIEW_MODE_KEY = "devwebui.viewMode.v2";
 const LEGACY_VIEW_MODE_KEY = "devwebui.viewMode";
 let notifSeq = 0;
 let appOpenedPulsed = false;
+// Monotonic id for every log line the store ever appends (fetch or SSE), so the
+// drawer can key its list on stable identity instead of array index (see LogDrawer.vue).
+let logSeq = 0;
 
 function parseViewMode(value: string | null): ViewMode | null {
   return value === "cards" || value === "table" ? value : null;
@@ -59,7 +63,32 @@ export const useAppStore = defineStore("app", () => {
   const connected = ref(false);
   const { updateStatus, updateChecking, updateApplying, checkForUpdate, applyUpdate } =
     useSelfUpdate<UpdateStatus, UpdateApplyResult>(api);
-  const logs = ref<Record<string, LogLine[]>>({});
+
+  /**
+   * An explicit "Check for updates" click, as opposed to the background/mount-time check
+   * `checkForUpdate` performs. The daemon caches its release-status answer for 5 minutes
+   * (server/src/github-updater.ts), which is right for automatic polling and wrong for a
+   * user who just asked: a tab open longer than that would keep reporting "up to date"
+   * after a release actually shipped. `?fresh=1` bypasses that cache.
+   *
+   * Kept HERE rather than in useSelfUpdate: that file is a kit-synced shared lib
+   * (lunarwerx-ui/src/lib/useSelfUpdate.ts) and must stay byte-identical across every app,
+   * so a DevWebUI-only need is served from DevWebUI-owned code. It writes the same
+   * `updateStatus` ref the composable exposes, so both paths stay in sync.
+   */
+  async function checkForUpdateFresh(): Promise<UpdateStatus | null> {
+    if (updateChecking.value) return updateStatus.value;
+    updateChecking.value = true;
+    try {
+      updateStatus.value = await api.checkUpdate({ force: true });
+      return updateStatus.value;
+    } catch {
+      return updateStatus.value;
+    } finally {
+      updateChecking.value = false;
+    }
+  }
+  const logs = ref<Record<string, LogEntry[]>>({});
   const errors = ref<ErrorEvent[]>([]);
   /** Absolute dirs of detected projects the user dismissed (hidden from the background scan). */
   const ignoredProjects = ref<string[]>([]);
@@ -178,6 +207,12 @@ export const useAppStore = defineStore("app", () => {
   const statusFilter = useLocalStorage<StatusBucket[]>("devwebui.statusFilter", [
     ...ALL_STATUS_BUCKETS,
   ]);
+  /**
+   * Toolbar text search — filters every project/process by name (see lib/arrange.ts
+   * and ProjectPanel.vue). Deliberately NOT persisted: a leftover search term silently
+   * hiding everything on next launch would be far more confusing than starting blank.
+   */
+  const searchQuery = ref("");
 
   /** Click a column: same key flips direction, a new key starts ascending. */
   function toggleSort(key: SortKey) {
@@ -295,7 +330,7 @@ export const useAppStore = defineStore("app", () => {
           for (const [id, lines] of byProcess) {
             logs.value[id] ??= [];
             const arr = logs.value[id];
-            arr.push(...lines);
+            arr.push(...lines.map((l) => ({ ...l, seq: logSeq++ })));
             // Trim once per process batch. Splicing after every individual line repeatedly
             // shifted the same reactive array during high-volume output.
             if (arr.length > MAX_LOG_LINES) arr.splice(0, arr.length - MAX_LOG_LINES);
@@ -308,7 +343,7 @@ export const useAppStore = defineStore("app", () => {
 
   async function fetchLogs(id: string) {
     const data = await api.getProcessLogs(id);
-    logs.value[id] = data.lines;
+    logs.value[id] = data.lines.map((l) => ({ ...l, seq: logSeq++ }));
   }
 
   // ---- project mutations: hit the daemon, then refresh from the source of truth ----
@@ -539,6 +574,7 @@ export const useAppStore = defineStore("app", () => {
     sortKey,
     sortDir,
     statusFilter,
+    searchQuery,
     toggleSort,
     toggleStatusFilter,
     now,
@@ -553,6 +589,7 @@ export const useAppStore = defineStore("app", () => {
     ignoreProject,
     unignoreProject,
     checkForUpdate,
+    checkForUpdateFresh,
     applyUpdate,
     recordPulse,
     pulseAppOpenedOnce,

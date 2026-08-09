@@ -151,6 +151,22 @@ export function tailLog(id: string, lines: number): string[] {
   }
 }
 
+/**
+ * Delete a process's vault files (current + every rotation). Called when a project is
+ * explicitly removed: without it, each removed/re-added project or moved repo leaves up
+ * to ~3MB of logs for an id that can never be read again, since the GUI only tails ids
+ * it still knows about. Best-effort — a locked file is not worth failing a removal over.
+ */
+export function deleteLogs(id: string): void {
+  for (let rotation = 0; rotation <= KEEP_ROTATIONS; rotation++) {
+    try {
+      rmSync(logPath(id, rotation), { force: true });
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
 export const LOG_ROTATION_MAX_BYTES = MAX_BYTES;
 export const LOG_ROTATION_KEEP = KEEP_ROTATIONS;
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { toast } from "vue-sonner";
 import { Eye, EyeOff, FolderSearch, Search } from "@lucide/vue";
 import {
   Dialog,
@@ -156,9 +157,15 @@ function finish(res: AddResult) {
     // Project added — but it also auto-starts its dev server outside DevWebUI.
     // Keep the dialog open to offer retiring those triggers (it's already added).
     takeover.value = { dir: res.dir, triggers: res.autostartTriggers };
+    if (res.firstLoad) toast.success(t("addProject.firstLoadHint"));
     return;
   }
-  if (res.ok) open.value = false;
+  if (res.ok) {
+    // A brand-new path never auto-starts anything on its first load — the dialog
+    // closes right below (no blocking step), so this is a toast, not inline copy.
+    if (res.firstLoad) toast.success(t("addProject.firstLoadHint"));
+    open.value = false;
+  }
 }
 
 async function createScaffold() {

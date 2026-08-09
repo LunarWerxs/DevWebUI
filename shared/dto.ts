@@ -53,6 +53,13 @@ export interface ProcessView {
   conflict: boolean;
   /** While status is "waiting": the port number this process is waiting to see open. */
   waitingOnPort?: number;
+  /**
+   * The project's `.devwebui` changed this process's command/cwd/env on disk while it was
+   * running, and DevWebUI deliberately did not apply it (a file edit must not be able to
+   * relaunch a server on a new command by itself). The process is still running its
+   * original definition; restarting it applies the new one.
+   */
+  configChanged?: boolean;
 }
 
 /** A loaded project (codebase) as projected to a client. */
@@ -259,6 +266,13 @@ export type AddResult = {
   proposal?: ProjectProposal;
   // When the added/loaded repo also auto-starts its dev server outside DevWebUI:
   autostartTriggers?: AutostartTrigger[];
+  /**
+   * True when this exact path had never been added before, so DevWebUI registered its
+   * processes WITHOUT starting any of them, `autostart: true` included. Adding a project
+   * must not silently execute a repo's commands; the GUI tells the user they're staged
+   * and waiting for an explicit Start.
+   */
+  firstLoad?: boolean;
 };
 
 // ---- app updates / pulse --------------------------------------------------

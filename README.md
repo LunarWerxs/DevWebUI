@@ -7,7 +7,7 @@
 
 ### A GUI **+ MCP** control plane for your local dev servers
 
-Run every dev server from one pane — click to start, stop and restart, and watch live status, CPU,
+Run every dev server from one pane: click to start, stop and restart, and watch live status, CPU,
 memory and logs. Then let your AI agents drive the **same** daemon over MCP.<br/>
 No more `bun run dev` babysitting across a dozen terminal tabs.
 
@@ -20,7 +20,7 @@ No more `bun run dev` babysitting across a dozen terminal tabs.
 
 <br/>
 
-<img src="docs/screenshot.png" alt="DevWebUI managing local dev servers — two projects with running and stopped processes, each showing live status, port, uptime, CPU and memory." width="860" />
+<img src="docs/screenshot.png" alt="DevWebUI managing local dev servers, two projects with running and stopped processes, each showing live status, port, uptime, CPU and memory." width="860" />
 
 </div>
 
@@ -28,22 +28,22 @@ No more `bun run dev` babysitting across a dozen terminal tabs.
 
 The good local-dev GUIs (hotel, exo) are abandoned. PM2's web UI is paid. Everything else that's
 still maintained is a TUI or a heavy container/k8s tool. Nobody ships the one thing you actually
-want for a fleet of dev servers: **a GUI and MCP over one daemon** — so you click, your agents
+want for a fleet of dev servers: **a GUI and MCP over one daemon**, so you click, your agents
 automate, and everyone works off a single source of truth.
 
 ## Run it
 
-**Prebuilt Windows app** — download `devwebui-windows-x64.exe` from
+**Prebuilt Windows app**: download `devwebui-windows-x64.exe` from
 [Releases](https://github.com/LunarWerxs/DevWebUI/releases) and run it directly. It is an
 icon-bearing GUI executable with the dashboard embedded and no console window or sidecar folders.
 The ZIP beside it is reserved for automatic updates.
 
-**Windows source checkout** — double-click the **`DevWebUI`** shortcut. It runs hidden with a tray
+**Windows source checkout**: double-click the **`DevWebUI`** shortcut. It runs hidden with a tray
 icon: right-click for **Open / Rebuild & Restart / Restart / Stop all processes / Quit**
 (**Stop all processes** halts every dev server and leaves DevWebUI running). The first launch builds once;
 after that it's instant. Changed the GUI? Hit **Rebuild & Restart**.
 
-**Any OS** — from a terminal:
+**Any OS**: from a terminal:
 
 ```bash
 bun install
@@ -59,15 +59,15 @@ taken, the daemon hops to the next free one and opens the URL it actually bound.
 
 ## What you get
 
-- **One-click control** — start / stop / restart any dev server; live status, CPU, memory, logs.
-- **One panel per repo** — a `.devwebui` file groups every process under one collapsible header; your projects auto-reload next launch.
-- **Runtime-aware launches** — automatic mode follows each project's lockfile, and compatible Bun/Node commands launch without a permanent shell wrapper.
-- **Port-conflict rescue** — detects a taken port, tells you which process is holding it, and frees it on request.
-- **Persistent error log** — de-duplicated stderr / crashes / error-looking stdout that survives restarts.
-- **Desktop shortcuts** — send any server (or a whole repo) to your Desktop from the ⋮ menu; double-click starts it, linked servers and all, in a small window with a Stop button.
-- **Built for agents** — a full set of MCP tools drives the same daemon you click, off one shared state.
-- **Localized & themed** — full i18n (English base; [add a language](web/src/i18n/README.md)), light/dark.
-- **Lives in your tray** — a Windows tray app runs the daemon hidden; Open / Rebuild / Restart / Quit.
+- **One-click control**: start / stop / restart any dev server; live status, CPU, memory, logs.
+- **One panel per repo**: a `.devwebui` file groups every process under one collapsible header; your projects auto-reload next launch.
+- **Runtime-aware launches**: automatic mode follows each project's lockfile, and compatible Bun/Node commands launch without a permanent shell wrapper.
+- **Port-conflict rescue**: detects a taken port, tells you which process is holding it, and frees it on request.
+- **Persistent error log**: de-duplicated stderr / crashes / error-looking stdout that survives restarts.
+- **Desktop shortcuts (Windows)**: send any server (or a whole repo) to your Desktop from the ⋮ menu; double-click starts it, linked servers and all, in a small window with a Stop button.
+- **Built for agents**: a full set of MCP tools drives the same daemon you click, off one shared state.
+- **Localized & themed**: full i18n (English base; [add a language](web/src/i18n/README.md)), light/dark.
+- **Lives in your tray**: a Windows tray app runs the daemon hidden; Open / Rebuild / Restart / Quit.
 
 <table>
   <tr>
@@ -78,13 +78,13 @@ taken, the daemon hops to the next free one and opens the URL it actually bound.
     </td>
     <td width="50%" valign="top">
       <b>De-duplicated error log</b><br/>
-      Repeats collapse into one entry with a count — and it survives restarts.<br/><br/>
+      Repeats collapse into one entry with a count, and it survives restarts.<br/><br/>
       <img src="docs/errors.png" alt="DevWebUI's de-duplicated error log, with occurrence counts" />
     </td>
   </tr>
 </table>
 
-<p align="center"><sub>Dark by default — a light theme ships too.</sub></p>
+<p align="center"><sub>Dark by default, a light theme ships too.</sub></p>
 <p align="center"><img src="docs/light.png" alt="DevWebUI in its light theme" width="820" /></p>
 
 ## `.devwebui` files
@@ -103,7 +103,7 @@ One small file per repo lists the servers to run. Drop it in the repo root and c
 
 Per-process: `id`, `name`, `command`, plus optional `cwd`, `port`, `url`, `color`, `env`,
 `autostart`, `waitForPort`, `links`, `companion`. You can also add and edit processes right in the
-GUI — DevWebUI writes them back to the file. `links` groups servers that run as one unit
+GUI, and DevWebUI writes them back to the file. `links` groups servers that run as one unit
 (starting or stopping one starts or stops them all); `companion` marks a process, like a shared
 database, that starts alongside any other process in the project you start by hand.
 
@@ -127,7 +127,7 @@ state. Start the daemon, then register:
 }
 ```
 
-17 tools cover projects, processes (start/stop/restart, enable/disable, all), logs and the error
+31 tools cover projects, processes (start/stop/restart, enable/disable, all), logs and the error
 log. **Full list →** [`AI_GUIDE.md`](AI_GUIDE.md#for-an-ai-driving-devwebui-over-mcp)
 
 ## CLI
@@ -140,7 +140,7 @@ devwebui open <folder|file.devwebui>                  # add/drop a project; star
 devwebui mcp                                           # the stdio MCP server for agents
 ```
 
-A thin client over the same REST API the GUI and MCP use — run `devwebui --help` for the rest;
+A thin client over the same REST API the GUI and MCP use. Run `devwebui --help` for the rest;
 `DEVWEBUI_URL` / `DEVWEBUI_PORT` point it at another daemon.
 
 ## Stack
@@ -150,15 +150,19 @@ Reka UI, Tailwind v4 (zinc + indigo, light/dark). See the [changelog](CHANGELOG.
 
 ## Local-first
 
-DevWebUI runs entirely on your machine — a single daemon on your localhost, open source under the
-[MIT License](LICENSE). Core functionality needs no account and no cloud. One optional extra:
+DevWebUI runs entirely on your machine: a single daemon on your localhost, open source under the
+[MIT License](LICENSE). Core functionality needs no account and no cloud. Two optional extras:
 
-- **Settings sync** — sign in with a LunarWerx Connections account to sync a small allowlist of
+- **Settings sync**: sign in with a LunarWerx Connections account to sync a small allowlist of
   portable prefs + theme across machines. Off by default; only runs after you explicitly enable it
   in Settings, and `@cnct/connect` (the SDK it needs, which also ships the settings-store locker
   client) is an optional dependency that is installed but never imported or initialized unless
   you do.
+- **Product-pulse telemetry.** A `recordPulse` hook on a few daemon routes (update checks, update
+  apply results) sends nothing in this open-source build unless you set `DEVWEBUI_PULSE_URL` (or
+  `CONNECTIONS_PULSE_URL`) to point it at your own collector, and `DEVWEBUI_PULSE_DISABLE=1` (or
+  `CONNECTIONS_PULSE_DISABLE=1`) forces it off regardless of that.
 
-On the roadmap: macOS / Linux tray, an in-GUI env editor, log search, and multi-host.
+On the roadmap: macOS / Linux tray, an in-GUI env editor, and multi-host.
 
 Sponsored by **[LunarWerx Studios](https://lunarwerx.com/)**.

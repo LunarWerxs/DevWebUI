@@ -101,8 +101,13 @@ export const freePort = (processId: string, confirm = false) =>
 /** Read global settings. */
 export const getSettings = () => reqJson<Settings>(ROUTES.settings);
 
-/** Check the public source remote for an app update. */
-export const checkUpdate = () => reqJson<UpdateStatus>(ROUTES.updates);
+/**
+ * Check the public source remote for an app update. The daemon caches its answer
+ * briefly (see server/src/github-updater.ts); pass `force: true` (the explicit
+ * "Check for updates" menu action) to bypass that cache and hit the remote now.
+ */
+export const checkUpdate = (opts?: { force?: boolean }) =>
+  reqJson<UpdateStatus>(opts?.force ? `${ROUTES.updates}?fresh=1` : ROUTES.updates);
 
 /** Apply an available source update. The daemon should be restarted afterward. */
 export const applyUpdate = () =>

@@ -68,12 +68,30 @@ initFileLogging(dataDir());
 // unknown state). The tray's health watchdog sees the daemon go unresponsive and relaunches it;
 // the console.error above is now teed to daemon.log, so the reason is on disk even after the
 // process is gone.
+//
+// They also take the managed children down with us. DevWebUI's core promise is that it owns
+// the lifecycle of the servers it launches; exiting on a stray throw while leaving a fleet of
+// orphaned dev servers holding their ports is the loudest possible way to break it, and the
+// user is then hunting PIDs by hand. `killAllSync` is deliberately synchronous — these
+// handlers exit immediately, so there is no event loop left to await the normal `stopAll()`.
+// Assigned after the Manager is constructed below; null before that, when nothing has spawned.
+let liveManager: Manager | null = null;
+const killChildrenOnCrash = () => {
+  try {
+    const killed = liveManager?.killAllSync() ?? [];
+    if (killed.length) console.error(`[devwebui] killed ${killed.length} managed process(es).`);
+  } catch (e) {
+    console.error("[devwebui] failed to kill managed processes during crash exit:", e);
+  }
+};
 process.on("uncaughtException", (err) => {
   console.error("[devwebui] uncaught exception:", err);
+  killChildrenOnCrash();
   process.exit(1);
 });
 process.on("unhandledRejection", (reason) => {
   console.error("[devwebui] unhandled rejection:", reason);
+  killChildrenOnCrash();
   process.exit(1);
 });
 
@@ -122,6 +140,7 @@ const PORT =
 
 materializeSettings(); // write the full settings file (incl. editable osSkip lists) on first run
 const manager = new Manager();
+liveManager = manager; // arm the crash handlers registered above
 const startupSettings = readSettings();
 manager.globalRuntime = startupSettings.runtime;
 manager.freePortOnStart = startupSettings.freePortOnStart;
@@ -142,6 +161,21 @@ for (const file of readRegistry()) {
   } catch (e) {
     console.error(`[devwebui] skipping ${file}: ${(e as Error).message}`);
   }
+}
+
+// Auto-update continuity: our predecessor handed us the ids it had RUNNING when it stepped
+// aside (see the relaunch hook below). Applying an update otherwise silently took every dev
+// server down and left it down, because the successor only auto-starts when the separate
+// `autoStartOnLaunch` setting happens to be on — so the one feature whose whole promise is
+// "update without you noticing" was the one that stopped your work. Resume exactly that set,
+// nothing more: processes the user had stopped stay stopped.
+const resumeIds = (process.env.DEVWEBUI_RELAUNCH_RESUME ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+if (process.env.DEVWEBUI_RELAUNCH === "1" && resumeIds.length) {
+  manager.startProcesses(resumeIds);
+  console.log(`[devwebui] resuming ${resumeIds.length} process(es) after auto-update.`);
 }
 
 // That loop is the ONLY time a project's file is read at boot, and the daemon outlives
@@ -215,13 +249,17 @@ const app = createApp(manager, {
 setAutoUpdateBroadcast((event, data) => manager.emit("autoUpdate", { event, data }));
 setAutoUpdateHooks({
   relaunch: () => {
+    // Snapshot what's running BEFORE we shut down, and hand it to the successor so the
+    // update doesn't leave the user's fleet stopped. Env var rather than a file: nothing
+    // to clean up, nothing to go stale, and it dies with the process if the spawn fails.
+    const resume = manager.runningIds();
     try {
       const child = spawn(process.argv[0]!, process.argv.slice(1), {
         cwd: process.cwd(),
         detached: true,
         stdio: "ignore",
         windowsHide: true,
-        env: { ...process.env, DEVWEBUI_RELAUNCH: "1" },
+        env: { ...process.env, DEVWEBUI_RELAUNCH: "1", DEVWEBUI_RELAUNCH_RESUME: resume.join(",") },
       });
       child.unref();
     } catch (e) {
@@ -258,6 +296,7 @@ const bunRuntime = (
   globalThis as unknown as {
     Bun: {
       serve(options: {
+        hostname: string;
         port: number;
         fetch: (request: Request) => Response | Promise<Response>;
         idleTimeout: number;
@@ -266,6 +305,14 @@ const bunRuntime = (
   }
 ).Bun;
 const server = bunRuntime.serve({
+  // LOOPBACK ONLY, and not optional. Bun.serve defaults to 0.0.0.0 when `hostname` is
+  // omitted, which put the daemon on every interface — reachable from anything sharing the
+  // network. The API is unauthenticated by design (single-user, own machine) and the CSRF
+  // guard in loopback-guard.mjs explicitly assumes this bind: it trusts any request without
+  // browser provenance headers, so a LAN client only had to send `Host: 127.0.0.1` to drive
+  // every mutating route, including the ones that spawn configured commands. Binding
+  // loopback is what makes that guard's threat model true. See tests/bind-address.test.ts.
+  hostname: "127.0.0.1",
   port: PORT,
   fetch: app.fetch,
   idleTimeout: 255, // keep SSE connections alive (Bun max)

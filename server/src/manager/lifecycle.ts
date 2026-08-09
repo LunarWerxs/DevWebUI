@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import treeKill from "tree-kill";
 import type { FreePortResult, PortOwner } from "../../../shared/dto";
 import { freePort, isPortListening, killPids, portOwners } from "../ports";
@@ -39,9 +39,11 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
   start(id: string): void {
     const e = this.entries.get(id);
     if (!e || e.child || e.pendingStart) return;
+    e.generation++; // see Entry.generation — lets an in-flight restart() detect it was overtaken
     this.cancelQueuedStart(id);
     e.stopping = false;
     e.exitCode = null;
+    e.configChanged = false; // this start uses the current def, so any held drift is now applied
     this.clearStopTimer(e);
 
     // Dependency-ordered startup (S): wait for a declared port before spawning. The
@@ -253,6 +255,7 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
   stop(id: string): Promise<void> {
     const e = this.entries.get(id);
     if (!e) return Promise.resolve();
+    e.generation++; // see Entry.generation — cancels a restart still waiting out its settle delay
     this.cancelQueuedStart(id);
     if (e.pendingStart) {
       // Cancel a start still waiting on a dependency port or the free-port step
@@ -312,6 +315,15 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
         () => forceKill(`process did not exit after ${KILL_GRACE_MS}ms`),
         KILL_GRACE_MS,
       );
+      // PLATFORM NOTE — this grace window is real on POSIX and nominal on Windows.
+      // tree-kill shells out to `taskkill /pid <n> /T /F` on win32 and IGNORES the signal
+      // argument, so a Windows stop is always an immediate forced tree kill and the timer
+      // above never fires. That is a deliberate trade, not an oversight: `taskkill` WITHOUT
+      // /F only posts WM_CLOSE, which a console dev server has no window to receive, so a
+      // graceful-first attempt would no-op and then cost every single stop the full
+      // KILL_GRACE_MS before escalating. Real graceful shutdown on Windows needs the child
+      // spawned in its own process group plus a console-ctrl-event sender; until that
+      // exists, forced is both the honest and the faster behavior.
       try {
         treeKill(pid, "SIGTERM", (err) => {
           if (err) forceKill(`SIGTERM failed for process ${pid}: ${err.message}`);
@@ -327,7 +339,12 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
     if (!e) return;
     const wasRunning = !!e.child;
     await this.stop(id);
+    // Claim the entry for THIS restart, then re-check after the settle delay. A stop()
+    // that lands inside that window bumps the generation, and we abandon the re-start
+    // rather than resurrecting a process the user just asked to stop.
+    const generation = ++e.generation;
     await new Promise((r) => setTimeout(r, 200));
+    if (this.entries.get(id) !== e || e.generation !== generation) return;
     if (wasRunning || e.status === "stopped" || e.status === "crashed") e.restarts += 1;
     this.start(id);
   }
@@ -349,6 +366,46 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
 
   async stopAll(): Promise<void> {
     await Promise.all([...this.entries.keys()].map((id) => this.stop(id)));
+  }
+
+  /**
+   * SYNCHRONOUS best-effort kill of every managed child. For the last-resort crash
+   * handlers ONLY (uncaughtException / unhandledRejection in server/src/index.ts), which
+   * call `process.exit(1)` immediately and therefore cannot await the ordinary async
+   * `stopAll()`. Without it, any unhandled throw anywhere in the daemon orphans every dev
+   * server it launched — the app silently stops owning the lifecycle it promises to own,
+   * and the user is left hunting PIDs.
+   *
+   * Deliberately does NOT flush settings, emit events, or wait for exit: the process is
+   * already going down and a hung await here would lose the kill entirely. Returns the
+   * ids it signalled so the caller can log them.
+   */
+  killAllSync(): string[] {
+    const killed: string[] = [];
+    for (const e of this.entries.values()) {
+      const pid = e.pid;
+      if (!pid) continue;
+      try {
+        if (process.platform === "win32") {
+          spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+            stdio: "ignore",
+            windowsHide: true,
+          });
+        } else {
+          // Prefer the whole process group (a `sh -c` wrapper's children die with it);
+          // fall back to the direct pid when the child isn't its own group leader.
+          try {
+            process.kill(-pid, "SIGKILL");
+          } catch {
+            process.kill(pid, "SIGKILL");
+          }
+        }
+        killed.push(e.def.id);
+      } catch {
+        /* best-effort: a child that already exited is not a failure */
+      }
+    }
+    return killed;
   }
 
   /**

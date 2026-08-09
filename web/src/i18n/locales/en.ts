@@ -37,6 +37,9 @@ export default {
     notificationsCount: "Notifications ({count})",
     more: "More actions",
     moreTooltip: "More — view, filters, start all, stop all, scan, settings, shutdown",
+    searchPlaceholder: "Search projects and processes…",
+    searchAriaLabel: "Search projects and processes",
+    searchClear: "Clear search",
   },
   view: {
     label: "View",
@@ -74,6 +77,13 @@ export default {
     updateApplied: "Update applied",
     updateRestart: "Restart DevWebUI to run the new code.",
     updateFailed: "Update failed",
+    cancel: "Cancel",
+    confirmStopAllTitle: "Stop all running processes?",
+    confirmStopAllDescription:
+      "This stops {count} running process across every project. | This stops {count} running processes across every project.",
+    confirmShutdownTitle: "Shut down DevWebUI?",
+    confirmShutdownDescription:
+      "This stops the DevWebUI daemon itself, along with every process it's running. You'll need to relaunch it to use DevWebUI again.",
   },
   home: {
     noProjectsYet: "No projects yet",
@@ -82,6 +92,12 @@ export default {
   logs: {
     title: "Logs",
     noOutput: "No output yet.",
+    filterPlaceholder: "Filter lines…",
+    filterAriaLabel: "Filter log lines",
+    filterClear: "Clear filter",
+    loadOlder: "Load older history",
+    loadingOlder: "Loading…",
+    noMatch: "No lines match your filter.",
   },
   groupAction: {
     alsoStarted: "Also started: {names}",
@@ -158,6 +174,8 @@ export default {
     unstar: "Unstar",
     linkedWith: "Linked — starts and stops together with {names}",
     companionBadge: "Companion — starts with any server in this project",
+    configChangedTooltip: "Its .devwebui entry changed on disk. Restart to apply it.",
+    configChangedRestartAriaLabel: "Restart {name} to apply its changed config",
   },
   processForm: {
     addProcess: "Add process",
@@ -246,6 +264,8 @@ export default {
     companionBadge: "Companion — starts with any server in this project",
     autostartOff:
       "Autostart off — dimmed because it won't start on its own; toggle it in the ⋮ menu",
+    configChangedTooltip: "Its .devwebui entry changed on disk. Restart to apply it.",
+    configChangedRestartAriaLabel: "Restart {name} to apply its changed config",
   },
   projectPanel: {
     triggerAriaLabel: "{name} — {running}/{total} running, {action}",
@@ -267,6 +287,11 @@ export default {
       "This removes {name} from DevWebUI and stops its {count} process. The .devwebui file stays on disk. | This removes {name} from DevWebUI and stops its {count} processes. The .devwebui file stays on disk.",
     noProcessesMatch: "No processes match the current filter.",
     addProcess: "Add process",
+    checkAutostart: "Check for conflicting autostart",
+    takeoverCheckTitle: "External autostart check",
+    takeoverCheckDescription:
+      "Looks for a VS Code task or the Vite extension starting this project's dev server outside DevWebUI, and retires it if found.",
+    takeoverChecking: "Checking for conflicts…",
     editProject: "Edit project",
     editProjectTitle: "Edit project",
     editProjectDescription: "Rename this project and choose its accent color.",
@@ -390,6 +415,8 @@ export default {
     dropFolder: "folder “{name}”",
     dropPrompt:
       "Found {what}, but your browser hides where it lives on disk. Click Browse… below to confirm it, or paste its full path above.",
+    firstLoadHint:
+      "Added, but nothing was started. Review the commands, then press Start when you're ready.",
     titleTakeover: "Take over the dev server",
     titleScan: "Scan for projects",
     titleAdd: "Add a project",

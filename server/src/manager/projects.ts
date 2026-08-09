@@ -1,4 +1,5 @@
 import type { LoadedProject } from "../types";
+import { deleteLogs } from "../log-vault";
 import { clearEnabledOverrides, clearProjectOverride } from "../state";
 import { ManagerWithLifecycle } from "./lifecycle";
 
@@ -37,11 +38,24 @@ export class ManagerWithProjects extends ManagerWithLifecycle {
     this.emitProjects();
   }
 
-  /** Apply a re-read of a project's file, preserving the running state of unchanged processes. */
-  reconcileProject(lp: LoadedProject): void {
+  /**
+   * Apply a re-read of a project's file, preserving the running state of unchanged processes.
+   *
+   * `opts.fromWatch` marks a reload triggered by the file changing ON DISK rather than by a
+   * user action in the GUI/CLI/MCP. That distinction is a security boundary: a `git pull`,
+   * a branch switch, or a teammate's commit can change a `.devwebui` with no code execution
+   * involved, and applying it blindly would relaunch a running server on an attacker-supplied
+   * command — or start a brand-new one — within one debounce window. So a watch-driven reload
+   * REGISTERS the new definition but does not act on it: changed processes keep running as
+   * they were and are flagged `configChanged` for an explicit restart, and newly-appeared
+   * processes stay stopped regardless of `autostart`. GUI-driven edits (opts absent) apply
+   * immediately, exactly as before — the user is right there and asked for it.
+   */
+  reconcileProject(lp: LoadedProject, opts?: { fromWatch?: boolean }): void {
+    const fromWatch = opts?.fromWatch === true;
     const existing = this.projects.get(lp.id);
     if (!existing) {
-      this.addProject(lp);
+      this.addProject(lp, { autostart: !fromWatch });
       return;
     }
 
@@ -61,7 +75,7 @@ export class ManagerWithProjects extends ManagerWithLifecycle {
       const e = this.entries.get(def.id);
       if (!e) {
         this.entries.set(def.id, this.newEntry(def));
-        if (this.willAutostart(def)) newAutostartIds.push(def.id);
+        if (this.willAutostart(def) && !fromWatch) newAutostartIds.push(def.id);
       } else {
         const execChanged =
           e.def.command !== def.command ||
@@ -69,8 +83,21 @@ export class ManagerWithProjects extends ManagerWithLifecycle {
           e.def.runtime !== def.runtime ||
           JSON.stringify(e.def.env ?? null) !== JSON.stringify(def.env ?? null);
         e.def = def;
-        if (execChanged && e.child) void this.restart(def.id);
-        else this.emitStatus(e);
+        if (execChanged && e.child) {
+          if (fromWatch) {
+            // Registered, not applied — the running child keeps the definition it started
+            // with until the user restarts it. `configChanged` drives the GUI's badge.
+            e.configChanged = true;
+            this.addLog(
+              e,
+              "stderr",
+              "[devwebui] this process's .devwebui entry changed on disk; restart it to apply the new command.",
+            );
+            this.emitStatus(e);
+          } else {
+            void this.restart(def.id);
+          }
+        } else this.emitStatus(e);
       }
     }
     this.startMany(newAutostartIds);
@@ -85,7 +112,10 @@ export class ManagerWithProjects extends ManagerWithLifecycle {
     const proj = this.projects.get(id);
     if (!proj) return;
     await Promise.all(proj.processIds.map((pid) => this.stop(pid)));
-    for (const pid of proj.processIds) this.errors.clear(pid);
+    for (const pid of proj.processIds) {
+      this.errors.clear(pid);
+      deleteLogs(pid); // no reader can ever reach these again — don't leave them on disk
+    }
     clearEnabledOverrides(proj.processIds); // explicit removal — drop its toggles
     clearProjectOverride(id);
     this.purgeProject(id);
@@ -106,6 +136,16 @@ export class ManagerWithProjects extends ManagerWithLifecycle {
   startProject(id: string): void {
     const p = this.projects.get(id);
     if (p) this.startMany(p.processIds);
+  }
+
+  /** Ids of every process with a live child — the snapshot the auto-update relaunch restores. */
+  runningIds(): string[] {
+    return [...this.entries.values()].filter((e) => e.child).map((e) => e.def.id);
+  }
+
+  /** Start an explicit list of ids through the ordinary staggered, dependency-ordered queue. */
+  startProcesses(ids: string[]): void {
+    this.startMany(ids.filter((id) => this.entries.has(id)));
   }
 
   async stopProject(id: string): Promise<void> {

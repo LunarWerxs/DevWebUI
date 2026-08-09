@@ -9,8 +9,9 @@
 //     stack without touching the individual per-process toggles.
 // A process auto-starts iff  projectEnabled(project) && processEnabled(process).
 // ---------------------------------------------------------------------------
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { writeJsonAtomic } from "./atomic-write";
 import { dataDir } from "./data-dir";
 
 const stateFile = (): string => path.join(dataDir(), "state.json");
@@ -40,7 +41,7 @@ function persist(): void {
   if (!cache) return;
   try {
     mkdirSync(dataDir(), { recursive: true });
-    writeFileSync(stateFile(), JSON.stringify(cache, null, 2));
+    writeJsonAtomic(stateFile(), cache, { trailingNewline: false });
   } catch {
     /* best-effort — losing a toggle is recoverable */
   }

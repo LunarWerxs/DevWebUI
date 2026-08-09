@@ -298,6 +298,18 @@ function onStop(p: ProcessView) {
                   <TriangleAlert class="size-3" aria-hidden="true" /> {{ errorCountByProcess[p.id] }}
                 </button>
               </Hint>
+              <!-- .devwebui changed this process's command/cwd/env on disk while it kept running
+                   on its old definition; the daemon deliberately did not apply the change by itself. -->
+              <Hint v-if="p.configChanged" :label="t('processTable.configChangedTooltip')">
+                <button
+                  type="button"
+                  :aria-label="t('processTable.configChangedRestartAriaLabel', { name: p.name })"
+                  class="cursor-pointer rounded text-warning outline-none transition-colors hover:text-warning/80 focus-visible:ring-2 focus-visible:ring-warning/40"
+                  @click="runAction(() => restart(p.id))"
+                >
+                  <TriangleAlert class="size-3.5" />
+                </button>
+              </Hint>
             </div>
           </TableCell>
 

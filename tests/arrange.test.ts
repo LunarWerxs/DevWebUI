@@ -89,3 +89,44 @@ test("arrangeProcesses does not mutate the input array", () => {
   arrangeProcesses(list, { sortKey: "name", sortDir: "asc", statusFilter: ALL, now: 0 });
   expect(list.map((p) => p.name)).toEqual(before);
 });
+
+// ── toolbar search ─────────────────────────────────────────────────────────────
+// The search box narrows by PROCESS NAME only (not command/port): the panel header
+// handles project-name matching, and matching on `command` would surface a process
+// whose visible label has nothing to do with what was typed.
+test("arrangeProcesses filters by the search text, case-insensitively", () => {
+  const list = [mk({ name: "Mock DB" }), mk({ name: "Mock Cache" }), mk({ name: "Web" })];
+  const opts = { sortKey: "name" as const, sortDir: "asc" as const, statusFilter: ALL, now: 0 };
+
+  expect(arrangeProcesses(list, { ...opts, search: "mock db" }).map((p) => p.name)).toEqual([
+    "Mock DB",
+  ]);
+  expect(arrangeProcesses(list, { ...opts, search: "MOCK" }).map((p) => p.name)).toEqual([
+    "Mock Cache",
+    "Mock DB",
+  ]);
+  expect(arrangeProcesses(list, { ...opts, search: "zzzznomatch" })).toEqual([]);
+});
+
+test("a blank or whitespace-only search matches everything (never hides the fleet)", () => {
+  const list = [mk({ name: "a" }), mk({ name: "b" })];
+  const opts = { sortKey: "name" as const, sortDir: "asc" as const, statusFilter: ALL, now: 0 };
+  expect(arrangeProcesses(list, { ...opts, search: "" })).toHaveLength(2);
+  expect(arrangeProcesses(list, { ...opts, search: "   " })).toHaveLength(2);
+  expect(arrangeProcesses(list, opts)).toHaveLength(2); // omitted entirely
+});
+
+test("search composes with the status filter rather than overriding it", () => {
+  const list = [
+    mk({ name: "Mock DB", status: "running" }),
+    mk({ name: "Mock Cache", status: "stopped" }),
+  ];
+  const out = arrangeProcesses(list, {
+    sortKey: "name",
+    sortDir: "asc",
+    statusFilter: ["running"],
+    now: 0,
+    search: "mock",
+  });
+  expect(out.map((p) => p.name)).toEqual(["Mock DB"]);
+});

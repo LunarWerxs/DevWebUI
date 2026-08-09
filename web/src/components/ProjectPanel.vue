@@ -2,14 +2,17 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useLocalStorage } from "@vueuse/core";
+import { toast } from "vue-sonner";
 import {
   Boxes,
   ChevronDown,
   EllipsisVertical,
+  Loader2,
   MonitorDown,
   Pencil,
   Play,
   Plus,
+  ShieldCheck,
   Square,
   Trash2,
   X,
@@ -40,7 +43,9 @@ import { storeToRefs } from "pinia";
 import ProcessCard from "./ProcessCard.vue";
 import ProcessTable from "./ProcessTable.vue";
 import IconButton from "./IconButton.vue";
+import TakeoverStep from "./add-project-dialog/TakeoverStep.vue";
 import { disableProject, enableProject, startProject, stopProject } from "@/api";
+import type { AutostartTrigger, TakeOverResult } from "@/api";
 import { useAppStore } from "@/store";
 import { useRunAction } from "@/lib/useAction";
 import { useShortcutAction } from "@/lib/shortcut";
@@ -67,7 +72,7 @@ function onOpen(v: boolean) {
 }
 
 const store = useAppStore();
-const { viewMode, sortKey, sortDir, statusFilter, now } = storeToRefs(store);
+const { viewMode, sortKey, sortDir, statusFilter, now, searchQuery } = storeToRefs(store);
 
 const running = computed(
   () => props.project.processes.filter((p) => p.status === "running").length,
@@ -77,22 +82,46 @@ const total = computed(() => props.project.processes.length);
 // The stack master switch (project.enabled) GATES the whole project's autostart
 // without touching the individual per-process toggles. It's a preference only —
 // flipping it never starts/stops anything now. Off collapses the stack; on re-expands it.
+// The local collapse state is applied only once the daemon call actually succeeds —
+// otherwise a failed toggle left the panel open/closed out of step with the real
+// (unchanged) `project.enabled`, with no way to tell short of reloading.
 async function onToggleStack(v: boolean) {
-  onOpen(v);
-  await runAction(() => (v ? enableProject(props.project.id) : disableProject(props.project.id)));
+  try {
+    await (v ? enableProject(props.project.id) : disableProject(props.project.id));
+    onOpen(v);
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : t("projectPanel.actionFailed"));
+  }
 }
 
+/** True when the project's own name matches the toolbar search (blank search always matches). */
+const projectNameMatches = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  return !q || props.project.name.toLowerCase().includes(q);
+});
+
 // Filtered + sorted once here; both the card grid and the table render this list.
+// `now` is only read while actually sorting by uptime — arrangeProcesses ignores it
+// otherwise, so this computed doesn't reallocate on every 1s clock tick for nothing.
 const arranged = computed(() =>
   arrangeProcesses(props.project.processes, {
     sortKey: sortKey.value,
     sortDir: sortDir.value,
     statusFilter: statusFilter.value,
-    now: now.value,
+    now: sortKey.value === "uptime" ? now.value : 0,
+    // A matching project name already explains why this panel is visible — don't
+    // ALSO require every individual process to match the same text.
+    search: projectNameMatches.value ? "" : searchQuery.value,
   }),
 );
 // True when the project has processes but the active filter hides them all.
 const filteredEmpty = computed(() => total.value > 0 && arranged.value.length === 0);
+// The toolbar search hides the whole panel (rather than showing "no processes match" —
+// that message stays reserved for the status filter) when neither the project's own
+// name nor any of its processes match what was typed.
+const hiddenBySearch = computed(
+  () => !!searchQuery.value.trim() && !projectNameMatches.value && arranged.value.length === 0,
+);
 
 const removeDialogOpen = ref(false);
 async function doRemove() {
@@ -145,10 +174,44 @@ async function saveEdit() {
 
 const runAction = useRunAction("projectPanel.actionFailed");
 const { addProjectShortcut } = useShortcutAction();
+
+// ---- Re-check for external autostart conflicts (VS Code tasks.json / the Vite
+// extension). Take-over is otherwise offered exactly once, automatically, right when
+// a project is added (AddProjectDialog's take-over step), and can never be revisited —
+// a task can reappear later (re-scaffolded .devwebui, a fresh VS Code workspace) with
+// no way back in. This reuses that same TakeoverStep.vue, but skips straight to its
+// result view: POST take-over first, then show what it found/retired.
+const takeoverCheckOpen = ref(false);
+const takeoverCheck = ref<{
+  dir: string;
+  triggers: AutostartTrigger[];
+  result?: TakeOverResult;
+} | null>(null);
+const takeoverBusy = ref(false);
+const takeoverError = ref("");
+
+async function checkAutostart() {
+  // project.path is the .devwebui FILE; take-over operates on the folder holding it
+  // (same derivation AppShell.vue uses for `loadedDirs`).
+  const dir = props.project.path.replace(/[\\/][^\\/]+$/, "");
+  takeoverError.value = "";
+  takeoverCheck.value = null;
+  takeoverBusy.value = true;
+  takeoverCheckOpen.value = true;
+  try {
+    const result = await store.takeOverAutostart(dir);
+    takeoverCheck.value = { dir, triggers: [], result };
+  } catch (e) {
+    takeoverError.value = e instanceof Error ? e.message : t("projectPanel.actionFailed");
+  } finally {
+    takeoverBusy.value = false;
+  }
+}
 </script>
 
 <template>
   <Collapsible
+    v-if="!hiddenBySearch"
     :open="open"
     class="overflow-hidden rounded-xl border border-border bg-card/40"
     @update:open="onOpen"
@@ -208,6 +271,9 @@ const { addProjectShortcut } = useShortcutAction();
             </DropdownMenuItem>
             <DropdownMenuItem @select="addProjectShortcut(project.id)">
               <MonitorDown class="size-4" /> {{ t("shortcut.addToDesktop") }}
+            </DropdownMenuItem>
+            <DropdownMenuItem @select="checkAutostart">
+              <ShieldCheck class="size-4" /> {{ t("projectPanel.checkAutostart") }}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" @select="removeDialogOpen = true">
@@ -322,6 +388,28 @@ const { addProjectShortcut } = useShortcutAction();
           <Button type="submit" :disabled="editSaving">{{ t("projectPanel.save") }}</Button>
         </DialogFooter>
       </form>
+    </DialogContent>
+  </Dialog>
+
+  <Dialog v-model:open="takeoverCheckOpen">
+    <DialogContent class="sm:max-w-[480px]">
+      <DialogHeader>
+        <DialogTitle>{{ t("projectPanel.takeoverCheckTitle") }}</DialogTitle>
+        <DialogDescription class="sr-only">{{ t("projectPanel.takeoverCheckDescription") }}</DialogDescription>
+      </DialogHeader>
+      <div v-if="takeoverBusy && !takeoverCheck" class="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+        <Loader2 class="size-4 animate-spin" /> {{ t("projectPanel.takeoverChecking") }}
+      </div>
+      <Alert v-else-if="takeoverError" variant="destructive">
+        <AlertDescription>{{ takeoverError }}</AlertDescription>
+      </Alert>
+      <TakeoverStep
+        v-else
+        v-model:open="takeoverCheckOpen"
+        v-model:takeover="takeoverCheck"
+        v-model:busy="takeoverBusy"
+        v-model:error="takeoverError"
+      />
     </DialogContent>
   </Dialog>
 </template>

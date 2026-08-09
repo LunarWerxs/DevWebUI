@@ -11,6 +11,7 @@ export interface ProcessRuntime {
   memory: number | null;
   portInUse: boolean;
   waitingOnPort: number | null;
+  configChanged: boolean;
 }
 
 /**
@@ -48,5 +49,6 @@ export function toProcessView(def: ProcessDef, e: ProcessRuntime, enabled: boole
     memory: e.memory,
     conflict,
     waitingOnPort: e.waitingOnPort ?? undefined,
+    configChanged: e.configChanged || undefined,
   };
 }

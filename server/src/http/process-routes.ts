@@ -107,15 +107,20 @@ export function registerProcessRoutes(app: Hono, manager: Manager) {
     const { id, action } = c.req.param();
     const proj = manager.listProjects().find((p) => p.id === id);
     if (!proj) return fail(c, "unknown project", 404);
-    if (action === "start") manager.startProject(id);
-    else if (action === "stop") await manager.stopProject(id);
-    else if (action === "enable") manager.setProjectEnabled(id, true);
-    else if (action === "disable") manager.setProjectEnabled(id, false);
-    else if (action === "remove") {
-      await manager.removeProject(id);
-      registryRemove(proj.path);
-    } else return fail(c, "unknown action");
-    return c.json({ ok: true });
+    // guard(): an unexpected manager throw becomes the same `{ error }` shape every other
+    // route returns, instead of Hono's bare text/plain 500 — the CLI and MCP surface the
+    // message verbatim, so a raw 500 loses the only diagnostic the caller ever sees.
+    return guard(c, async () => {
+      if (action === "start") manager.startProject(id);
+      else if (action === "stop") await manager.stopProject(id);
+      else if (action === "enable") manager.setProjectEnabled(id, true);
+      else if (action === "disable") manager.setProjectEnabled(id, false);
+      else if (action === "remove") {
+        await manager.removeProject(id);
+        registryRemove(proj.path);
+      } else return fail(c, "unknown action");
+      return c.json({ ok: true });
+    });
   });
 
   // ---- processes ----
@@ -186,15 +191,18 @@ export function registerProcessRoutes(app: Hono, manager: Manager) {
     // group + project companions; stopWithLinks brings the linked group down.
     // `coStarted`/`coStopped` list the OTHER processes the action set in motion,
     // so the GUI (and MCP callers) can surface the ripple.
-    let coStarted: string[] | undefined;
-    let coStopped: string[] | undefined;
-    if (action === "start") {
-      coStarted = manager.startWithLinks(id).coStarted;
-    } else if (action === "stop") coStopped = await manager.stopWithLinks(id);
-    else if (action === "restart") await manager.restart(id);
-    else if (action === "enable") manager.setProcessEnabled(id, true);
-    else if (action === "disable") manager.setProcessEnabled(id, false);
-    else return fail(c, "unknown action");
-    return c.json({ ok: true, process: manager.view(id), coStarted, coStopped });
+    // guard(): see the note on projectAction above — same reason, same shape.
+    return guard(c, async () => {
+      let coStarted: string[] | undefined;
+      let coStopped: string[] | undefined;
+      if (action === "start") {
+        coStarted = manager.startWithLinks(id).coStarted;
+      } else if (action === "stop") coStopped = await manager.stopWithLinks(id);
+      else if (action === "restart") await manager.restart(id);
+      else if (action === "enable") manager.setProcessEnabled(id, true);
+      else if (action === "disable") manager.setProcessEnabled(id, false);
+      else return fail(c, "unknown action");
+      return c.json({ ok: true, process: manager.view(id), coStarted, coStopped });
+    });
   });
 }

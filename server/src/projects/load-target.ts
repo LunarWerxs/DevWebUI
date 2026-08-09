@@ -1,6 +1,7 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { writeJsonAtomic } from "../atomic-write";
 import { detectProject, type Detection } from "../detect";
 import { DevWebUIFileSchema } from "../../../shared/schema";
 
@@ -69,7 +70,7 @@ export function scaffoldDevWebUIFile(dir: string, fileName: string, data: unknow
   const target = path.join(path.resolve(dir), safeName);
   if (existsSync(target)) throw new Error(`${target} already exists.`);
   const valid = DevWebUIFileSchema.parse(data); // name + >=1 valid process
-  writeFileSync(target, `${JSON.stringify(valid, null, 2)}\n`);
+  writeJsonAtomic(target, valid);
   return target;
 }
 

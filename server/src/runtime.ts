@@ -11,8 +11,9 @@
 //          `bun x.js`       -> `node x.js`        (run the file under Node)
 // `npm run …`, `bunx …`, and everything else are left alone.
 // ---------------------------------------------------------------------------
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { writeJsonAtomic } from "./atomic-write";
 import { dataDir } from "./data-dir";
 import { OS_SKIP, type SkipOs } from "./scan";
 import { AUTO_UPDATE_INTERVAL_DEFAULT_S, clampAutoUpdateInterval } from "./auto-update";
@@ -184,19 +185,7 @@ export function writeSettings(patch: Partial<Settings>): Settings {
     hideTrayIcon: bool(patch.hideTrayIcon, cur.hideTrayIcon),
   };
   mkdirSync(dataDir(), { recursive: true });
-  const file = settingsFile();
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  try {
-    writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
-    renameSync(tmp, file);
-  } catch (e) {
-    try {
-      rmSync(tmp, { force: true });
-    } catch {
-      /* best-effort temp cleanup */
-    }
-    throw e;
-  }
+  writeJsonAtomic(settingsFile(), next, { mode: 0o600, trailingNewline: false });
   return next;
 }
 

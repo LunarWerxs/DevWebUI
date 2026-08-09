@@ -209,7 +209,9 @@ export class ProjectWatcher {
     }
     this.lastText.set(fileKey, raw);
     try {
-      this.manager.reconcileProject(loaded);
+      // fromWatch: this reload came from the FILE changing, not from a user action —
+      // see ManagerWithProjects.reconcileProject for why that must not auto-execute.
+      this.manager.reconcileProject(loaded, { fromWatch: true });
     } catch (e) {
       console.error(`[devwebui] reload failed for ${file}: ${(e as Error).message}`);
     }

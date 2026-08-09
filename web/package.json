@@ -9,7 +9,8 @@
     "build": "bun run check:i18n && vue-tsc -b && vite build",
     "typecheck": "vue-tsc -b",
     "check:i18n": "bun scripts/check-i18n.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@formkit/auto-animate": "^0.9.0",
@@ -30,9 +31,11 @@
     "@types/node": "^26.0.1",
     "@vitejs/plugin-vue": "^6.0.7",
     "@vue/compiler-sfc": "^3.5.39",
+    "jsdom": "^30.0.1",
     "tailwindcss": "^4.3.2",
     "typescript": "^6.0.3",
     "vite": "^8.1.0",
+    "vitest": "^4.1.10",
     "vue-tsc": "^3.3.5"
   }
 }

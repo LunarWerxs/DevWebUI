@@ -1,5 +1,6 @@
 /** GitHub Releases updater for the compiled distribution; archives are the updater contract. */
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   cpSync,
   existsSync,
@@ -47,6 +48,25 @@ export function assetForPlatform(
   const expected = `devwebui-${releaseTarget(platform, arch)}${extension}`;
   return assets.find((asset) => asset.name === expected) ?? null;
 }
+
+/** The release asset carrying the per-file SHA-256 manifest (published by .github/workflows/release.yml). */
+export const CHECKSUM_ASSET = "SHA256SUMS.txt";
+
+/**
+ * Parse a `sha256sum`-style manifest into `{ filename: digest }`.
+ * Lines look like `<64-hex>  devwebui-windows-x64.zip` (two spaces, or ` *` in binary mode).
+ */
+export function parseChecksums(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^([0-9a-f]{64})\s+\*?(.+?)\s*$/i.exec(line.trim());
+    if (m) out[m[2]] = m[1].toLowerCase();
+  }
+  return out;
+}
+
+export const sha256 = (bytes: Uint8Array): string =>
+  createHash("sha256").update(bytes).digest("hex");
 
 function numericVersion(value: string): number[] {
   return value
@@ -201,10 +221,20 @@ export async function applyUpdate(): Promise<UpdateApplyResult> {
   const remoteVersion = (status.remoteCommit ?? "").replace(/^v/, "");
 
   let asset: ReleaseAsset | null = null;
+  let checksumAsset: ReleaseAsset | null = null;
   try {
-    asset = assetForPlatform((await latestRelease()).assets ?? []);
+    const assets = (await latestRelease()).assets ?? [];
+    asset = assetForPlatform(assets);
+    checksumAsset = assets.find((a) => a.name === CHECKSUM_ASSET) ?? null;
   } catch {}
   if (!asset) return failure(`no ${releaseTarget()} archive is attached to v${remoteVersion}`);
+  // The manifest is REQUIRED, not best-effort: without it there is nothing to check the
+  // download against, and the alternative "verification" below (running the binary and
+  // reading its --version) proves only that the payload can print a string. Every release
+  // this updater can target publishes one (release.yml builds it with fail_on_unmatched_files),
+  // so a missing manifest means something is wrong with the release, and refusing is correct.
+  if (!checksumAsset)
+    return failure(`v${remoteVersion} has no ${CHECKSUM_ASSET} to verify the download against`);
 
   const executable = process.execPath;
   const installDir = dirname(executable);
@@ -224,11 +254,35 @@ export async function applyUpdate(): Promise<UpdateApplyResult> {
       redirect: "follow",
     });
     if (!response.ok) return failure(`download failed (HTTP ${response.status})`);
-    writeFileSync(archive, new Uint8Array(await response.arrayBuffer()));
+    const bytes = new Uint8Array(await response.arrayBuffer());
+
+    // ---- verify BEFORE anything executes ----------------------------------------
+    // Order matters. Everything past this point either unpacks or RUNS the payload, so
+    // the integrity check has to come first: extracting an attacker-controlled archive
+    // (zip-slip) or spawning it for a version banner is already game over. Fetch the
+    // manifest, match this exact asset name, compare digests, and stop dead on mismatch.
+    const sumsResponse = await fetch(checksumAsset.browser_download_url, {
+      headers: { accept: "text/plain", "user-agent": `${SERVICE}/${VERSION}` },
+      redirect: "follow",
+    });
+    if (!sumsResponse.ok)
+      return failure(`couldn't fetch ${CHECKSUM_ASSET} (HTTP ${sumsResponse.status})`);
+    const expected = parseChecksums(await sumsResponse.text())[asset.name];
+    if (!expected) return failure(`${CHECKSUM_ASSET} has no entry for ${asset.name}`);
+    const actual = sha256(bytes);
+    if (actual !== expected)
+      return failure(
+        `the download does not match its published checksum — refusing to install (expected ${expected.slice(0, 12)}…, got ${actual.slice(0, 12)}…)`,
+      );
+    output.push(`verified sha256 ${actual.slice(0, 12)}…`);
+
+    writeFileSync(archive, bytes);
     await extract(archive, staging);
 
     const candidate = join(staging, bundledName);
     if (!existsSync(candidate)) return failure(`the update archive has no ${bundledName}`);
+    // Sanity check, NOT a security control (the checksum above is): catches a corrupt or
+    // wrong-architecture build that would otherwise be installed and fail on next boot.
     if (!(await verifyVersion(candidate, remoteVersion))) {
       return failure("the downloaded executable failed its version self-check");
     }

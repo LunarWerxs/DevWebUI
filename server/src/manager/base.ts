@@ -47,6 +47,16 @@ export abstract class ManagerBase extends EventEmitter {
   freePortOnStart = false;
   /** Sample per-process CPU + memory. Off = no system queries spawned at all. */
   monitorResources = true;
+  /**
+   * Connected SSE clients, maintained by `registerRealtime` (http/core.ts).
+   *
+   * Port-conflict probing exists to tell a WATCHING user that something else holds a
+   * port. With no process running and nobody watching, that probe is pure background
+   * churn — a real TCP connect+teardown per configured port every 2s, forever, on a
+   * tool designed to sit idle in the tray. Zero clients + nothing running = pause it;
+   * the next connecting client resumes it within one tick, so the feature is intact.
+   */
+  sseClients = 0;
 
   constructor() {
     super();
@@ -232,10 +242,12 @@ export abstract class ManagerBase extends EventEmitter {
       portInUse: false,
       waitingOnPort: null,
       logs: [],
+      configChanged: false,
       stopping: false,
       pendingStart: false,
       exitWaiters: [],
       stopTimer: null,
+      generation: 0,
     };
   }
 

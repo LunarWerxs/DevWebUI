@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { writeFileAtomic, writeJsonAtomic } from "../atomic-write";
 import { dataDir } from "../data-dir";
 import { detectProjectRuntime } from "../runtime";
 import type { LoadedProject, ProcessDef } from "../types";
@@ -28,7 +29,7 @@ export function readDevWebUIFile(filePath: string): LoadedProject {
   const abs = path.resolve(filePath);
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(abs, "utf8"));
+    raw = readJsonFile(abs);
   } catch (e) {
     throw new Error(`Could not read ${abs}: ${(e as Error).message}`);
   }
@@ -74,14 +75,113 @@ export function readDevWebUIFile(filePath: string): LoadedProject {
 // Every write is validated against the schema first, so the file is never left
 // invalid. `localId` is the process `id` as written in the file.
 // ---------------------------------------------------------------------------
-function readRaw(filePath: string): { name: string; color?: string; processes: DevWebUIProcess[] } {
-  const abs = path.resolve(filePath);
-  return DevWebUIFileSchema.parse(JSON.parse(readFileSync(abs, "utf8")));
+/**
+ * Keys the schema knows about. Anything else a user hand-added to their own
+ * `.devwebui` is UNKNOWN to us — and must survive our rewrites (see `Extras`).
+ */
+const KNOWN_PROCESS_KEYS = new Set<string>([
+  "id",
+  "name",
+  "command",
+  "cwd",
+  "color",
+  "env",
+  "autostart",
+  "starred",
+  "port",
+  "url",
+  "runtime",
+  "waitForPort",
+  "links",
+  "companion",
+]);
+const KNOWN_FILE_KEYS = new Set<string>(["name", "color", "processes"]);
+
+/**
+ * The unrecognized keys a `.devwebui` carried when we read it. Zod strips unknown keys
+ * at parse time and `clean()` rebuilds each process from a fixed allowlist, so without
+ * capturing them here a single GUI action (starring a process, a rename) would silently
+ * delete anything the user hand-added to their own version-controlled file. We validate
+ * strictly and preserve verbatim: unknown keys ride along untouched, they just never
+ * influence behavior.
+ */
+interface Extras {
+  file: Record<string, unknown>;
+  /** Per-process extras, keyed by the process's in-file `id`. */
+  byProcessId: Map<string, Record<string, unknown>>;
 }
 
-function writeRaw(filePath: string, data: unknown): void {
-  const valid = DevWebUIFileSchema.parse(data);
-  writeFileSync(path.resolve(filePath), `${JSON.stringify(valid, null, 2)}\n`);
+const unknownKeysOf = (value: unknown, known: Set<string>): Record<string, unknown> => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>))
+    if (!known.has(k)) out[k] = v;
+  return out;
+};
+
+/** Parse JSON from disk, tolerating a UTF-8 BOM (what Notepad and some editors write). */
+function readJsonFile(abs: string): unknown {
+  return JSON.parse(readFileSync(abs, "utf8").replace(/^﻿/, ""));
+}
+
+interface RawFile {
+  name: string;
+  color?: string;
+  processes: DevWebUIProcess[];
+  extras: Extras;
+  /** The file's existing line-ending style, so a rewrite doesn't reformat every line. */
+  eol: "\n" | "\r\n";
+}
+
+/**
+ * The file's dominant line ending. A `.devwebui` is usually committed, so emitting LF over a
+ * CRLF file turns a one-key edit (starring a process) into a whole-file diff in the user's repo.
+ */
+function detectEol(text: string): "\n" | "\r\n" {
+  const crlf = (text.match(/\r\n/g) ?? []).length;
+  const lf = (text.match(/\n/g) ?? []).length - crlf;
+  return crlf > lf ? "\r\n" : "\n";
+}
+
+function readRaw(filePath: string): RawFile {
+  const abs = path.resolve(filePath);
+  const text = readFileSync(abs, "utf8").replace(/^﻿/, "");
+  const raw = JSON.parse(text);
+  const parsed = DevWebUIFileSchema.parse(raw);
+  const source = (raw ?? {}) as { processes?: unknown };
+  const byProcessId = new Map<string, Record<string, unknown>>();
+  if (Array.isArray(source.processes)) {
+    for (const p of source.processes) {
+      const id = (p as { id?: unknown })?.id;
+      if (typeof id !== "string") continue;
+      const extra = unknownKeysOf(p, KNOWN_PROCESS_KEYS);
+      if (Object.keys(extra).length) byProcessId.set(id, extra);
+    }
+  }
+  return {
+    ...parsed,
+    extras: { file: unknownKeysOf(raw, KNOWN_FILE_KEYS), byProcessId },
+    eol: detectEol(text),
+  };
+}
+
+function writeRaw(filePath: string, data: RawFile): void {
+  const { extras, eol, ...rest } = data;
+  const valid = DevWebUIFileSchema.parse(rest);
+  // Re-attach unknown keys AFTER validation: the schema decides what is legal, the
+  // extras only decide what is preserved. Known keys always win over a stale extra.
+  const out = {
+    ...extras.file,
+    ...valid,
+    processes: valid.processes.map((p) => {
+      const extra = extras.byProcessId.get(p.id);
+      return extra ? { ...extra, ...p } : p;
+    }),
+  };
+  // Atomic (temp + rename): this is the USER's file, usually in their git repo — a
+  // truncate-in-place write that dies mid-flight would destroy it. See atomic-write.ts.
+  const body = `${JSON.stringify(out, null, 2)}\n`;
+  writeFileAtomic(path.resolve(filePath), eol === "\r\n" ? body.replace(/\n/g, "\r\n") : body);
 }
 
 function clean(proc: DevWebUIProcess): DevWebUIProcess {
@@ -103,6 +203,37 @@ function clean(proc: DevWebUIProcess): DevWebUIProcess {
   return out;
 }
 
+/**
+ * Every optional field a caller may omit. `updateProcessInFile` merges each one the way
+ * `env` always did: a key the caller DIDN'T send keeps its stored value, while a key sent
+ * as `undefined` clears it. Without this, an MCP `update_process` carrying only
+ * `{id,name,command}` silently wiped the process's port, links, companion and star.
+ */
+const MERGEABLE_KEYS = [
+  "cwd",
+  "color",
+  "env",
+  "autostart",
+  "starred",
+  "port",
+  "url",
+  "runtime",
+  "waitForPort",
+  "links",
+  "companion",
+] as const satisfies readonly (keyof DevWebUIProcess)[];
+
+/** Fill in every optional field the caller omitted from the stored record. */
+function mergeOmitted(sent: DevWebUIProcess, parsed: DevWebUIProcess, stored: DevWebUIProcess) {
+  const merged: DevWebUIProcess = { ...parsed };
+  for (const key of MERGEABLE_KEYS) {
+    if (Object.hasOwn(sent, key)) continue;
+    // biome-ignore lint/suspicious/noExplicitAny: index-assigning a union of optional keys
+    (merged as any)[key] = stored[key];
+  }
+  return merged;
+}
+
 export function addProcessToFile(filePath: string, proc: DevWebUIProcess): void {
   const raw = readRaw(filePath);
   if (raw.processes.some((p) => p.id === proc.id))
@@ -122,8 +253,7 @@ export function updateProcessInFile(
   if (proc.id !== localId && raw.processes.some((p) => p.id === proc.id))
     throw new Error(`A process with id "${proc.id}" already exists in this project.`);
   const parsed = ProcessSchema.parse(proc);
-  const env = Object.hasOwn(proc, "env") ? parsed.env : raw.processes[i].env;
-  raw.processes[i] = clean({ ...parsed, env });
+  raw.processes[i] = clean(mergeOmitted(proc, parsed, raw.processes[i]));
   // An id rename would dangle every sibling's link to the old id — follow the rename.
   if (proc.id !== localId) {
     raw.processes = raw.processes.map((p) =>
@@ -131,6 +261,13 @@ export function updateProcessInFile(
         ? clean({ ...p, links: p.links.map((l) => (l === localId ? proc.id : l)) })
         : p,
     );
+    // Extras are keyed by in-file id, so a rename has to carry them across or the
+    // user's hand-added keys would be dropped by the very next write.
+    const carried = raw.extras.byProcessId.get(localId);
+    if (carried) {
+      raw.extras.byProcessId.delete(localId);
+      raw.extras.byProcessId.set(proc.id, carried);
+    }
   }
   writeRaw(filePath, raw);
 }
@@ -195,7 +332,7 @@ export function readRegistry(): string[] {
 
 function writeRegistry(paths: string[]): void {
   mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(registryFile(), JSON.stringify({ projects: paths }, null, 2));
+  writeJsonAtomic(registryFile(), { projects: paths }, { trailingNewline: false });
 }
 
 const samePath = (a: string, b: string) => normalizePath(a) === normalizePath(b);
@@ -233,7 +370,7 @@ export function readIgnoredProjects(): string[] {
 
 function writeIgnoredProjects(dirs: string[]): void {
   mkdirSync(dataDir(), { recursive: true });
-  writeFileSync(ignoredFile(), JSON.stringify({ ignored: dirs }, null, 2));
+  writeJsonAtomic(ignoredFile(), { ignored: dirs }, { trailingNewline: false });
 }
 
 export function ignoreProject(dir: string): void {

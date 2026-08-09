@@ -1,4 +1,4 @@
-import type { ScanResult } from "../../shared/dto";
+import type { LogLine, ScanResult } from "../../shared/dto";
 
 // Cross-boundary DTOs are defined once in the shared module and re-exported here
 // so existing `import { ProcessView } from "@/types"` call sites keep working.
@@ -15,6 +15,15 @@ export type {
 
 /** How a project panel lays out its processes. */
 export type ViewMode = "cards" | "table";
+
+/**
+ * A `LogLine` augmented with a monotonic client-side sequence number, assigned once
+ * as each line is pushed into the store (see store.ts). `LogLine.id` is the PROCESS
+ * id (shared by every line in a buffer), so it can't key a v-for by itself — `seq` can.
+ */
+export interface LogEntry extends LogLine {
+  seq: number;
+}
 
 /** An in-app notification (currently: the startup scan found new projects). */
 export interface AppNotification {

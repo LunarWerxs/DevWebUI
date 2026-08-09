@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { writeFileAtomic } from "./atomic-write";
 import path from "node:path";
 import { dataDir } from "./data-dir";
 import type { ErrorEvent, ErrorSource } from "../../shared/dto";
@@ -174,7 +175,7 @@ export class ErrorRecorder {
     this.dirty = false;
     try {
       mkdirSync(dataDir(), { recursive: true });
-      writeFileSync(
+      writeFileAtomic(
         errorsFile(),
         `${this.list()
           .map((e) => JSON.stringify(e))

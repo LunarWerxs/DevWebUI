@@ -177,6 +177,18 @@ function onStop() {
           >
             <TriangleAlert class="size-3" aria-hidden="true" /> {{ errorCount }}
           </button>
+          <!-- .devwebui changed this process's command/cwd/env on disk while it kept running on
+               its old definition; the daemon deliberately did not apply the change by itself. -->
+          <Hint v-if="process.configChanged" :label="t('processCard.configChangedTooltip')">
+            <button
+              type="button"
+              :aria-label="t('processCard.configChangedRestartAriaLabel', { name: process.name })"
+              class="inline-flex items-center gap-1 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-semibold text-warning outline-none transition-colors hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-warning/40 active:bg-warning/30"
+              @click="runAction(() => restart(process.id))"
+            >
+              <TriangleAlert class="size-3" aria-hidden="true" />
+            </button>
+          </Hint>
           <Hint v-if="linkedNames.length" :label="t('processCard.linkedWith', { names: linkedNames.join(', ') })">
             <span class="inline-flex" tabindex="0">
               <Link2 class="size-3.5 text-muted-foreground/70" aria-hidden="true" />

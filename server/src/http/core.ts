@@ -121,8 +121,17 @@ export async function recordPulse(event: string, properties?: unknown) {
  */
 export function registerRealtime(app: Hono, manager: Manager) {
   const clients = new Set<Client>();
+  // Mirror the live client count onto the manager so its port-probe loop can pause while
+  // nobody is watching and nothing is running (see ManagerBase.sseClients).
+  const syncClientCount = () => {
+    manager.sseClients = clients.size;
+  };
   const broadcast = (event: string, data: unknown) => {
-    for (const c of clients) c.send(event, data).catch(() => clients.delete(c));
+    for (const c of clients)
+      c.send(event, data).catch(() => {
+        clients.delete(c);
+        syncClientCount();
+      });
   };
   manager.on("status", (v) => broadcast("status", v));
   manager.on("log", (l) => broadcast("log", l));
@@ -140,12 +149,14 @@ export function registerRealtime(app: Hono, manager: Manager) {
         send: (event, data) => stream.writeSSE({ event, data: JSON.stringify(data) }),
       };
       clients.add(client);
+      syncClientCount();
       await stream.writeSSE({ event: "projects", data: JSON.stringify(manager.listProjects()) });
       await stream.writeSSE({ event: "errors", data: JSON.stringify(manager.listErrors()) });
       const ping = setInterval(() => void client.send("ping", Date.now()), 15000);
       stream.onAbort(() => {
         clearInterval(ping);
         clients.delete(client);
+        syncClientCount();
       });
       while (true) await stream.sleep(60000);
     }),
@@ -161,7 +172,11 @@ export function registerSystemRoutes(app: Hono, manager: Manager, options: Creat
   // the last one that didn't, which is why its daemon could not be found by the restart scripts.
   app.get(ROUTES.health, (c) => c.json({ ok: true, service: "devwebui", ts: Date.now() }));
   app.get(ROUTES.updates, async (c) => {
-    const status = await checkForUpdate();
+    // `?fresh=1` bypasses the 5-minute status cache. A user clicking "Check for updates"
+    // is explicitly asking us to look NOW, and answering from a cache that predates a
+    // release makes the menu item lie ("up to date") until the tab is reloaded. Automatic
+    // background checks still take the cached path.
+    const status = await checkForUpdate({ fresh: c.req.query("fresh") === "1" });
     void recordPulse("update_check", {
       available: status.updateAvailable,
       canApply: status.canApply,
@@ -193,6 +208,13 @@ export function registerSystemRoutes(app: Hono, manager: Manager, options: Creat
     const result = await recordPulse(String(body.event ?? ""), body.properties);
     return c.json(result, result.ok ? 200 : 400);
   });
+  // NOT an auth boundary, and deliberately so. `x-devwebui-shutdown-source: ui` is a ROUTING
+  // signal ("this is a whole-app shutdown, not a tray-managed restart"), not a credential —
+  // the CLI's `devwebui stop` sends it too (server/src/cli.ts). What actually gates this route
+  // is the transport: the daemon binds 127.0.0.1 only (server/src/index.ts) and loopbackGuard
+  // rejects browser cross-site requests, so the only callers left are same-machine tools the
+  // user ran, which could kill the process directly anyway. The tray token below is a
+  // DISAMBIGUATOR (is this OUR tray's restart?), not a lock.
   app.post(ROUTES.shutdown, async (c) => {
     const token = options.shutdownToken ?? "";
     const trayHeader = c.req.header("x-devwebui-shutdown-token") ?? "";

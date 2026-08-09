@@ -90,6 +90,10 @@ export class ManagerWithMonitoring extends ManagerBase {
   }
 
   private async pollPorts(): Promise<void> {
+    // Nobody watching and nothing running → nothing this probe could usefully report.
+    // See ManagerBase.sseClients.
+    if (this.sseClients === 0 && ![...this.entries.values()].some((e) => e.pid || e.pendingStart))
+      return;
     const byPort = new Map<number, Entry[]>();
     for (const e of this.entries.values()) {
       if (!e.def.port) continue;
