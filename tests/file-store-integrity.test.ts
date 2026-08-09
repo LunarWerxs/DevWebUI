@@ -45,21 +45,31 @@ function readRaw(file: string): any {
 
 // ── (a) atomic writes ───────────────────────────────────────────────────────────────────────
 
-test("writeFileAtomic leaves the original file untouched and cleans up its .tmp when the rename fails", () => {
+test("writeFileAtomic leaves the original file untouched and cleans up its .tmp when the write fails", () => {
   const dir = tempDir("devwebui-atomic-");
   const target = path.join(dir, "target.json");
   writeFileSync(target, "original");
-  // Windows throws EPERM renaming onto a read-only destination (verified against a throwaway
-  // repro) — a real, no-mocking way to make the crash-safety path actually fail mid-write,
-  // rather than asserting it never can.
-  chmodSync(target, 0o444);
+
+  // Force a REAL failure rather than mocking, so this exercises the actual catch path. The
+  // lever differs by platform, and getting that wrong is why this first shipped green on
+  // Windows and red everywhere else:
+  //   • Windows: renaming ONTO a read-only destination throws EPERM. Directory permissions
+  //     don't gate file creation there, so the read-only-dir trick below is a no-op.
+  //   • POSIX: a file's own mode does NOT gate rename (the DIRECTORY's write bit does), so a
+  //     read-only target renames just fine. Make the containing directory read-only instead,
+  //     which fails the .tmp creation.
+  const isWin = process.platform === "win32";
+  if (isWin) chmodSync(target, 0o444);
+  else chmodSync(dir, 0o555);
   try {
     expect(() => writeFileAtomic(target, "new content")).toThrow();
     expect(readFileSync(target, "utf8")).toBe("original");
     const leftoverTmp = readdirSync(dir).filter((f) => f.includes(".tmp"));
     expect(leftoverTmp).toEqual([]);
   } finally {
-    chmodSync(target, 0o666); // restore so the temp-dir itself can be cleaned up
+    // Restore so the temp dir can be cleaned up.
+    if (isWin) chmodSync(target, 0o666);
+    else chmodSync(dir, 0o755);
   }
 });
 
