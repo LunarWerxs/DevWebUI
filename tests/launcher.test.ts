@@ -86,7 +86,10 @@ test("launcher machinery exists, is non-empty, and is COMMITTED (a clone must be
       `misc/${name} is NOT committed to git — a fresh clone would have NO shortcut or tray. Run: git add misc/`,
     );
   }
-});
+  // 20s: tracked() shells out to `git ls-files` once PER required file, so this loop is several
+  // real subprocesses, not the file reads it looks like. 176ms here; a cold CI runner has been
+  // measured at ~9.5x local on this class, which puts it past the 5s default.
+}, 20000);
 
 test("the tray icon is a real .ico file (so the tray icon can't silently be broken)", () => {
   const buf = readFileSync(join(MISC, "DevWebUI.ico"));
@@ -550,6 +553,8 @@ test.skipIf(!isWin)(
     );
     must(r.exitCode === 0, `tray self-test exit code ${r.exitCode}:\n${out.trim()}`);
   },
+  // 20s: a real PowerShell run that loads an icon into a NotifyIcon and probes PATH. 462ms here.
+  20000,
 );
 
 test.skipIf(!isWin)(
@@ -608,4 +613,7 @@ test.skipIf(!isWin)(
     must(info.iconExists, "shortcut's tray icon (DevWebUI.ico) doesn't exist");
     expect(info.iconExists && info.targetExists && info.configExists).toBe(true);
   },
+  // 20s: two PowerShell runs, one of which regenerates the .lnk through COM. 882ms here, the
+  // slowest test in the file and the one closest to the 5s default.
+  20000,
 );

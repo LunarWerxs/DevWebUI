@@ -167,4 +167,7 @@ test.skipIf(!isWin)(
       child.kill();
     }
   },
+  // 20s: spawns a real keep-alive bun.exe and then a PowerShell WMI probe against its pid. 752ms
+  // here, and the cost is the runner's rather than the assertion's.
+  20000,
 );
