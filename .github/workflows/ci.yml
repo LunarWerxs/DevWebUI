@@ -48,6 +48,15 @@ jobs:
       - name: Typecheck (web + server)
         run: bun run typecheck
 
+      # Fails if a test that spawns a subprocess inherits bun's 5s default timeout. Such a test
+      # measures the RUNNER, not its own assertions: the equivalent suite in AgentHydra takes 533ms
+      # locally and took 5083.99ms on windows-latest, failing a run 84ms over the line and passing
+      # again on re-run. Four tests here were in that state until 2026-08-09, the subtlest being one
+      # that reads as pure existsSync checks but calls `git ls-files` once per file through a
+      # helper — which is why the check resolves helpers transitively. See its header.
+      - name: Guardrail (subprocess tests must set an explicit timeout)
+        run: bun run check:spawntimeout
+
       - name: Build (i18n gate + vue-tsc + vite)
         run: bun run build
 
