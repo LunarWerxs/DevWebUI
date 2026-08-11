@@ -4,6 +4,28 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] - 2026-08-10
+
+### Added
+
+- **Anonymous install ping**, folded into the existing update check
+  (`GET /api/updates`) for free instead of an extra network call: a random
+  per-install id plus your app version and OS family, so we know roughly how
+  many installs exist. Never sends host, username, path, account info, or
+  your IP. Opt out with `DEVWEBUI_NO_PING=1` (the older
+  `DEVWEBUI_PULSE_DISABLE=1` / `CONNECTIONS_PULSE_DISABLE=1` still work too);
+  already off automatically in dev/test/CI. Full detail in the README's
+  Local-first section.
+
+### Changed
+
+- **Retired the dormant pulse machinery** (`POST /api/pulse`, the
+  `app_opened` client ping) end to end. It only ever fired at
+  `DEVWEBUI_PULSE_URL`, which nothing has ever set, so it was pure dead code
+  now superseded by the install ping above. The install id itself survives:
+  it reuses the existing `pulseInstallId` settings slot rather than minting
+  a second one.
+
 ## [0.8.2] - 2026-08-10
 
 ### Added
@@ -531,7 +553,9 @@ First public, open-source release.
   `zod` is intentionally held at 3.x — `@modelcontextprotocol/sdk` is not yet
   zod-4 compatible, so bumping it would break the MCP server.
 
-[Unreleased]: https://github.com/LunarWerxs/devwebui/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/LunarWerxs/devwebui/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/LunarWerxs/devwebui/compare/v0.8.2...v0.8.3
+[0.8.2]: https://github.com/LunarWerxs/devwebui/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/LunarWerxs/devwebui/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/LunarWerxs/devwebui/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/LunarWerxs/devwebui/compare/v0.6.1...v0.7.0
