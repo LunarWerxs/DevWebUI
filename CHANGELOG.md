@@ -4,6 +4,17 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.4] - 2026-08-11
+
+### Added
+
+- **You now hear about updates without opting into installs.** The update check only ran when
+  unattended auto-apply was switched on, so with it off (the default) nobody was ever told a new
+  version existed. The check now always runs; an available update shows a banner in the web UI
+  with a one-click "Update now" wired to the existing apply path, and the new `updateNotify`
+  setting (on by default) controls the announcements. Unattended auto-apply itself is unchanged
+  and stays opt-in. Part of the same policy RepoYeti and ReDesign follow as of today.
+
 ## [0.8.3] - 2026-08-10
 
 ### Added
