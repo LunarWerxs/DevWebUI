@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -76,45 +75,6 @@ export const guard = async (
   }
 };
 
-// Fire-and-forget product pulse to the owner's collector — a no-op until
-// DEVWEBUI_PULSE_URL (or the shared CONNECTIONS_PULSE_URL) is set. Kept inline; no
-// dedicated module. Set DEVWEBUI_PULSE_DISABLE=1 (or CONNECTIONS_PULSE_DISABLE=1) to force
-// it off even when a collector URL is configured — see README's "Local-first" section.
-export async function recordPulse(event: string, properties?: unknown) {
-  const disabled =
-    process.env.DEVWEBUI_PULSE_DISABLE === "1" || process.env.CONNECTIONS_PULSE_DISABLE === "1";
-  if (disabled) return { ok: true, enabled: false };
-  const url = process.env.DEVWEBUI_PULSE_URL?.trim() || process.env.CONNECTIONS_PULSE_URL?.trim();
-  if (!url) return { ok: true, enabled: false };
-  const s = readSettings();
-  if (!s.pulseInstallId) {
-    s.pulseInstallId = randomUUID();
-    writeSettings(s);
-  }
-  const token =
-    process.env.DEVWEBUI_PULSE_TOKEN?.trim() || process.env.CONNECTIONS_PULSE_TOKEN?.trim();
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
-        source: "connections",
-        app: "devwebui",
-        installId: s.pulseInstallId,
-        event,
-        properties,
-        ts: new Date().toISOString(),
-      }),
-    });
-    return { ok: res.ok, enabled: true };
-  } catch {
-    return { ok: false, enabled: true };
-  }
-}
-
 /**
  * Wire the manager's live events (status/log/projects/errors) out to connected SSE
  * clients, and register the `/stream` endpoint they connect through.
@@ -163,7 +123,7 @@ export function registerRealtime(app: Hono, manager: Manager) {
   );
 }
 
-/** Register health/update/pulse/shutdown/settings/error-log routes. */
+/** Register health/update/shutdown/settings/error-log routes. */
 export function registerSystemRoutes(app: Hono, manager: Manager, options: CreateAppOptions) {
   // `service` is the identity the launchers match on. Without it a responder is indistinguishable
   // from any other server that happens to answer this path -- a Vite dev server returns its SPA
@@ -177,37 +137,14 @@ export function registerSystemRoutes(app: Hono, manager: Manager, options: Creat
     // release makes the menu item lie ("up to date") until the tab is reloaded. Automatic
     // background checks still take the cached path.
     const status = await checkForUpdate({ fresh: c.req.query("fresh") === "1" });
-    void recordPulse("update_check", {
-      available: status.updateAvailable,
-      canApply: status.canApply,
-      reason: status.reason,
-    });
     return c.json(status);
   });
   app.post(ROUTES.updatesApply, async (c) =>
     guard(c, async () => {
-      void recordPulse("update_apply_clicked");
-      try {
-        const result = await applyUpdate();
-        void recordPulse("update_apply_result", {
-          ok: result.ok,
-          restartRequired: result.restartRequired,
-        });
-        return c.json(result);
-      } catch (e) {
-        void recordPulse("update_apply_result", {
-          ok: false,
-          message: e instanceof Error ? e.message : String(e),
-        });
-        throw e;
-      }
+      const result = await applyUpdate();
+      return c.json(result);
     }),
   );
-  app.post(ROUTES.pulse, async (c) => {
-    const body = await readBody(c);
-    const result = await recordPulse(String(body.event ?? ""), body.properties);
-    return c.json(result, result.ok ? 200 : 400);
-  });
   // NOT an auth boundary, and deliberately so. `x-devwebui-shutdown-source: ui` is a ROUTING
   // signal ("this is a whole-app shutdown, not a tray-managed restart"), not a credential —
   // the CLI's `devwebui stop` sends it too (server/src/cli.ts). What actually gates this route

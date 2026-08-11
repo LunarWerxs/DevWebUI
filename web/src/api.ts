@@ -113,10 +113,6 @@ export const checkUpdate = (opts?: { force?: boolean }) =>
 export const applyUpdate = () =>
   reqJson<UpdateApplyResult>(ROUTES.updatesApply, { method: "POST" });
 
-/** Fire-and-forget product pulse; a no-op unless a collector endpoint is configured. */
-export const recordPulse = (event: string, properties?: Record<string, unknown>) =>
-  reqJson<{ ok: boolean; enabled: boolean }>(ROUTES.pulse, jsonInit("POST", { event, properties }));
-
 /** Patch global settings; `restart` re-launches running processes to apply a runtime change now. */
 export const saveSettings = (patch: Partial<Settings> & { restart?: boolean }) =>
   reqJson<Settings>(ROUTES.settings, jsonInit("PUT", patch));

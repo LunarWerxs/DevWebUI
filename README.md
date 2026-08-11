@@ -162,10 +162,16 @@ DevWebUI runs entirely on your machine: a single daemon on your localhost, open 
   in Settings, and `@cnct/connect` (the SDK it needs, which also ships the settings-store locker
   client) is an optional dependency that is installed but never imported or initialized unless
   you do.
-- **Product-pulse telemetry.** A `recordPulse` hook on a few daemon routes (update checks, update
-  apply results) sends nothing in this open-source build unless you set `DEVWEBUI_PULSE_URL` (or
-  `CONNECTIONS_PULSE_URL`) to point it at your own collector, and `DEVWEBUI_PULSE_DISABLE=1` (or
-  `CONNECTIONS_PULSE_DISABLE=1`) forces it off regardless of that.
+- **Anonymous install ping**: the update check (`GET /api/updates`, cached 5 minutes, fired when
+  the GUI loads or on the opt-in auto-update timer) is answered by an install counter at
+  `studio.connections.icu` that proxies GitHub's own releases feed, and the request carries a
+  random per-install id plus your app version and OS family (Windows / macOS / Linux) so we know
+  roughly how many installs exist. That's it: no hostname, username, path, or account info, ever.
+  Country is derived server-side from the request, and no IP address is stored. The request also
+  fails silently and never blocks anything if it can't reach the network. Set
+  `DEVWEBUI_NO_PING=1` to turn it off (the older `DEVWEBUI_PULSE_DISABLE=1` /
+  `CONNECTIONS_PULSE_DISABLE=1` still work too); it's already off automatically in dev/test/CI
+  runs.
 
 On the roadmap: macOS / Linux tray, an in-GUI env editor, and multi-host.
 

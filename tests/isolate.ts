@@ -58,6 +58,13 @@ function ensureIsolatedHome(): string | null {
   return dir;
 }
 
+// The repo's one "is this a test run?" signal, alongside DEVWEBUI_HOME above — `bun test` doesn't
+// set NODE_ENV itself, so this is the earliest point every data-touching test agrees it's isolated.
+// server/src/github-updater.ts's install ping reads it to skip itself in exactly this situation:
+// a test run is never a real install worth counting. `??=` so an explicit NODE_ENV (e.g. a caller
+// deliberately testing production behavior) is never clobbered.
+process.env.NODE_ENV ??= "test";
+
 sweepStaleHomes();
 
 /** The throwaway dir this module created, or null if DEVWEBUI_HOME was already set. setup.ts cleans it up. */

@@ -35,8 +35,6 @@ export const ROUTES = {
   portableWindow: "/api/portable-window",
   updates: "/api/updates",
   updatesApply: "/api/updates/apply",
-  // Product pulse — deliberately neutral path + key.
-  pulse: "/api/pulse",
   errors: "/api/errors",
   errorsClear: "/api/errors/clear",
   errorsDismiss: "/api/errors/dismiss",

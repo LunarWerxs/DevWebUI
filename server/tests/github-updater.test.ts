@@ -96,7 +96,7 @@ function stubFetchJson(handlers: Record<string, () => Response>): typeof fetch {
 test("applyUpdate refuses when the release has no SHA256SUMS.txt manifest", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = stubFetchJson({
-    "/releases/latest": () =>
+    "/v1/app/devwebui/latest": () =>
       new Response(
         JSON.stringify({
           tag_name: `v${REMOTE_VERSION}`,
@@ -124,7 +124,7 @@ test("applyUpdate refuses when the downloaded bytes don't match the published ch
   const fakeBytes = new TextEncoder().encode("not-the-real-binary");
   const wrongDigest = "0".repeat(64); // guaranteed not to equal sha256(fakeBytes)
   globalThis.fetch = stubFetchJson({
-    "/releases/latest": () =>
+    "/v1/app/devwebui/latest": () =>
       new Response(
         JSON.stringify({
           tag_name: `v${REMOTE_VERSION}`,

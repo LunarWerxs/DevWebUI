@@ -154,7 +154,12 @@ export interface Settings {
   skipMac: boolean; // skip macOS system folders
   skipLinux: boolean; // skip Linux system folders
   osSkip: Record<"windows" | "mac" | "linux", string[]>; // the editable per-OS skip lists (seeded from defaults)
-  pulseInstallId?: string; // anonymous install id used only when a Connections pulse endpoint is configured
+  /** Anonymous per-install id for the Studio install ping folded into the update check
+   *  (server/src/github-updater.ts) — random, generated once, never synced across machines. */
+  pulseInstallId?: string;
+  /** True once this install's first-ever ping has succeeded — drives the one-time `&new=1` the
+   *  ping sends so Studio's install counter (not a returning-install re-check) only counts it once. */
+  pulseInstallReported?: boolean;
   /**
    * Auto-update the app on a schedule: check the update remote, and when a newer commit is
    * available AND the working tree is clean (canApply), pull + reinstall + rebuild, then

@@ -211,10 +211,7 @@ onMounted(async () => {
   await store.refresh().catch(() => {}); // best-effort initial load — a failed fetch just leaves
   // the empty/previous project list until the SSE stream or next poll catches it up
   // Defer the machine sweep so the UI paints first (low-priority background scan).
-  scheduleIdle(() => {
-    store.pulseAppOpenedOnce();
-    void store.checkForUpdate();
-  });
+  scheduleIdle(() => void store.checkForUpdate());
   scheduleIdle(() => void autoScanOnStart());
 });
 </script>

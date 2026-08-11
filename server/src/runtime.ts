@@ -127,6 +127,7 @@ export function readSettings(): Settings {
           : typeof s.analyticsInstallId === "string"
             ? s.analyticsInstallId
             : undefined,
+      pulseInstallReported: bool(s.pulseInstallReported, false),
       autoUpdate: bool(s.autoUpdate, false),
       autoUpdateIntervalSecs: Number.isFinite(s.autoUpdateIntervalSecs)
         ? clampAutoUpdateInterval(s.autoUpdateIntervalSecs)
@@ -176,6 +177,7 @@ export function writeSettings(patch: Partial<Settings>): Settings {
     osSkip: patch.osSkip !== undefined ? readOsSkip(patch.osSkip, cur.osSkip) : cur.osSkip,
     pulseInstallId:
       typeof patch.pulseInstallId === "string" ? patch.pulseInstallId : cur.pulseInstallId,
+    pulseInstallReported: bool(patch.pulseInstallReported, cur.pulseInstallReported ?? false),
     autoUpdate: bool(patch.autoUpdate, cur.autoUpdate),
     autoUpdateIntervalSecs:
       patch.autoUpdateIntervalSecs !== undefined

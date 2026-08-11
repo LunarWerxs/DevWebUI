@@ -1,6 +1,6 @@
 /** GitHub Releases updater for the compiled distribution; archives are the updater contract. */
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   cpSync,
   existsSync,
@@ -13,11 +13,15 @@ import {
 import { basename, dirname, join } from "node:path";
 import pkg from "../../package.json";
 import type { UpdateApplyResult, UpdateStatus } from "../../shared/dto";
+import { readSettings, writeSettings } from "./runtime";
 
 const SERVICE = "devwebui" as const;
 const REPO = "LunarWerxs/DevWebUI";
 const RELEASES_PAGE = `https://github.com/${REPO}/releases`;
-const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`;
+// Studio's install-ping endpoint returns the SAME GitHub releases/latest JSON verbatim (it's a
+// passthrough proxy), so hitting it here doubles as both the update check AND the one anonymous
+// "an install exists" signal — no separate network call for the ping. See latestRelease() below.
+const LATEST_API = "https://studio.connections.icu/v1/app/devwebui/latest";
 const VERSION = pkg.version;
 
 export interface ReleaseAsset {
@@ -105,15 +109,71 @@ function baseStatus(overrides: Partial<UpdateStatus>): UpdateStatus {
   };
 }
 
+/** Coarse OS family for the ping's `os` query param — no version/build number, just windows/macos/linux. */
+function pingOsTag(platform: NodeJS.Platform = process.platform): string {
+  return platform === "win32" ? "windows" : platform === "darwin" ? "macos" : "linux";
+}
+
+/**
+ * True when the anonymous install ping should be suppressed. The underlying fetch still runs
+ * either way (it's the real update check) — this only decides whether it carries identity.
+ * DEVWEBUI_NO_PING is the documented opt-out; DEVWEBUI_PULSE_DISABLE / CONNECTIONS_PULSE_DISABLE
+ * are honored too since the README already told users those turn telemetry off. Dev/test/CI runs
+ * are never worth counting as an install: NODE_ENV=test covers `bun test`, CI covers GitHub
+ * Actions, and DEVWEBUI_PORT_FIXED=1 is the flag `bun run dev` (server/src/dev.ts) already sets
+ * on itself for an unrelated reason (pinning the daemon's port) — reused here rather than adding
+ * a second dev-mode flag.
+ */
+function pingSuppressed(): boolean {
+  return (
+    process.env.DEVWEBUI_NO_PING === "1" ||
+    process.env.DEVWEBUI_PULSE_DISABLE === "1" ||
+    process.env.CONNECTIONS_PULSE_DISABLE === "1" ||
+    process.env.NODE_ENV === "test" ||
+    !!process.env.CI ||
+    process.env.DEVWEBUI_PORT_FIXED === "1"
+  );
+}
+
+/** Get (or lazily mint + persist) this install's anonymous ping id — reusing whatever the
+ *  retired product-pulse attempt already generated (settings.json's pulseInstallId, itself
+ *  migrated from an even older analyticsInstallId) so an existing install keeps counting as
+ *  one install rather than minting a second id. */
+function pingInstallId(): string {
+  const existing = readSettings().pulseInstallId;
+  if (existing) return existing;
+  const fresh = randomUUID();
+  writeSettings({ pulseInstallId: fresh });
+  return fresh;
+}
+
 async function latestRelease(): Promise<Release> {
-  const response = await fetch(LATEST_API, {
+  const suppressed = pingSuppressed();
+  const url = new URL(LATEST_API);
+  let installId: string | null = null;
+  if (!suppressed) {
+    installId = pingInstallId();
+    url.searchParams.set("v", VERSION);
+    url.searchParams.set("os", pingOsTag());
+    // First-ever successful ping for this install only — see the write-back below.
+    if (!readSettings().pulseInstallReported) url.searchParams.set("new", "1");
+  }
+  const response = await fetch(url, {
     headers: {
       accept: "application/vnd.github+json",
       "user-agent": `${SERVICE}/${VERSION}`,
+      ...(installId ? { "X-Install-Id": installId } : {}),
     },
+    // Fire-and-forget contract: never let a stalled network hang the update check indefinitely.
+    signal: AbortSignal.timeout(5_000),
   });
   if (!response.ok) throw new Error(`GitHub Releases API returned HTTP ${response.status}`);
-  return (await response.json()) as Release;
+  const release = (await response.json()) as Release;
+  // Persist "reported" only after a confirmed successful ping, so a failed/suppressed attempt
+  // still sends &new=1 next time instead of silently under-counting the install.
+  if (installId && !readSettings().pulseInstallReported)
+    writeSettings({ pulseInstallReported: true });
+  return release;
 }
 
 let cached: { status: UpdateStatus; at: number } | null = null;

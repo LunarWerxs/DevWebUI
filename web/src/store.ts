@@ -26,7 +26,6 @@ const ALL_STATUS_BUCKETS: StatusBucket[] = ["running", "busy", "crashed", "stopp
 const VIEW_MODE_KEY = "devwebui.viewMode.v2";
 const LEGACY_VIEW_MODE_KEY = "devwebui.viewMode";
 let notifSeq = 0;
-let appOpenedPulsed = false;
 // Monotonic id for every log line the store ever appends (fetch or SSE), so the
 // drawer can key its list on stable identity instead of array index (see LogDrawer.vue).
 let logSeq = 0;
@@ -281,20 +280,6 @@ export const useAppStore = defineStore("app", () => {
     const [p, e] = await Promise.all([api.getProjects(), api.getErrors()]);
     projects.value = p;
     errors.value = e;
-  }
-
-  async function recordPulse(event: string, properties?: Record<string, unknown>) {
-    try {
-      await api.recordPulse(event, properties);
-    } catch {
-      /* pulse is non-critical */
-    }
-  }
-
-  function pulseAppOpenedOnce() {
-    if (appOpenedPulsed) return;
-    appOpenedPulsed = true;
-    void recordPulse("app_opened");
   }
 
   function connect() {
@@ -591,8 +576,6 @@ export const useAppStore = defineStore("app", () => {
     checkForUpdate,
     checkForUpdateFresh,
     applyUpdate,
-    recordPulse,
-    pulseAppOpenedOnce,
     connect,
     fetchLogs,
     removeProject,
