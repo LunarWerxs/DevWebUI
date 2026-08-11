@@ -113,6 +113,26 @@ export const useAppStore = defineStore("app", () => {
   const autoUpdate = ref(false);
   const autoUpdateIntervalSecs = ref(21_600);
   /**
+   * Notify-only update checks: the daemon checks the update remote on a schedule and TELLS the
+   * owner when one lands (SSE `update_available`, surfaced by UpdateBanner.vue) — nothing installs
+   * without a click. Default ON. Mirrors the server's `updateNotify` setting. Loaded on startup,
+   * refreshed after a save.
+   */
+  const updateNotify = ref(true);
+  /**
+   * Live "an update is waiting" state, set by the SSE `update_available` event (see connect()
+   * below) — independent of the polled `updateStatus` above, since this arrives unprompted from
+   * the daemon's own scheduled check. Cleared by an explicit dismiss or a successful apply.
+   */
+  const updateAvailable = ref(false);
+  const updateAvailableCanApply = ref(true);
+  const updateAvailableReason = ref<string | null>(null);
+  /** Hide the update-available banner. A "later", not an opt-out — the next scheduled check
+   *  (or a fresh SSE reconnect resync) can re-announce it. */
+  function dismissUpdateAvailable() {
+    updateAvailable.value = false;
+  }
+  /**
    * Portable mode: the app UI opens in a chromeless Chromium app window instead of a
    * browser tab, both from the in-app toggle and the tray/desktop launcher. Mirrors the
    * server's `portableMode` setting. Default OFF. Loaded on startup, refreshed after a save.
@@ -132,6 +152,7 @@ export const useAppStore = defineStore("app", () => {
       linkHost.value = s.linkHost ?? ""; // blank → resolved to the page host at the link site; tolerate an older daemon that omits the key
       autoUpdate.value = s.autoUpdate ?? false;
       autoUpdateIntervalSecs.value = s.autoUpdateIntervalSecs ?? 21_600;
+      updateNotify.value = s.updateNotify ?? true;
       portableMode.value = s.portableMode ?? false;
     } catch {
       /* keep the optimistic default — Settings still reads/writes directly */
@@ -285,7 +306,7 @@ export const useAppStore = defineStore("app", () => {
   function connect() {
     const { status, data, event } = useEventSource(
       "/api/stream",
-      ["projects", "errors", "status", "log"],
+      ["projects", "errors", "status", "log", "update_available"],
       { autoReconnect: { retries: -1, delay: 2500 } },
     );
     watch(status, (s) => (connected.value = s === "OPEN"));
@@ -322,6 +343,14 @@ export const useAppStore = defineStore("app", () => {
           }
           break;
         }
+        case "update_available":
+          // The daemon's scheduled check (server/src/auto-update.ts) found a newer version while
+          // auto-apply was off (or blocked) and announced it — the OFFER, never the act. Nothing
+          // installs until the owner clicks "Update now" on UpdateBanner.vue.
+          updateAvailable.value = true;
+          updateAvailableCanApply.value = parsed.canApply !== false;
+          updateAvailableReason.value = typeof parsed.reason === "string" ? parsed.reason : null;
+          break;
       }
     });
   }
@@ -548,6 +577,11 @@ export const useAppStore = defineStore("app", () => {
     linkHost,
     autoUpdate,
     autoUpdateIntervalSecs,
+    updateNotify,
+    updateAvailable,
+    updateAvailableCanApply,
+    updateAvailableReason,
+    dismissUpdateAvailable,
     portableMode,
     setAutoUpdate,
     loadSettings,

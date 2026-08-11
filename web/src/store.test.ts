@@ -212,6 +212,30 @@ describe("SSE event application", () => {
     expect(buf.at(-1)?.line).toBe(`line ${MAX_LOG_LINES + 4}`); // the newest line survives
   });
 
+  it("'update_available' sets the banner state, canApply/reason default to open/none, and dismiss clears it", async () => {
+    const store = useAppStore();
+    store.connect();
+    const h = sseHandle();
+
+    // canApply omitted → treated as applicable (only an explicit `false` blocks it).
+    h.event.value = "update_available";
+    h.data.value = JSON.stringify({ from: "aaaa", to: "bbbb" });
+    await nextTick();
+    expect(store.updateAvailable).toBe(true);
+    expect(store.updateAvailableCanApply).toBe(true);
+    expect(store.updateAvailableReason).toBe(null);
+
+    store.dismissUpdateAvailable();
+    expect(store.updateAvailable).toBe(false);
+
+    // A blocked update (dirty tree) carries canApply: false + a reason.
+    h.data.value = JSON.stringify({ from: "aaaa", to: "bbbb", canApply: false, reason: "dirty" });
+    await nextTick();
+    expect(store.updateAvailable).toBe(true);
+    expect(store.updateAvailableCanApply).toBe(false);
+    expect(store.updateAvailableReason).toBe("dirty");
+  });
+
   it("every log line gets a stable seq so the drawer keys on identity, not array index", async () => {
     const store = useAppStore();
     store.connect();

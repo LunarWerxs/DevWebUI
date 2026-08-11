@@ -170,6 +170,13 @@ export interface Settings {
   /** Auto-update check cadence in seconds. Clamped to [900, 604800]; default 21600 (6 h). */
   autoUpdateIntervalSecs: number;
   /**
+   * Check for updates on a schedule and TELL the owner when one lands (SSE `update_available`,
+   * surfaced as a banner with an "Update now" action). Default ON: knowing you're out of date
+   * costs nothing and nothing installs without a click. Applying is still gated on `autoUpdate`
+   * (or that click) — see server/src/auto-update.ts.
+   */
+  updateNotify: boolean;
+  /**
    * Open the app UI in a chromeless Chromium app window (`--app=URL`) instead of a
    * normal browser tab — both from the in-app toggle and the tray/desktop launcher.
    * Default OFF. See server/src/portable-window.mjs (shared kit) + POST /api/portable-window.

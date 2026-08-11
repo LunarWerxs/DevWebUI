@@ -10,10 +10,18 @@
  * which owns the shutdown handle. The tray then finds the successor via ~/.devwebui/runtime.json +
  * /api/health exactly as it does after a manual restart.
  *
- * OPT-IN (cfg.autoUpdate; absent/false = off) — it restarts the daemon unattended, so it's never on
- * by default. A dirty working tree is NEVER updated (`canApply` gates it), so uncommitted local work
- * is safe. Timer shape is a self-rescheduling setTimeout (never setInterval) so a slow apply can't
- * stack. Primed + toggled live from server/src/http/core.ts's settings route; started/stopped in
+ * TWO settings share this one timer, because they need the same check and differ only in what
+ * happens next:
+ *   · cfg.updateNotify (absent = ON)  — announce an available update (SSE `update_available`) and
+ *     let the owner decide from the web UI's banner. Nothing is installed.
+ *   · cfg.autoUpdate   (absent = OFF) — additionally APPLY it and self-relaunch, unattended.
+ * Those are different consents: being told you are out of date costs nothing, whereas restarting
+ * the daemon out from under whoever is using it is a thing you opt into. So the timer runs when
+ * EITHER is on, and only the second one ever applies.
+ *
+ * A dirty working tree is NEVER updated (`canApply` gates it), so uncommitted local work is safe.
+ * Timer shape is a self-rescheduling setTimeout (never setInterval) so a slow apply can't stack.
+ * Primed + toggled live from server/src/http/core.ts's settings route; started/stopped in
  * server/src/index.ts. Broadcasting is injected via `setAutoUpdateBroadcast` (the daemon wires it to
  * the Manager's EventEmitter, relayed to SSE clients by registerRealtime) so this module stays
  * decoupled from any particular transport.
@@ -63,13 +71,14 @@ export function setAutoUpdateHooks(h: Partial<AutoUpdateHooks>): void {
 // ── broadcast (injected — index.ts wires this to the Manager's EventEmitter → SSE clients) ──
 export type AutoUpdateBroadcast = (event: string, data: unknown) => void;
 let broadcast: AutoUpdateBroadcast = () => {}; // no-op until wired (e.g. in tests)
-/** Set the broadcast sink used for `auto_update_applying` / `auto_update_restarting`. */
+/** Set the broadcast sink used for `update_available` / `auto_update_applying` / `auto_update_restarting`. */
 export function setAutoUpdateBroadcast(fn: AutoUpdateBroadcast): void {
   broadcast = fn;
 }
 
 // ── runtime state (mirrors cfg.autoUpdate*; primed at boot in http/core.ts, toggled on settings) ──
-let enabled = false; // OFF by default — it restarts the daemon → opt-in
+let enabled = false; // auto-APPLY: OFF by default — it restarts the daemon → opt-in
+let notifyEnabled = true; // auto-NOTIFY: ON by default — it only tells you, and never acts
 let intervalSecs = AUTO_UPDATE_INTERVAL_DEFAULT_S;
 let started = false; // true only after the daemon finishes booting (startAutoUpdate)
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -78,6 +87,14 @@ let applying = false; // an apply is in flight — never overlap checks/applies
 
 export function autoUpdateEnabled(): boolean {
   return enabled;
+}
+export function updateNotifyEnabled(): boolean {
+  return notifyEnabled;
+}
+/** Toggle "tell me about updates" (PUT /api/settings). Re-arms the shared timer. */
+export function setUpdateNotifyEnabled(on: boolean): void {
+  notifyEnabled = on;
+  reconcile();
 }
 export function getAutoUpdateIntervalSecs(): number {
   return intervalSecs;
@@ -114,14 +131,43 @@ export async function runAutoUpdateOnce(): Promise<AutoUpdateRunResult> {
     };
   if (!status.updateAvailable)
     return { checked: true, applied: false, relaunched: false, reason: "up-to-date" };
+
+  // An update exists. Unless the owner opted into silent installs, this is where it stops: say so
+  // and let them choose (the web UI's banner). Announced even when `canApply` is false (dirty
+  // tree) — "an update is waiting, commit your work to take it" is exactly the useful thing to
+  // know at that moment, and the banner shows the reason.
+  if (!enabled) {
+    if (notifyEnabled) {
+      broadcast("update_available", {
+        from: status.currentCommit,
+        to: status.remoteCommit,
+        canApply: status.canApply,
+        reason: status.reason ?? null,
+      });
+      return { checked: true, applied: false, relaunched: false, reason: "notified" };
+    }
+    return { checked: true, applied: false, relaunched: false, reason: "notify-off" };
+  }
+
   // Hard gate: canApply is false on a dirty tree / detached HEAD / no update remote — never update then.
-  if (!status.canApply)
+  if (!status.canApply) {
+    // Still worth announcing: an update is waiting and something (usually a dirty tree) is in
+    // the way, which is a thing the owner can resolve.
+    if (notifyEnabled) {
+      broadcast("update_available", {
+        from: status.currentCommit,
+        to: status.remoteCommit,
+        canApply: false,
+        reason: status.reason ?? null,
+      });
+    }
     return {
       checked: true,
       applied: false,
       relaunched: false,
       reason: status.reason ?? "cannot-apply",
     };
+  }
 
   applying = true;
   try {
@@ -156,20 +202,20 @@ async function runTick(): Promise<void> {
   } finally {
     ticking = false;
   }
-  if (started && enabled && !timer) schedule();
+  if (started && (enabled || notifyEnabled) && !timer) schedule();
 }
-/** Bring the timer in line with the current enabled/started state (idempotent). */
+/** Bring the timer in line with the current enabled/notifyEnabled/started state (idempotent). */
 function reconcile(): void {
   if (!started) return;
-  if (enabled && !timer && !ticking) schedule();
-  else if (!enabled && timer) {
+  if ((enabled || notifyEnabled) && !timer && !ticking) schedule();
+  else if (!enabled && !notifyEnabled && timer) {
     clearTimeout(timer);
     timer = null;
   }
 }
 /** Re-arm a running loop with the current cadence (no-op when idle or mid-tick). */
 function retime(): void {
-  if (started && enabled && !ticking) {
+  if (started && (enabled || notifyEnabled) && !ticking) {
     if (timer) clearTimeout(timer);
     timer = null;
     schedule();
@@ -178,7 +224,7 @@ function retime(): void {
 
 /** Begin the loop once the daemon has booted (server/src/index.ts). The first check is one interval
  *  out (never in the boot stampede, so a fresh launch is never interrupted by an immediate restart).
- *  No-op beyond arming when auto-update is disabled. */
+ *  No-op beyond arming when both auto-update and update-notify are disabled. */
 export function startAutoUpdate(): void {
   started = true;
   reconcile();

@@ -5,7 +5,11 @@ import { streamSSE } from "hono/streaming";
 import type { Manager } from "../manager";
 import { readSettings, writeSettings, type RuntimePref } from "../runtime";
 import { applyUpdate, checkForUpdate } from "../updater";
-import { setAutoUpdateEnabled, setAutoUpdateIntervalSecs } from "../auto-update";
+import {
+  setAutoUpdateEnabled,
+  setAutoUpdateIntervalSecs,
+  setUpdateNotifyEnabled,
+} from "../auto-update";
 import { ROUTES } from "../../../shared/routes";
 import {
   DASHBOARD_WINDOW_SIZE,
@@ -194,6 +198,7 @@ export function registerSystemRoutes(app: Hono, manager: Manager, options: Creat
         Number.isFinite(body.autoUpdateIntervalSecs)
           ? body.autoUpdateIntervalSecs
           : undefined,
+      updateNotify: optBool(body.updateNotify),
       portableMode: optBool(body.portableMode),
       hideTrayIcon: optBool(body.hideTrayIcon),
     });
@@ -205,6 +210,7 @@ export function registerSystemRoutes(app: Hono, manager: Manager, options: Creat
     // server/src/auto-update.ts). The interval setter clamps — persist the value it settled on.
     setAutoUpdateEnabled(saved.autoUpdate);
     setAutoUpdateIntervalSecs(saved.autoUpdateIntervalSecs);
+    setUpdateNotifyEnabled(saved.updateNotify);
     // Keep the runtime pointer's launcher-facing flags current so the tray sees the new
     // values within its next poll/timer tick without waiting for a daemon restart.
     updateInstanceInfo({ portableMode: saved.portableMode, hideTrayIcon: saved.hideTrayIcon });

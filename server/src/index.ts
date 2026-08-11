@@ -18,6 +18,7 @@ import {
 import {
   setAutoUpdateEnabled,
   setAutoUpdateIntervalSecs,
+  setUpdateNotifyEnabled,
   setAutoUpdateBroadcast,
   setAutoUpdateHooks,
   startAutoUpdate,
@@ -150,6 +151,9 @@ manager.applyMonitorResources(); // honour the saved toggle (constructor starts 
 // the timer itself only STARTS after boot (startAutoUpdate below), one interval out.
 setAutoUpdateEnabled(startupSettings.autoUpdate === true);
 setAutoUpdateIntervalSecs(startupSettings.autoUpdateIntervalSecs);
+// Update-notify: the opposite default — absent/true = on. It only announces (SSE
+// `update_available`), so the check timer runs even when auto-update stays off.
+setUpdateNotifyEnabled(startupSettings.updateNotify !== false);
 
 // Auto-load every remembered .devwebui file. Only auto-START them when the user has
 // opted in (autoStartOnLaunch) — otherwise a daemon boot would stampede every server.

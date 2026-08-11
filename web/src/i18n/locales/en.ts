@@ -74,6 +74,8 @@ export default {
     updateCheckFailed: "Couldn't check for updates",
     updateNone: "DevWebUI is up to date",
     updateBlocked: "Update cannot be applied yet",
+    updateAvailable: "An update is available",
+    updateNow: "Update now",
     updateApplied: "Update applied",
     updateRestart: "Restart DevWebUI to run the new code.",
     updateFailed: "Update failed",
@@ -352,6 +354,9 @@ export default {
     monitorHelp:
       'Samples each running server\'s CPU and memory with one system query every 10 seconds. Turn <strong class="text-foreground">off</strong> to stop those queries entirely (lighter on the machine) — the CPU and Memory columns are hidden and uptime keeps working.',
     appUpdates: "App updates",
+    updateNotify: "Notify about updates",
+    updateNotifyHelp:
+      'When <strong class="text-foreground">on</strong>, DevWebUI periodically checks for a newer version and shows a banner when one lands — nothing installs until you click <strong class="text-foreground">Update now</strong>. Turn <strong class="text-foreground">off</strong> to stop these checks entirely. Default <strong class="text-foreground">on</strong>: knowing you\'re out of date costs nothing.',
     autoUpdate: "Auto-update",
     autoUpdateHelp:
       'When <strong class="text-foreground">on</strong>, DevWebUI periodically checks for a newer version and, if your local copy has <strong class="text-foreground">no uncommitted changes</strong>, pulls it, reinstalls, rebuilds, and restarts the daemon on its own — no prompt. Default <strong class="text-foreground">off</strong>, since it restarts the daemon unattended. A dirty working tree is never touched.',

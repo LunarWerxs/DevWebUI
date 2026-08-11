@@ -132,6 +132,7 @@ export function readSettings(): Settings {
       autoUpdateIntervalSecs: Number.isFinite(s.autoUpdateIntervalSecs)
         ? clampAutoUpdateInterval(s.autoUpdateIntervalSecs)
         : AUTO_UPDATE_INTERVAL_DEFAULT_S,
+      updateNotify: bool(s.updateNotify, true),
       portableMode: bool(s.portableMode, false),
       hideTrayIcon: bool(s.hideTrayIcon, false),
     };
@@ -149,6 +150,7 @@ export function readSettings(): Settings {
       osSkip: readOsSkip(null, OS_SKIP),
       autoUpdate: false,
       autoUpdateIntervalSecs: AUTO_UPDATE_INTERVAL_DEFAULT_S,
+      updateNotify: true,
       portableMode: false,
       hideTrayIcon: false,
     };
@@ -183,6 +185,7 @@ export function writeSettings(patch: Partial<Settings>): Settings {
       patch.autoUpdateIntervalSecs !== undefined
         ? clampAutoUpdateInterval(patch.autoUpdateIntervalSecs)
         : cur.autoUpdateIntervalSecs,
+    updateNotify: bool(patch.updateNotify, cur.updateNotify),
     portableMode: bool(patch.portableMode, cur.portableMode),
     hideTrayIcon: bool(patch.hideTrayIcon, cur.hideTrayIcon),
   };

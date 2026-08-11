@@ -6,6 +6,7 @@ import { useI18n } from "vue-i18n";
 import {
   Activity,
   AppWindow,
+  Bell,
   Cpu,
   EyeOff,
   ExternalLink,
@@ -82,6 +83,7 @@ const skipMac = ref(false);
 const skipLinux = ref(false);
 const restartNow = ref(true);
 const autoUpdate = ref(false);
+const updateNotify = ref(true);
 const portableMode = ref(false);
 const hideTrayIcon = ref(false);
 // Pre-edit snapshot of portableMode as THIS panel loaded it. save() detects the
@@ -134,6 +136,7 @@ watch(open, async (v) => {
     skipMac.value = s.skipMac;
     skipLinux.value = s.skipLinux;
     autoUpdate.value = s.autoUpdate ?? false;
+    updateNotify.value = s.updateNotify ?? true;
     portableMode.value = s.portableMode ?? false;
     loadedPortableMode.value = portableMode.value;
     hideTrayIcon.value = s.hideTrayIcon ?? false;
@@ -163,6 +166,7 @@ async function save() {
       skipLinux: skipLinux.value,
       restart: restartNow.value,
       autoUpdate: autoUpdate.value,
+      updateNotify: updateNotify.value,
       portableMode: portableMode.value,
       hideTrayIcon: hideTrayIcon.value,
     });
@@ -171,6 +175,7 @@ async function save() {
     store.linkHost = saved.linkHost;
     store.autoUpdate = saved.autoUpdate;
     store.autoUpdateIntervalSecs = saved.autoUpdateIntervalSecs;
+    store.updateNotify = saved.updateNotify;
     store.portableMode = saved.portableMode;
     loadedPortableMode.value = saved.portableMode;
     // Saving keeps the panel open (owner request); the store reflects the change live and the
@@ -246,6 +251,10 @@ async function save() {
 
       <!-- App updates -->
       <SettingsGroup :label="t('settings.appUpdates')">
+        <SettingsRow :icon="Bell" :label="t('settings.updateNotify')">
+          <template #info><InfoHint><span v-html="t('settings.updateNotifyHelp')" /></InfoHint></template>
+          <template #control><Switch id="sd-update-notify" v-model="updateNotify" /></template>
+        </SettingsRow>
         <SettingsRow :icon="RefreshCw" :label="t('settings.autoUpdate')">
           <template #info><InfoHint><span v-html="t('settings.autoUpdateHelp')" /></InfoHint></template>
           <template #control><Switch id="sd-auto-update" v-model="autoUpdate" /></template>
