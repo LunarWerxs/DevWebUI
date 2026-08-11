@@ -83,3 +83,6 @@ $RECYCLE.BIN/
 
 # Local root rebuild convenience wrapper (delegates to misc/Rebuild.bat)
 /Rebuild.bat
+
+# Local AI memory for this repo. Deliberately NOT published.
+/.claude/memory/
