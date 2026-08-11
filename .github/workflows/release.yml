@@ -83,6 +83,27 @@ jobs:
           if [ -f dist/devwebui.exe ]; then
             cp dist/devwebui.exe "out/devwebui-${target}.exe"
             (cd dist && 7z a -tzip "$GITHUB_WORKSPACE/out/devwebui-${target}.zip" devwebui.exe > /dev/null)
+            # A THIRD Windows asset: the same executable plus the misc/ tray toolkit, for anyone who
+            # wants the notification-area icon rather than a bare window. DevWebUI draws no tray icon
+            # itself — misc/lunarwerx-tray.exe does, as a separate launcher — so without these files
+            # a downloaded build simply cannot have one, whatever the app's settings say.
+            #
+            # Deliberately a SEPARATE asset: the zip above is the auto-updater's transport, and the
+            # updater matches its asset by exact name, so this one cannot be picked up by mistake.
+            tray="devwebui-${target}-with-tray"
+            mkdir -p "tmp/${tray}/misc"
+            cp dist/devwebui.exe "tmp/${tray}/"
+            cp misc/lunarwerx-tray.exe misc/DevWebUI-Tray.json misc/DevWebUI.ico \
+               misc/Create-Shortcut.ps1 misc/New-TrayShortcut.ps1 \
+               misc/Tray-Host.ps1 misc/DevWebUI-Tray.ps1 misc/Tray-Launch.vbs \
+               "tmp/${tray}/misc/"
+            (cd tmp && 7z a -tzip "$GITHUB_WORKSPACE/out/${tray}.zip" "$tray" > /dev/null)
+            # The toolkit is the entire point of this asset, and a bundle missing it still looks
+            # fine, so assert rather than hope.
+            for f in lunarwerx-tray.exe DevWebUI-Tray.json DevWebUI.ico Create-Shortcut.ps1 \
+                     New-TrayShortcut.ps1 Tray-Host.ps1 DevWebUI-Tray.ps1 Tray-Launch.vbs; do
+              test -f "tmp/${tray}/misc/$f" || { echo "::error::tray bundle is missing misc/$f"; exit 1; }
+            done
           elif [ -f dist/devwebui ]; then
             tar -C dist -czf "out/devwebui-${target}.tar.gz" devwebui
           else

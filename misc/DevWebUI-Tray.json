@@ -25,6 +25,16 @@
   "runtimeCandidates": ["~\\.bun\\bin\\bun.exe", "%APPDATA%\\npm\\node_modules\\bun\\bin\\bun.exe"],
   "runtimeFallback": "bun",
 
+  "_compiled": [
+    "Release layout (the -with-tray zip): a compiled devwebui.exe sits at the app root, so run THAT",
+    "instead of bun + server/src, and don't require bun on PATH at all. A source checkout has no exe",
+    "at the root, so this key simply doesn't resolve there and the bun path above stays in force.",
+    "Resolving it also disables firstRun, which bootstraps a checkout and has nothing to do in a",
+    "bundle that ships everything already built."
+  ],
+  "compiledExe": "devwebui.exe",
+  "startCommandCompiled": "\"{COMPILED}\"",
+
   "firstRun": [
     { "missing": "node_modules", "run": "bun install" },
     { "missing": "web\\dist", "run": "bun run build" }

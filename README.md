@@ -36,7 +36,11 @@ automate, and everyone works off a single source of truth.
 **Prebuilt Windows app**: download `devwebui-windows-x64.exe` from
 [Releases](https://github.com/LunarWerxs/DevWebUI/releases) and run it directly. It is an
 icon-bearing GUI executable with the dashboard embedded and no console window or sidecar folders.
-The ZIP beside it is reserved for automatic updates.
+The plain ZIP beside it is reserved for automatic updates.
+
+Want the same tray icon a source checkout gets? Take `devwebui-windows-x64-with-tray.zip` instead,
+run `misc\Create-Shortcut.ps1` once, and launch from the shortcut it creates. The icon comes from a
+small separate launcher (`misc\lunarwerx-tray.exe`), so running `devwebui.exe` on its own has none.
 
 **Windows source checkout**: double-click the **`DevWebUI`** shortcut. It runs hidden with a tray
 icon: right-click for **Open / Rebuild & Restart / Restart / Stop all processes / Quit**
