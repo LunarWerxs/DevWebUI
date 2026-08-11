@@ -166,9 +166,10 @@ DevWebUI runs entirely on your machine: a single daemon on your localhost, open 
   the GUI loads or on the opt-in auto-update timer) is answered by an install counter at
   `studio.connections.icu` that proxies GitHub's own releases feed, and the request carries a
   random per-install id plus your app version and OS family (Windows / macOS / Linux) so we know
-  roughly how many installs exist. That's it: no hostname, username, path, or account info, ever.
-  Country is derived server-side from the request, and no IP address is stored. The request also
-  fails silently and never blocks anything if it can't reach the network. Set
+  roughly how many installs exist. From that request, the server also derives and stores a coarse
+  location (country, region, city, timezone), your network's ASN, locale, and a truncated user
+  agent, but never an IP address. No hostname, username, path, or account info is ever sent. The
+  request also fails silently and never blocks anything if it can't reach the network. Set
   `DEVWEBUI_NO_PING=1` to turn it off (the older `DEVWEBUI_PULSE_DISABLE=1` /
   `CONNECTIONS_PULSE_DISABLE=1` still work too); it's already off automatically in dev/test/CI
   runs.
