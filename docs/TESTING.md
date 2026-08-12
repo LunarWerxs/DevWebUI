@@ -26,6 +26,24 @@ As a second line of defense, `tests/isolate.ts` sets `DEVWEBUI_HOME` at *import*
 this: it fails if any test that value-imports one of those writer modules omits the
 `./isolate` import.
 
+### A test that spawns must state its own timeout
+
+`bun run check:spawntimeout` fails a test, **or a lifecycle hook**, that reaches a subprocess while
+inheriting bun's 5s default. Pass one explicitly: `test(name, fn, 20_000)`, or for a hook, where the
+timeout is the second argument, `beforeAll(fn, 20_000)`. Any value counts; the point is that someone
+chose it. Prefer a named constant with a comment recording the measured local cost, so the next
+reader can tell a deliberate allowance from a guess.
+
+The rule exists because such a test times the machine, not its own assertions, and a cold loaded
+Windows runner has been measured at roughly 10x a dev box on this exact class. That produces the
+worst kind of red: a failure on a commit that changed nothing related, green again on re-run, and a
+maintainer who learns to re-run CI instead of reading it. Hooks are worse still, since bun blames
+the timeout on an unnamed test and never says which hook ran long.
+
+The check resolves module-level helpers transitively, so a spawn two hops away through a `child()`
+helper still counts. It does not follow imports into production code, and it ignores anything inside
+a comment or a string.
+
 If you see failures mentioning something like `Dependency cycle in waitForPort:
 waitfor-test.a -> ...`, or a "first run" error report, in your **real** DevWebUI error
 log, that's a test run that bypassed isolation, not a product bug. Those exact
