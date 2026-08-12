@@ -49,9 +49,43 @@ describe("fires on a test that spawns without an allowance", () => {
       });`;
     expect(findViolations(text).length).toBe(1);
   });
+
+  // The gap that made this check report ✓ on a real outage. ReDesign's tray-launcher beforeAll
+  // regenerates a .lnk through PowerShell + COM: 0.35s locally, 5057ms on windows-latest, and it
+  // held that repo's daemon job red. Hooks are the worse case, because bun blames the timeout on an
+  // unnamed test and the run never names the hook.
+  test("a lifecycle hook that spawns, which was invisible to this check until 2026-08-12", async () => {
+    const { findViolations } = await load();
+    const text = `beforeAll(() => {
+        cp.execFileSync("powershell", ["-NoProfile", "-File", CREATE_SHORTCUT], { stdio: "ignore" });
+      });`;
+    expect(findViolations(text).length).toBe(1);
+  });
+
+  // Two bugs in one line, and the second is why the fixture has to be the REAL shape: with only the
+  // hook gap closed this still passed, because `cp.execFileSync` is dotted and the spawn pattern's
+  // lookbehind threw out any qualifier.
+  test('a namespaced child_process call, e.g. `import cp from "node:child_process"`', async () => {
+    const { findViolations } = await load();
+    const text = `test("regenerates the shortcut", () => {
+        cp.execFileSync("powershell", ["-File", CREATE_SHORTCUT]);
+      });`;
+    expect(findViolations(text).length).toBe(1);
+  });
 });
 
 describe("stays quiet where it must", () => {
+  // A hook states its allowance SECOND, not third. Reading it as third would report every
+  // compliant hook as broken, which is the one way extending this rule could have made things worse.
+  test("hooks that state an allowance, whose timeout is the second argument", async () => {
+    const { findViolations } = await load();
+    const text = `beforeAll(() => {
+        cp.execFileSync("powershell", ["-File", CREATE_SHORTCUT]);
+      }, 60000);
+      afterEach(() => { Bun.spawnSync(["taskkill", "/f", "/im", "x.exe"]); }, 20000);`;
+    expect(findViolations(text).length).toBe(0);
+  });
+
   test("the same tests, each stating an allowance", async () => {
     const { findViolations } = await load();
     const text = `function tracked(rel) {

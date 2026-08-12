@@ -42,13 +42,30 @@ const ID = "subprocess-test-without-explicit-timeout";
 // The spawn APIs this repo's tests actually use are Bun.spawn, Bun.spawnSync and node's spawn; the
 // child_process siblings are listed so a future test reaching for one is caught on its first day
 // rather than on its first cold-runner flake. `Bun.$` and a bare `$\`` are Bun's shell.
+//
+// The `execFileSync` family also matches through a NAMESPACE: `import cp from "node:child_process"`
+// then `cp.execFileSync(...)` is the same spawn, and the leading `(?<![\w.$])` rejected it outright
+// because the preceding character is a dot. Not hypothetical: that is ReDesign's tray-launcher hook
+// exactly, the one that held its windows-latest leg red on 2026-08-12 while this check said ✓. Any
+// identifier may qualify the four unambiguous names (nothing but child_process exports an
+// `execFileSync`); a BARE `spawn` stays unqualified-only, since `queue.spawn(` and friends are
+// common enough that widening it would trade real precision for no recall.
 const SPAWN_CALL =
-  /(?<![\w.$])(?:Bun\.spawnSync|Bun\.spawn|Bun\.\$|spawnSync|execFileSync|execSync|execFile|spawn)\s*\(|\$`/;
+  /(?<![\w.$])(?:Bun\.spawnSync|Bun\.spawn|Bun\.\$|(?:[A-Za-z_$][\w$]*\.)?(?:spawnSync|execFileSync|execSync|execFile)|spawn)\s*\(|\$`/;
 
 // `test(`, `it(`, and the modifier forms. `.if`/`.skipIf` are CURRIED — test.skipIf(c)(name, fn, ms)
 // — which is handled at the call site below, not here.
 const TEST_HEAD =
   /(?<![\w.$])(?:test|it)(?:\.(?:skipIf|todoIf|if|only|failing|each|skip|todo))?\s*\(/g;
+
+// Lifecycle hooks spawn too, and a hook on the 5s default is WORSE than a test on it: bun reports
+// the timeout against an unnamed test ("a beforeEach/afterEach hook timed out for this test"), so
+// the failure does not even name the hook that caused it. Missing this cost ReDesign a red
+// windows-latest leg (2026-08-12): its tray-launcher beforeAll shells out to PowerShell to
+// regenerate a .lnk, 0.35s locally, 5057ms there, while this check reported clean throughout.
+//
+// Their timeout is the SECOND argument, not the third: beforeAll(fn, ms).
+const HOOK_HEAD = /(?<![\w.$])(?:beforeAll|beforeEach|afterAll|afterEach)\s*\(/g;
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git", "tmp", "coverage", "build", ".vite"]);
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
@@ -286,22 +303,30 @@ export function findViolations(text) {
     [...helpers].find((h) => new RegExp(`(?<![\\w.$])${h}\\s*[(<]`).test(span));
 
   const hits = [];
-  TEST_HEAD.lastIndex = 0;
-  for (const head of code.matchAll(TEST_HEAD)) {
-    const open = head.index + head[0].length - 1;
-    let call = extractBalanced(code, open);
-    // `test.skipIf(cond)(name, fn, ms)`: the first span is the condition, the real call is next.
-    const after = open + call.length;
-    if (code[after] === "(") call = extractBalanced(code, after);
+  // `test(name, fn, ms)` puts the timeout third; `beforeAll(fn, ms)` puts it second. Everything else
+  // about the rule is identical, so the two differ only by which argument has to be present.
+  for (const [head, timeoutArg, kind] of [
+    [TEST_HEAD, 2, "test"],
+    [HOOK_HEAD, 1, "hook"],
+  ]) {
+    head.lastIndex = 0;
+    for (const m of code.matchAll(head)) {
+      const open = m.index + m[0].length - 1;
+      let call = extractBalanced(code, open);
+      // `test.skipIf(cond)(name, fn, ms)`: the first span is the condition, the real call is next.
+      const after = open + call.length;
+      if (code[after] === "(") call = extractBalanced(code, after);
 
-    const direct = SPAWN_CALL.test(call);
-    const via = direct ? null : helperHit(call);
-    if (!direct && !via) continue;
+      const direct = SPAWN_CALL.test(call);
+      const via = direct ? null : helperHit(call);
+      if (!direct && !via) continue;
 
-    const args = topLevelArgs(call);
-    if (args.length >= 3 && args[2].length > 0) continue; // an explicit timeout, whatever its value
+      const args = topLevelArgs(call);
+      // an explicit timeout, whatever its value
+      if (args.length > timeoutArg && args[timeoutArg].length > 0) continue;
 
-    hits.push({ index: head.index, via });
+      hits.push({ index: m.index, via, kind });
+    }
   }
   return hits.sort((a, b) => a.index - b.index);
 }
