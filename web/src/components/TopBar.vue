@@ -254,7 +254,7 @@ async function updateApp() {
               <EllipsisVertical class="size-[1.15rem]" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="w-56">
+          <DropdownMenuContent align="end" class="max-w-56">
             <!-- View: a single split control — click the side you want active. -->
             <DropdownMenuLabel>{{ t("view.label") }}</DropdownMenuLabel>
             <div class="px-1 pb-1 pt-0.5">

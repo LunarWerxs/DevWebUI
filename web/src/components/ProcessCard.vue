@@ -341,7 +341,7 @@ function onStop() {
               <EllipsisVertical class="size-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="w-56">
+          <DropdownMenuContent align="end" class="max-w-56">
             <DropdownMenuItem @select="addProcessShortcut(process.id)">
               <MonitorDown class="size-4" /> {{ t("shortcut.addToDesktop") }}
             </DropdownMenuItem>

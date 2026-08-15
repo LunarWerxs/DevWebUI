@@ -296,7 +296,7 @@ async function remove() {
                     <ChevronDown class="size-3.5 opacity-60" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" class="w-56">
+                <DropdownMenuContent align="end" class="max-w-56">
                   <!-- Quick All / None with a live count, so a long candidate list isn't ticked one by one. -->
                   <div class="flex items-center justify-between gap-2 px-2 py-1">
                     <span class="text-[11px] tabular-nums text-muted-foreground">{{ form.links.length }}/{{ linkCandidates.length }}</span>

@@ -262,7 +262,7 @@ async function checkAutostart() {
               <EllipsisVertical class="size-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="w-44">
+          <DropdownMenuContent align="end" class="max-w-44">
             <DropdownMenuItem @select="openEditDialog">
               <Pencil class="size-4" /> {{ t("projectPanel.editProject") }}
             </DropdownMenuItem>

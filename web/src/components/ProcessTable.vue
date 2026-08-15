@@ -354,7 +354,7 @@ function onStop(p: ProcessView) {
                     <EllipsisVertical class="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" class="w-44">
+                <DropdownMenuContent align="end" class="max-w-44">
                   <DropdownMenuItem @select="store.toggleStar(p)">
                     <Star class="size-4" :class="p.starred ? 'fill-warning text-warning' : ''" />
                     {{ p.starred ? t("processTable.unstar") : t("processTable.star") }}
