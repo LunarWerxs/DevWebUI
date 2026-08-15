@@ -78,6 +78,14 @@ function portOf(srv: net.Server): number {
 // crash), so the honest fix is to stop holding a real process-enumeration round trip to a timeout
 // meant for in-memory tests. Matches the 10s explicit timeouts already used in links.test.ts and
 // errors-current.test.ts, with more headroom because this path spawns a shell.
+//
+// DO NOT raise this number when it goes red again. That was tried (5s → 20s) and it went red at
+// ~20014ms on 2026-08-15, because the real defect was never the allowance: collectStdout resolves
+// with partial output on timeout, so a slow PowerShell returned "" and portOwners reported the
+// port as unowned, dropping a plainly-occupied port to low confidence. ports.ts now falls back to
+// `netstat -ano` for the PID, which is a native binary with nothing to autoload, so the answer no
+// longer depends on this allowance at all — worst case is ~8s (the probe) plus a few hundred ms.
+// A failure here now means something real.
 const PORT_OWNER_TIMEOUT_MS = 30_000;
 
 test(

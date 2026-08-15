@@ -12,23 +12,30 @@ const collect = (cmd: string, args: string[], timeoutMs?: number) =>
   collectStdout(cmd, args, { maxBytes: 1 << 16, ...(timeoutMs ? { timeoutMs } : {}) });
 
 /**
- * How long the WINDOWS owner probe may take, overriding collectStdout's 5s default.
+ * How long the WINDOWS enrichment probe may take, overriding collectStdout's 5s default.
  *
  * That default is fine for the unix path (`lsof`, `ps` — tiny static binaries) but is not enough
  * for this one, which starts a whole PowerShell and makes it autoload NetTCPIP and CimCmdlets. On a
- * warm developer machine the round trip is ~1.5s; on a cold or loaded one it goes past 5s, and
- * collectStdout RESOLVES WITH WHAT IT HAS on timeout rather than reporting one. So the probe came
- * back empty, portOwners returned [], and a port that was plainly occupied was reported as having
- * no owner — diagnose() then downgraded a port-in-use crash to "low confidence, cause unknown".
- * Reproduced continuously on windows-latest CI (both port tests landing at ~5010ms, i.e. exactly
- * the timeout) and red on main from 2026-08-03 until 2026-08-06.
+ * warm developer machine the round trip is ~1.5s; on a cold or loaded one it goes well past that,
+ * and collectStdout RESOLVES WITH WHAT IT HAS on timeout rather than reporting one. So the probe
+ * came back empty, portOwners returned [], and a port that was plainly occupied was reported as
+ * having no owner — diagnose() then downgraded a port-in-use crash to "low confidence, cause
+ * unknown". Red on main 2026-08-03..2026-08-06 at ~5010ms, then again on 2026-08-15 at ~20014ms.
  *
- * 20s because the failure mode is a WRONG ANSWER, not a slow one: this runs after a crash, or when
- * freeing a port the user asked to free, and in both cases waiting is strictly better than
- * confidently reporting nobody is there. Still bounded, so a genuinely wedged PowerShell can't hang
- * a diagnosis forever.
+ * Raising this number was the first fix and it was the wrong shape: ANY timeout can be exceeded on
+ * a loaded runner, and every time one is, the answer is silently wrong rather than late. So the
+ * number is no longer load-bearing. `netstat -ano` — a native binary with no modules to autoload —
+ * now answers "who holds this port" on its own, and PowerShell is demoted to enrichment (real
+ * process name, command line, uptime). If it is slow we lose the trimmings, never the fact.
+ *
+ * 8s is therefore just "long enough to be worth waiting for on a warm machine", not a correctness
+ * guarantee.
  */
-const WIN_OWNER_PROBE_TIMEOUT_MS = 20_000;
+const WIN_OWNER_PROBE_TIMEOUT_MS = 8_000;
+
+/** netstat's table can be long on a busy machine, and OUR line may be anywhere in it, so this
+ *  cannot use `collect`'s 64 KiB cap: a truncated table reads exactly like a free port. */
+const NETSTAT_MAX_BYTES = 1 << 20;
 
 // Field separator for the one-line-per-owner PowerShell/ps output below. "::" avoids both the
 // PowerShell backtick-tab escape headaches in a JS template AND collisions with a Windows
@@ -55,7 +62,22 @@ export async function portOwners(port: number): Promise<PortOwner[]> {
       ["-NoProfile", "-Command", ps],
       WIN_OWNER_PROBE_TIMEOUT_MS,
     );
-    return parseWinOwners(out);
+    const owners = parseWinOwners(out);
+    if (owners.length > 0) return owners;
+    // Nothing came back. That is either a genuinely free port or a PowerShell that was too slow,
+    // and those two look identical from here (see WIN_OWNER_PROBE_TIMEOUT_MS). netstat tells them
+    // apart for the price of one native process, so the PID — the part a caller acts on — survives
+    // a wedged shell. Name is best-effort on top.
+    const pids = parseNetstatPids(
+      await collectStdout("netstat", ["-ano", "-p", "TCP"], {
+        maxBytes: NETSTAT_MAX_BYTES,
+      }),
+      port,
+    );
+    if (!pids.length) return [];
+    return Promise.all(
+      pids.map(async (pid) => ({ pid, name: (await winProcessName(pid)) ?? String(pid) })),
+    );
   }
   const pidsOut = await collect("sh", ["-c", `lsof -ti tcp:${port} -sTCP:LISTEN 2>/dev/null`]);
   const pids = [...new Set(pidsOut.split(/\s+/).map(Number).filter(Boolean))];
@@ -65,6 +87,55 @@ export async function portOwners(port: number): Promise<PortOwner[]> {
   // parse below trims/splits defensively rather than assuming fixed-width columns.
   const psOut = await collect("ps", ["-o", "pid=,etime=,args=", "-p", pids.join(",")]);
   return parseUnixOwners(psOut);
+}
+
+/**
+ * PIDs listening on `port`, from `netstat -ano -p TCP`. Exported for tests — the parse is the
+ * whole risk here, and the command itself is not something a test can stage.
+ *
+ * Deliberately does NOT look at the state column. `netstat`'s states are LOCALISED (a German
+ * Windows prints "ABHÖREN", not "LISTENING"), so matching that word would silently return nothing
+ * on most of the world's machines — the exact failure this fallback exists to prevent.
+ *
+ * A listening socket is identified by its FOREIGN address being the wildcard instead, which is
+ * punctuation and therefore the same in every language. That also keeps this fallback's meaning
+ * identical to the primary probe's `-State Listen`: an accepted connection whose local port is
+ * `port` is the same process as the listener anyway, so admitting those rows would only add a way
+ * for the two paths to disagree about which PID to name.
+ */
+const NETSTAT_WILDCARD_FOREIGN = new Set(["0.0.0.0:0", "[::]:0", "*:*"]);
+
+export function parseNetstatPids(out: string, port: number): number[] {
+  const pids = new Set<number>();
+  for (const raw of out.split(/\r?\n/)) {
+    const cols = raw.trim().split(/\s+/);
+    if (cols.length !== 5) continue; // header rows, UDP rows (no state), blank lines
+    const [, local, foreign, , pidStr] = cols;
+    // ":<port>" at the end, so 5173 never matches 15173 — and it covers 0.0.0.0:p, [::]:p and
+    // 127.0.0.1:p alike, which is why an IPv4/IPv6 pair of rows dedupes through the Set.
+    if (!local?.endsWith(`:${port}`)) continue;
+    if (!foreign || !NETSTAT_WILDCARD_FOREIGN.has(foreign)) continue;
+    if (!pidStr || !/^\d+$/.test(pidStr)) continue;
+    const pid = Number(pidStr);
+    if (pid > 0) pids.add(pid); // pid 0 is the idle process, never a squatter you can act on
+  }
+  return [...pids];
+}
+
+/** First CSV field of `tasklist /NH /FO CSV` is the image name. Exported for tests. */
+export function parseTasklistName(out: string): string | undefined {
+  const name = out.trim().match(/^"([^"]+)"/)?.[1];
+  if (!name) return undefined; // e.g. tasklist's "INFO: No tasks are running which match…"
+  // Get-Process reports ProcessName without the extension, and the PowerShell path above is the
+  // one callers normally see; strip it so a fallback answer never reads as a different process.
+  return name.replace(/\.exe$/i, "") || undefined;
+}
+
+/** Best-effort image name for a PID via `tasklist` (native, no modules to autoload). */
+async function winProcessName(pid: number): Promise<string | undefined> {
+  return parseTasklistName(
+    await collect("tasklist", ["/FI", `PID eq ${pid}`, "/NH", "/FO", "CSV"]),
+  );
 }
 
 function parseWinOwners(out: string): PortOwner[] {
