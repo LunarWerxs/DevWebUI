@@ -44,6 +44,8 @@
     "test": "bun test tests server/tests",
     "test:web": "cd web && bun run test",
     "check:kit": "node ../../lunarwerx-ui/sync.mjs --check --app devwebui",
+    "//check:local": "Checks that CANNOT run on GitHub, so localci runs them on the host instead. check:kit compares this app's kit-managed copies against lunarwerx-ui, a PRIVATE sibling repo a public repo's CI can never check out. Without this its only enforcement is the pre-commit hook, which --no-verify skips and which silently no-ops on any machine without the sibling checkout.",
+    "check:local": "bun run check:kit",
     "check:libtypes": "bun run scripts/check-lib-types.mjs",
     "check:spawntimeout": "bun run scripts/check-spawn-test-timeout.mjs",
     "typecheck": "cd web && bun run typecheck && cd .. && tsc --noEmit -p server/tsconfig.json && bun run check:libtypes",
