@@ -4,6 +4,28 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.7] - 2026-08-15
+
+### Fixed
+
+- **Quitting from the tray icon while an update is installing no longer leaves you with no app,
+  and no dev servers.** Applying an update starts the replacement daemon and shuts the old one
+  down 800ms later. For that fraction of a second the replacement was a CHILD of the daemon on its
+  way out, and the tray's Quit does not stop one process, it force-kills a whole process tree, so
+  a Quit landing in that window killed both, taking the handover of your running dev servers with
+  it. Neither `detached: true` nor `.unref()` removes a child from its parent's tree on Windows,
+  which is exactly why the shared launch helper exists; the relaunch simply never used it.
+  Measured directly: with the old spawn the replacement dies to a tray-style tree-kill, with the
+  new one it survives.
+- **The relaunch now survives Windows throwing away the environment.** That launch helper hands
+  the process off to Windows' own process-creation service, which does not pass on environment
+  variables, and the port, the "you are the replacement" signal and the list of dev servers to
+  bring back up were all environment variables. All three now travel as command-line arguments,
+  which that service does deliver, with the environment kept as a fallback for macOS and Linux.
+  Because any argument at all used to mean "this is a command-line invocation, print something and
+  exit", the daemon now recognises its own three flags first; anything else still reaches the CLI
+  exactly as before.
+
 ## [0.8.6] - 2026-08-15
 
 ### Fixed
