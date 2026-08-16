@@ -7,6 +7,7 @@ import { startProjectWatch } from "./project-watch";
 import { materializeSettings, readSettings } from "./runtime";
 import { flushPending, initConnections, pullNow, syncStatus } from "./connections";
 import { daemonPort } from "./constants";
+import { daemonLaunchVector } from "./launch-vector";
 import { findFreePort, isPortListening } from "./ports";
 import { skipSingleInstanceGuard } from "./single-instance";
 import {
@@ -258,12 +259,34 @@ setAutoUpdateHooks({
     // to clean up, nothing to go stale, and it dies with the process if the spawn fails.
     const resume = manager.runningIds();
     try {
-      const child = spawn(process.argv[0]!, process.argv.slice(1), {
+      // daemonLaunchVector(), NOT process.argv[0..1]. Inside a `bun build --compile` binary
+      // process.argv is the placeholder pair ["bun", "B:/~BUN/root/devwebui.exe"] — argv[0] is the
+      // literal string "bun" (not a path) and argv[1] is a virtual path that exists only inside the
+      // running binary's own filesystem. Respawning that pair fails with `Module not found
+      // "B:/~BUN/root/devwebui.exe"` on a machine that has Bun, and cannot resolve "bun" at all on
+      // the machines this exe exists FOR. The spawn itself still "succeeds" (the child starts and
+      // then dies), so the catch below never fires and we shut down 800ms later believing a
+      // successor is coming up — an applied update leaving ZERO daemons. launch-vector.ts already
+      // owns this exact question for the CLI and shortcuts; the relaunch just never asked it.
+      const [exe, ...vectorArgs] = daemonLaunchVector();
+      const child = spawn(exe!, [...vectorArgs, ...process.argv.slice(2)], {
         cwd: process.cwd(),
         detached: true,
         stdio: "ignore",
         windowsHide: true,
-        env: { ...process.env, DEVWEBUI_RELAUNCH: "1", DEVWEBUI_RELAUNCH_RESUME: resume.join(",") },
+        env: {
+          ...process.env,
+          DEVWEBUI_RELAUNCH: "1",
+          DEVWEBUI_RELAUNCH_RESUME: resume.join(","),
+          // The port we are actually SERVING on, not the one we preferred. DESIRED_PORT is
+          // daemonPort() (config/env); PORT is where findFreePort actually landed, and they diverge
+          // for every daemon that has ever hopped. The successor derives BOTH its waitForPortFree()
+          // target and its bind from DEVWEBUI_PORT, so without this it waits out the full 8s on a
+          // port its predecessor never held and then binds that port — relocating the app away from
+          // whatever port the user's open tab is talking to. Pinning it here also means a daemon
+          // that hopped once STAYS on the hopped port across updates instead of drifting back.
+          DEVWEBUI_PORT: String(PORT),
+        },
       });
       child.unref();
     } catch (e) {
