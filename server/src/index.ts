@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { buildDetachedSpawn } from "./detached-spawn.mjs";
+import { buildRelaunchArgv } from "./relaunch-argv.mjs";
 import { Manager } from "./manager";
 import { createApp } from "./http";
 import { applyToManager } from "./http/connections-routes";
@@ -7,7 +9,8 @@ import { startProjectWatch } from "./project-watch";
 import { materializeSettings, readSettings } from "./runtime";
 import { flushPending, initConnections, pullNow, syncStatus } from "./connections";
 import { daemonPort } from "./constants";
-import { daemonLaunchVector } from "./launch-vector";
+import { isCompiledBinary } from "./launch-vector";
+import { parseDaemonArgs, stripFlagPair } from "./daemon-args";
 import { findFreePort, isPortListening } from "./ports";
 import { skipSingleInstanceGuard } from "./single-instance";
 import {
@@ -46,17 +49,25 @@ import { cleanupStaleUpdateArtifacts } from "./updater";
 // Ordering matters: this sits above initFileLogging so a one-shot CLI invocation
 // doesn't tee its output into the long-running daemon's log file.
 // ---------------------------------------------------------------------------
-if (process.argv.length > 2) {
+// …unless every extra token is one of the DAEMON's own flags. The auto-update relaunch has to
+// pass its port and its relaunch signal as ARGUMENTS now (win32 hands the launch to WMI, which
+// does not carry an environment block), and without this guard the successor would run the CLI,
+// print something, and exit — an applied update leaving ZERO daemons. parseDaemonArgs is
+// all-or-nothing, so every existing CLI invocation still lands in the branch below untouched.
+const DAEMON_ARGS = parseDaemonArgs(process.argv.slice(2));
+if (process.argv.length > 2 && DAEMON_ARGS === null) {
   const { run } = await import("./cli");
   await run(process.argv.slice(2));
   process.exit(process.exitCode ?? 0);
 }
+/** True when this process is the auto-update successor (flag, or the inherited env var on POSIX). */
+const IS_RELAUNCH = DAEMON_ARGS?.relaunch === true || process.env.DEVWEBUI_RELAUNCH === "1";
 
 cleanupStaleUpdateArtifacts();
 
 const releaseDoubleClick =
   (globalThis as { __DEVWEBUI_RELEASE_BUILD__?: boolean }).__DEVWEBUI_RELEASE_BUILD__ === true &&
-  process.env.DEVWEBUI_RELAUNCH !== "1" &&
+  !IS_RELAUNCH &&
   !process.env.DEVWEBUI_TRAY_SHUTDOWN_TOKEN;
 
 // Persist console output to <CONFIG_DIR>/logs/daemon.log BEFORE anything else can throw, so
@@ -129,10 +140,12 @@ async function waitForPortFree(port: number, timeoutMs: number): Promise<void> {
 // configured one, but if it's busy (a stale daemon, or anything else holding it)
 // move to the next free port instead of crashing on bind. The chosen port is
 // published to ~/.devwebui/runtime.json so the launcher opens the right URL.
-const DESIRED_PORT = daemonPort();
+// `--port` from our predecessor wins: it is the port actually being SERVED, where daemonPort()
+// is only the configured preference, and those diverge for good after a single hop.
+const DESIRED_PORT = DAEMON_ARGS?.port ?? daemonPort();
 // A daemon relaunched by the auto-updater (DEVWEBUI_RELAUNCH=1) waits for its predecessor to
 // free the preferred port BEFORE probing/binding, so it rebinds the SAME port.
-if (process.env.DEVWEBUI_RELAUNCH === "1") await waitForPortFree(DESIRED_PORT, 8000);
+if (IS_RELAUNCH) await waitForPortFree(DESIRED_PORT, 8000);
 // Normally probe for a free port and hop if the preferred one is busy. The dev
 // launcher (server/src/dev.ts) instead RESERVES a free port up front and pins it
 // via DEVWEBUI_PORT_FIXED so the daemon and the Vite proxy bind the same port —
@@ -174,11 +187,13 @@ for (const file of readRegistry()) {
 // `autoStartOnLaunch` setting happens to be on — so the one feature whose whole promise is
 // "update without you noticing" was the one that stopped your work. Resume exactly that set,
 // nothing more: processes the user had stopped stay stopped.
-const resumeIds = (process.env.DEVWEBUI_RELAUNCH_RESUME ?? "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-if (process.env.DEVWEBUI_RELAUNCH === "1" && resumeIds.length) {
+const resumeIds = DAEMON_ARGS?.resume.length
+  ? DAEMON_ARGS.resume
+  : (process.env.DEVWEBUI_RELAUNCH_RESUME ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+if (IS_RELAUNCH && resumeIds.length) {
   manager.startProcesses(resumeIds);
   console.log(`[devwebui] resuming ${resumeIds.length} process(es) after auto-update.`);
 }
@@ -268,10 +283,25 @@ setAutoUpdateHooks({
       // then dies), so the catch below never fires and we shut down 800ms later believing a
       // successor is coming up — an applied update leaving ZERO daemons. launch-vector.ts already
       // owns this exact question for the CLI and shortcuts; the relaunch just never asked it.
-      const [exe, ...vectorArgs] = daemonLaunchVector();
-      const child = spawn(exe!, [...vectorArgs, ...process.argv.slice(2)], {
+      // The resume list is recomputed every generation, so any inherited one is stripped before
+      // the fresh one is appended — otherwise the successor's argv (which is the NEXT
+      // generation's input) would grow a stale pair on every update.
+      const relaunchArgv = buildRelaunchArgv(stripFlagPair(process.argv, "--resume"), {
+        execPath: process.execPath,
+        isCompiled: isCompiledBinary(),
+        boundPort: PORT,
+      });
+      if (resume.length) relaunchArgv.push("--resume", resume.join(","));
+      // Through buildDetachedSpawn, not a plain spawn. `detached: true` is NOT a process-tree
+      // escape on Windows — the shared primitive's own header says so, and that is the reason it
+      // exists. Left as a plain spawn the successor stays inside THIS process's tree for the whole
+      // ~800ms handoff, so a tray Quit (`taskkill /T /F`) landing in that window kills the outgoing
+      // daemon AND its replacement, leaving the user with none. Going through WMI is also why the
+      // port, the relaunch signal and the resume list ride as FLAGS: it carries no environment.
+      const plan = buildDetachedSpawn(process.platform, relaunchArgv);
+      const child = spawn(plan.argv[0] as string, plan.argv.slice(1), {
         cwd: process.cwd(),
-        detached: true,
+        detached: plan.detached,
         stdio: "ignore",
         windowsHide: true,
         env: {
