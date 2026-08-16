@@ -4,6 +4,32 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.6] - 2026-08-15
+
+### Fixed
+
+- **An applied update no longer takes DevWebUI down, and no longer leaves your dev servers down with
+  it.** On a downloaded release build, installing an update stopped the daemon and started nothing
+  in its place. The relaunch built its successor's command from `process.argv[0..1]`, which is the
+  runtime and the script in a source checkout but, inside a compiled single-file executable, is a
+  placeholder pair pointing at a virtual path that exists only inside the running binary. Respawning
+  it fails immediately, and on the machines a compiled release exists for (no runtime installed,
+  which is the entire pitch) the command cannot resolve at all. Nothing caught it, because the
+  failure is in the child: the spawn call itself succeeds, so the guard that exists precisely to
+  never shut down without a successor saw one and stepped aside, taking the running-process handover
+  with it. The one function whose whole job is answering "what command relaunches this build?"
+  already existed and was already correct for the CLI and desktop shortcuts; the relaunch just never
+  called it. The update was always written to disk correctly, so an install on an older build
+  recovers the moment you start it again, and this is the last time it will need to.
+- **An update no longer moves the daemon to a different port and kills the tab you had open.** The
+  successor derived its port from the configured preference rather than from the port its
+  predecessor was actually serving on, and those diverge for good the first time anything else holds
+  the preferred one. It therefore waited out its full 8-second handoff timeout on a socket nobody
+  was going to release, then bound that port instead of the one your browser was talking to, so the
+  open GUI's event stream died against a daemon that was otherwise perfectly healthy. It is now
+  handed the bound port, so the wait applies to the socket actually being freed and a daemon that
+  has hopped once stays where it is across updates.
+
 ## [0.8.5] - 2026-08-11
 
 ### Fixed
