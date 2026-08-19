@@ -22,6 +22,17 @@ const RELEASES_PAGE = `https://github.com/${REPO}/releases`;
 // passthrough proxy), so hitting it here doubles as both the update check AND the one anonymous
 // "an install exists" signal — no separate network call for the ping. See latestRelease() below.
 const LATEST_API = "https://studio.connections.icu/v1/app/devwebui/latest";
+/**
+ * Resilience fallback, used only when the Studio proxy above fails (see latestRelease).
+ * GitHub's own releases/latest is the right backstop precisely because it is the one URL here
+ * a rename cannot orphan: GitHub redirects both owner and repo renames.
+ *
+ * Why this exists (YTSort, 2026-08): a shipped artifact whose only update URL later stopped
+ * resolving left every install silently polling a dead link for six months, with no signal to
+ * the users or the maintainer. One hardcoded endpoint and no second opinion is that same
+ * failure waiting to happen.
+ */
+const GITHUB_LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`;
 const VERSION = pkg.version;
 
 export interface ReleaseAsset {
@@ -147,6 +158,37 @@ function pingInstallId(): string {
   return fresh;
 }
 
+/**
+ * Ask GitHub directly after the Studio proxy failed. Carries no install id and no version/os
+ * telemetry: a plain unauthenticated read, well inside GitHub's anonymous rate limit.
+ *
+ * If this fails too, the ORIGINAL failure is reported. The primary endpoint is the one an
+ * operator needs to hear about; leading with "GitHub said 403" would send them chasing the
+ * backstop instead of the thing that actually broke.
+ */
+async function githubFallbackRelease(
+  common: Record<string, string>,
+  primaryError: unknown,
+  primaryStatus: number | undefined,
+): Promise<Release> {
+  let fallback: Response;
+  try {
+    fallback = await fetch(GITHUB_LATEST_API, {
+      headers: common,
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch (error) {
+    throw primaryError ?? error;
+  }
+  if (!fallback.ok) {
+    if (primaryError) throw primaryError;
+    throw new Error(
+      `release check returned HTTP ${primaryStatus} (GitHub fallback: HTTP ${fallback.status})`,
+    );
+  }
+  return (await fallback.json()) as Release;
+}
+
 async function latestRelease(): Promise<Release> {
   const suppressed = pingSuppressed();
   const url = new URL(LATEST_API);
@@ -158,19 +200,26 @@ async function latestRelease(): Promise<Release> {
     // First-ever successful ping for this install only — see the write-back below.
     if (!readSettings().pulseInstallReported) url.searchParams.set("new", "1");
   }
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/vnd.github+json",
-      "user-agent": `${SERVICE}/${VERSION}`,
-      ...(installId ? { "X-Install-Id": installId } : {}),
-    },
-    // Fire-and-forget contract: never let a stalled network hang the update check indefinitely.
-    signal: AbortSignal.timeout(5_000),
-  });
-  if (!response.ok) throw new Error(`GitHub Releases API returned HTTP ${response.status}`);
+  const common = {
+    accept: "application/vnd.github+json",
+    "user-agent": `${SERVICE}/${VERSION}`,
+  };
+  let response: Response | null = null;
+  let primaryError: unknown = null;
+  try {
+    response = await fetch(url, {
+      headers: { ...common, ...(installId ? { "X-Install-Id": installId } : {}) },
+      // Fire-and-forget contract: never let a stalled network hang the update check indefinitely.
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch (error) {
+    primaryError = error;
+  }
+  if (!response?.ok) return await githubFallbackRelease(common, primaryError, response?.status);
   const release = (await response.json()) as Release;
   // Persist "reported" only after a confirmed successful ping, so a failed/suppressed attempt
-  // still sends &new=1 next time instead of silently under-counting the install.
+  // still sends &new=1 next time instead of silently under-counting the install. A release that
+  // came from the GitHub fallback never reaches here, which is correct: Studio never saw it.
   if (installId && !readSettings().pulseInstallReported)
     writeSettings({ pulseInstallReported: true });
   return release;
