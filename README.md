@@ -11,7 +11,7 @@ Run every dev server from one pane: click to start, stop and restart, and watch 
 memory and logs. Then let your AI agents drive the **same** daemon over MCP.<br/>
 No more `bun run dev` babysitting across a dozen terminal tabs.
 
-[**Website**](https://devwebui.github.io) · [Quick start](#run-it) · [`.devwebui` files](#devwebui-files) · [MCP](#drive-it-from-an-ai-agent-mcp) · [Changelog](CHANGELOG.md)
+[**Website**](https://devwebui.github.io) · [Quick start](#quick-start) · [`.devwebui` files](#devwebui-files) · [MCP](#drive-it-from-an-ai-agent-mcp) · [Changelog](CHANGELOG.md)
 
 [![Website](https://img.shields.io/badge/website-devwebui.github.io-6366f1?style=flat-square)](https://devwebui.github.io)
 [![CI](https://img.shields.io/github/actions/workflow/status/LunarWerxs/devwebui/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/LunarWerxs/devwebui/actions/workflows/ci.yml)
@@ -24,6 +24,10 @@ No more `bun run dev` babysitting across a dozen terminal tabs.
 
 </div>
 
+DevWebUI is a GUI and MCP control plane for local dev servers that lets developers start, stop,
+restart, and monitor every dev process in a project from one dashboard, and lets AI coding agents
+drive the same daemon over MCP, replacing a dozen terminal tabs of manual `bun run dev` babysitting.
+
 ## Why it exists
 
 The good local-dev GUIs (hotel, exo) are abandoned. PM2's web UI is paid. Everything else that's
@@ -31,7 +35,18 @@ still maintained is a TUI or a heavy container/k8s tool. Nobody ships the one th
 want for a fleet of dev servers: **a GUI and MCP over one daemon**, so you click, your agents
 automate, and everyone works off a single source of truth.
 
-## Run it
+## How it compares
+
+- **vs. hotel and exo**: both are local dev-server GUIs, but neither has shipped a release in a
+  while. DevWebUI is actively maintained and pairs its GUI with an MCP server, which neither offers.
+- **vs. PM2's web UI (PM2 Plus / PM2.io)**: PM2 itself is free from the CLI, but its hosted
+  monitoring dashboard is a paid product beyond a limited free tier. DevWebUI's GUI is free and
+  runs entirely on your machine, no account needed for core functionality.
+- **vs. Docker Compose / devcontainers**: these give you full container isolation, which is more
+  infrastructure than most local dev-server juggling needs. DevWebUI runs your existing commands
+  (`npm run dev`, `bun run dev`, etc.) directly, no containers or config rewrite required.
+
+## Quick start
 
 **Prebuilt Windows app**: download `devwebui-windows-x64.exe` from
 [Releases](https://github.com/LunarWerxs/DevWebUI/releases) and run it directly. It is an
@@ -174,6 +189,54 @@ DevWebUI runs entirely on your machine: a single daemon on your localhost, open 
   `CONNECTIONS_PULSE_DISABLE=1` still work too); it's already off automatically in dev/test/CI
   runs.
 
+## FAQ
+
+**Is DevWebUI free?**
+Yes. DevWebUI is open source under the MIT License, and core functionality, starting, stopping,
+and monitoring your dev servers from the GUI or over MCP, needs no account and no cloud. The only
+optional extras are cross-machine settings sync and an anonymous install ping, both off unless you
+enable them.
+
+**Does it work offline?**
+Yes. The daemon and GUI run entirely on your local machine, and starting, stopping, and monitoring
+dev servers works with no network connection at all. The only features that reach the internet are
+optional: settings sync (off by default) and a lightweight install ping used for update checks,
+which you can disable with `DEVWEBUI_NO_PING=1`.
+
+**Is my data sent anywhere?**
+No project data, commands, logs, or file paths leave your machine. If you enable it, settings sync
+shares a small allowlist of prefs and theme via a LunarWerx Connections account. A separate
+anonymous install ping (disable with `DEVWEBUI_NO_PING=1`) sends a random install id, app version,
+and OS family, but never your IP address, hostname, username, or file paths.
+
+**What are the system requirements?**
+On Windows, download the prebuilt `devwebui-windows-x64.exe` and run it directly, no dependencies.
+On any OS, run it from source with Bun installed: `bun install` then `bun run dev` starts the
+daemon on port 4000 and the GUI on port 4010. macOS and Linux tray support is on the roadmap.
+
+**How is DevWebUI different from PM2's web UI, hotel, or exo?**
+Hotel and exo are local dev-server GUIs that haven't shipped a release in a while, and PM2's web
+dashboard (PM2 Plus / PM2.io) is a paid product beyond its free tier. DevWebUI is actively
+maintained, free, and local-first, and pairs its GUI with a 31-tool MCP server so AI agents can
+drive the same daemon you click.
+
+**Can AI agents control DevWebUI directly?**
+Yes. DevWebUI ships a stdio MCP server (`devwebui mcp`, or `server/src/mcp.ts`) with 31 tools
+covering projects, starting/stopping/restarting processes, enabling/disabling them, logs, and the
+error log. It's a thin client over the same running daemon the GUI uses, so an agent and a human
+see and change the same state.
+
+**How do I add a project?**
+Drop a `.devwebui` file (one per repo, listing its dev servers) in the repo root and click **Add
+project** in the GUI, or run `devwebui open <path>` from the CLI. On first launch DevWebUI also
+scans once for `.devwebui` files and recognizable dev-script projects automatically.
+
+**Can I use DevWebUI without the GUI?**
+Yes. The `devwebui` CLI is a thin client over the same REST API the GUI and MCP server use:
+`devwebui start` / `stop` / `status` / `list` manage the daemon, and `start-process` /
+`stop-process` / `restart-process` control individual servers by id or name.
+
 On the roadmap: macOS / Linux tray, an in-GUI env editor, and multi-host.
 
-Sponsored by **[LunarWerx Studios](https://lunarwerx.com/)**.
+Made by **[LunarWerx Studios](https://lunarwerx.com)**, also behind [RepoYeti](https://repoyeti.com),
+[AgentHydra](https://agenthydra.lunarwerx.com), and [SageThumbs](https://sagethumbs.lunarwerx.com).
