@@ -7,6 +7,7 @@
 // away on a full drive.
 // ---------------------------------------------------------------------------
 import { existsSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -247,13 +248,24 @@ async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
   let timedOut = false;
   let settled = false;
 
-  // Read one directory: collect its .devwebui files, return its descendable subdirs.
-  async function scanDir(dir: string, depth: number): Promise<{ dir: string; depth: number }[]> {
-    if (settled || timedOut || truncated) return [];
-    scannedDirs++;
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
-    if (!entries) return []; // unreadable (permissions, gone) — skip
-    if (settled || timedOut || truncated) return [];
+  // Full path to descend into, or null if `e` is pruned/excluded/already seen/too deep.
+  // Marks the path seen as a side effect of accepting it, same as the original inline check.
+  function resolveSubdir(dir: string, e: Dirent, depth: number): string | null {
+    if (depth + 1 > maxDepth) return null;
+    const lower = e.name.toLowerCase();
+    if (e.name.startsWith(".") || PRUNE.has(lower) || excludeNames.has(lower)) return null;
+    const full = path.join(dir, e.name);
+    const k = full.toLowerCase();
+    if (excludePaths.some((p) => k === p || k.startsWith(p + path.sep))) return null;
+    if (seen.has(k)) return null;
+    seen.add(k);
+    return full;
+  }
+
+  // Classify one directory's already-read entries: which subdirs to descend into, which
+  // files to describe, and whether the dir looks like an undetected package root. Pulled
+  // out of scanDir so the per-entry branching is its own (small) function.
+  function partitionEntries(dir: string, depth: number, entries: Dirent[]) {
     const subdirs: { dir: string; depth: number }[] = [];
     const fileJobs: Promise<FoundFile>[] = [];
     let packageJson = false;
@@ -261,22 +273,25 @@ async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
       if (settled || timedOut || truncated) break;
       if (e.isSymbolicLink()) continue; // don't follow links — avoids cycles + escapes
       if (e.isDirectory()) {
-        if (depth + 1 > maxDepth) continue;
-        const lower = e.name.toLowerCase();
-        if (e.name.startsWith(".") || PRUNE.has(lower) || excludeNames.has(lower)) continue;
-        const full = path.join(dir, e.name);
-        const k = full.toLowerCase();
-        if (excludePaths.some((p) => k === p || k.startsWith(p + path.sep))) continue;
-        if (!seen.has(k)) {
-          seen.add(k);
-          subdirs.push({ dir: full, depth: depth + 1 });
-        }
+        const full = resolveSubdir(dir, e, depth);
+        if (full) subdirs.push({ dir: full, depth: depth + 1 });
       } else if (e.isFile()) {
         const lower = e.name.toLowerCase();
         if (lower.endsWith(".devwebui")) fileJobs.push(describe(path.join(dir, e.name)));
         else if (opts.detectPackages && lower === "package.json") packageJson = true;
       }
     }
+    return { subdirs, fileJobs, packageJson };
+  }
+
+  // Read one directory: collect its .devwebui files, return its descendable subdirs.
+  async function scanDir(dir: string, depth: number): Promise<{ dir: string; depth: number }[]> {
+    if (settled || timedOut || truncated) return [];
+    scannedDirs++;
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
+    if (!entries) return []; // unreadable (permissions, gone) — skip
+    if (settled || timedOut || truncated) return [];
+    const { subdirs, fileJobs, packageJson } = partitionEntries(dir, depth, entries);
     for (const f of await Promise.all(fileJobs)) {
       if (settled || timedOut || truncated) break;
       if (files.length + detected.length >= limit) {
