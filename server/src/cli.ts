@@ -31,7 +31,7 @@
  * what lets a desktop .lnk drive a machine that has no repo and no Bun installed.
  */
 import { spawn } from "node:child_process";
-import { closeSync, mkdirSync, openSync, statSync, unlinkSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ROUTES } from "../../shared/routes";
@@ -44,7 +44,21 @@ import { projectIdFromPath } from "./projects/file-store";
 import pkg from "../../package.json";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(HERE, "..", ".."); // server/src/cli.ts → repo root
+
+/** Walk up from HERE until finding a marker (package.json or .git), avoiding silent breakage when files move. */
+function findRepoRoot(): string {
+  let current = HERE;
+  const root = path.parse(current).root;
+  while (current !== root) {
+    if (existsSync(path.join(current, "package.json")) || existsSync(path.join(current, ".git"))) {
+      return current;
+    }
+    current = path.dirname(current);
+  }
+  throw new Error(`Could not find repo root from ${HERE}`);
+}
+
+const REPO_ROOT = findRepoRoot();
 
 // ── tiny arg parser (positionals + --flags; --key=val or --key val or bare boolean) ──────────
 interface Args {
