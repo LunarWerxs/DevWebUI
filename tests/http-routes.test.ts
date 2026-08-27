@@ -56,7 +56,13 @@ function realProject(id: string, processesJson: Record<string, unknown>[]): Load
 /** A project with NO real backing file — fine for routes that only touch Manager in-memory
  *  state (process/project actions, free-port, logs, log-file, errors, settings). */
 function fakeProject(id: string, processes: ProcessDef[]): LoadedProject {
-  return { id, name: id, path: `${import.meta.dir}\\${id}.devwebui`, dir: import.meta.dir, processes };
+  return {
+    id,
+    name: id,
+    path: `${import.meta.dir}\\${id}.devwebui`,
+    dir: import.meta.dir,
+    processes,
+  };
 }
 
 function processDef(
