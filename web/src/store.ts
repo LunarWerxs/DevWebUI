@@ -3,6 +3,7 @@ import { computed, onScopeDispose, ref, watch } from "vue";
 import { useEventSource, useLocalStorage } from "@vueuse/core";
 import * as api from "./api";
 import { useSelfUpdate } from "@/lib/useSelfUpdate";
+import { bindSignInNudgeStatus, nudgeOnSettingsChange } from "@/lib/sign-in-nudge";
 import { useTheme } from "@/lib/theme";
 import type { AddResult, DetectedProcess } from "./api";
 import type { ScanResult } from "./api";
@@ -556,12 +557,22 @@ export const useAppStore = defineStore("app", () => {
   // but never echo a value we just applied from a pull/enable (`applyingRemote`).
   watch(themeMode, () => {
     if (applyingRemote) return;
+    // NOT connected is the interesting case for the sign-in prompt, and it is exactly the branch
+    // the push path below discards. Someone who just changed an appearance setting is who "these
+    // follow you to your other machines" is a true sentence for, and this is the same instant we
+    // WOULD have pushed it. The engine says no to almost every one of these; see lib/sign-in-nudge.
+    if (!syncStatus.value?.connected) nudgeOnSettingsChange();
     if (!syncStatus.value?.enabled || !syncStatus.value?.connected) return;
     clearTimeout(syncPushTimer);
     syncPushTimer = setTimeout(() => {
       void pushAppearance();
     }, 800);
   });
+
+  // Point the prompt at the live connection state. Only the STATUS binds here - the session count
+  // starts at app boot (main.ts), because this store is lazy and an owner who never opens settings
+  // would otherwise never accrue a session.
+  bindSignInNudgeStatus(() => syncStatus.value?.connected ?? false);
 
   return {
     projects,

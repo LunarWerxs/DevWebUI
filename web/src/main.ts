@@ -3,6 +3,7 @@ import { createPinia } from "pinia";
 import { autoAnimatePlugin } from "@formkit/auto-animate/vue";
 import App from "./App.vue";
 import { i18n } from "./i18n";
+import { startSignInNudgeSession } from "./lib/sign-in-nudge";
 import "./style.css";
 import "vue-sonner/style.css";
 
@@ -23,5 +24,10 @@ window.addEventListener("vite:preloadError", (event) => {
   event.preventDefault();
   window.location.reload();
 });
+
+// Counts one session for the Connections sign-in prompt. Here, not in the store, because the
+// store is built lazily: an owner who never opens the settings pane would never accrue a session
+// and so could never pass the prompt's gate. Counting only - nothing is shown from this call.
+startSignInNudgeSession({ appId: "devwebui", appName: "DevWebUI" });
 
 createApp(App).use(createPinia()).use(i18n).use(autoAnimatePlugin).mount("#app");

@@ -37,6 +37,7 @@
       "name": "@devwebui/web",
       "version": "0.4.0",
       "dependencies": {
+        "@cnct/connect": "^1.5.1",
         "@formkit/auto-animate": "^0.9.0",
         "@lucide/vue": "^1.22.0",
         "@tailwindcss/vite": "^4.3.2",
@@ -518,6 +519,8 @@
     "yaml": ["yaml@2.9.0", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA=="],
 
     "zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
+
+    "@devwebui/web/@cnct/connect": ["@cnct/connect@1.5.1", "", { "peerDependencies": { "react": ">=17", "vue": ">=3" }, "optionalPeers": ["react", "vue"], "bin": { "cnct-connect": "dist/cli.js", "connect": "dist/cli.js" } }, "sha512-6j4in+T0MjCt2xaNrHgMXOiRATKoSj7N8cItdGHQNJz8xuXO/c4uwihFEUn7nj0EZc6RgjFbXfHJMDHCYnkYhA=="],
 
     "@tailwindcss/oxide-wasm32-wasi/@emnapi/core": ["@emnapi/core@1.11.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" }, "bundled": true }, "sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ=="],
 

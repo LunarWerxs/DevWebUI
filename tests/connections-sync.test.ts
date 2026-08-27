@@ -240,10 +240,18 @@ afterEach(async () => {
   await disable(true);
 });
 
+// The settings file is shared across the whole `bun test` run (one isolated DEVWEBUI_HOME, no
+// per-file reset), and the tests in this file write to it. Snapshot it at load so afterAll can put
+// it back — tests/settings.test.ts asserts what several settings default to "when no settings file
+// exists yet", and this file running first was enough to break that. Restoring is the fix on the
+// side that caused it; those assertions are worth keeping as they are.
+const settingsAtLoad = { ...readSettings() };
+
 afterAll(() => {
   // Restore the real fetch once this file's tests are done, so sibling files see a pristine
   // globalThis.fetch regardless of run order.
   globalThis.fetch = realFetch;
+  writeSettings(settingsAtLoad);
 });
 
 // ── sign-in flow: buildAuthorizeUrl + handleCallback ───────────────────────────────────────
@@ -301,27 +309,45 @@ describe("sign-in flow (buildAuthorizeUrl + handleCallback)", () => {
 describe("pushNow / pullNow", () => {
   test("pushNow sends only PREF_KEYS-allowlisted settings, never machine-local ones", async () => {
     await signInAs("pusher");
-    writeSettings({
+    // Every allowlisted key is given a NON-DEFAULT value, so the exact-equality below is a real
+    // assertion about what travels rather than an accidental match against whatever the defaults
+    // happen to be. It stays an exact match on purpose: that is what catches a key LEAKING, and
+    // the list changing is exactly the moment a human should have to look at this test.
+    const portable = {
       runtime: "bun",
       freePortOnStart: false,
       monitorResources: false,
       autoScan: false,
+      skipWindows: false,
+      skipMac: false,
+      skipLinux: false,
+      // Lower-case on purpose: `writeSettings` normalizes osSkip entries for case-insensitive
+      // path matching, so an upper-case literal here would fail on the normalization, not on
+      // anything to do with syncing.
+      osSkip: { windows: ["c:/nope"], mac: ["/system"], linux: ["/proc"] },
+      scanExclude: ["node_modules", "D:/Archive"],
+      updateNotify: false,
+      autoUpdateIntervalSecs: 43_200,
+      portableMode: true,
+      hideTrayIcon: true,
+    } as const;
+    writeSettings({
+      ...portable,
       linkHost: "definitely-machine-local.example", // deliberately excluded from PREF_KEYS
       autoStartOnLaunch: true, // deliberately excluded from PREF_KEYS
+      autoUpdate: true, // unattended: excluded from PREF_KEYS
+      firstScanDone: true, // per-machine latch: excluded from PREF_KEYS
     });
 
     await pushNow();
 
     expect(server.docPostCalls).toBe(1);
-    expect(server.settings.prefs).toEqual({
-      runtime: "bun",
-      freePortOnStart: false,
-      monitorResources: false,
-      autoScan: false,
-    });
+    expect(server.settings.prefs).toEqual(portable);
     const raw = JSON.stringify(server.settings);
     expect(raw).not.toContain("machine-local");
     expect(raw).not.toContain("autoStartOnLaunch");
+    expect(raw).not.toContain('autoUpdate"');
+    expect(raw).not.toContain("firstScanDone");
   });
 
   test("pushNow includes the locally-held appearance blob alongside prefs", async () => {

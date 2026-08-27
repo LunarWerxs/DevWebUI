@@ -51,15 +51,78 @@ const OAUTH = {
   scopes: ["openid", "profile", "email", "photo"],
 };
 
-/** The ONLY settings keys that sync — portable UI/behaviour prefs. Deliberately excludes
- *  machine/OS-specific state (linkHost, skip*, osSkip, scanExclude paths), the unattended
- *  `autoStartOnLaunch`, and the per-install pulse id. */
+/**
+ * The ONLY settings keys that sync — portable UI/behaviour prefs.
+ *
+ * Widened 2026-08-25 from four keys to thirteen. The old list excluded the scan-skip settings as
+ * "machine/OS-specific", which reads right and is backwards: `skipMac` only ever DOES anything on
+ * a Mac, so carrying it from the desktop where you set it to the Mac where it applies is the
+ * entire point. The exclusions that survived are the ones with a mechanism behind them, listed in
+ * [`NEVER_SYNCED`] below with their reasons.
+ */
 const PREF_KEYS = [
   "runtime",
   "freePortOnStart",
   "monitorResources",
   "autoScan",
+  // Scan policy. Each `skip*` flag is inert on the operating systems it does not name, so these
+  // travel to the machine where they matter instead of being re-set there by hand.
+  "skipWindows",
+  "skipMac",
+  "skipLinux",
+  "osSkip",
+  // The curated exclude list. It mixes folder NAMES (portable) with absolute paths (not), and
+  // that is fine: a path that does not exist on this machine simply never matches anything, so
+  // the worst case is a dead entry, against the real cost of rebuilding the list per machine.
+  "scanExclude",
+  // Update preferences, minus the one that acts on its own — see NEVER_SYNCED.
+  "updateNotify",
+  "autoUpdateIntervalSecs",
+  // How you like the app to present itself.
+  "portableMode",
+  "hideTrayIcon",
 ] as const satisfies readonly (keyof Settings)[];
+
+/**
+ * Every settings key that deliberately does NOT sync, with the reason.
+ *
+ * Kept as a list so the type below can prove the two together cover `Settings`. Before this, a
+ * new setting silently defaulted to "not synced" — which is how nine portable preferences ended
+ * up stranded without anyone deciding they should be.
+ */
+const NEVER_SYNCED = [
+  // A hostname that resolves on THIS network. Carrying `192.168.1.50` to a laptop on a different
+  // network points its Open buttons at nothing, or worse, at someone else's machine.
+  "linkHost",
+  // Unattended-action toggles. A machine someone just signed in on must not start launching
+  // every server, or updating and relaunching itself, without being told to here.
+  "autoStartOnLaunch",
+  "autoUpdate",
+  // A per-machine latch: the one-time first-launch scan. Syncing a `true` would suppress that
+  // first scan on a machine that has never run one.
+  "firstScanDone",
+  // Per-install identity for the update ping. Syncing it would merge two installs into one.
+  "pulseInstallId",
+  "pulseInstallReported",
+] as const satisfies readonly (keyof Settings)[];
+
+/**
+ * Compile-time proof that the two lists partition `Settings`.
+ *
+ * A new settings key that belongs to neither fails this line and the error names it, in the
+ * editor, before the commit rather than after it.
+ */
+type UnclassifiedSettingsKey = Exclude<
+  keyof Settings,
+  (typeof PREF_KEYS)[number] | (typeof NEVER_SYNCED)[number]
+>;
+const _everySettingIsClassified: UnclassifiedSettingsKey extends never
+  ? true
+  : [
+      "these Settings keys sync neither way — add each to PREF_KEYS or NEVER_SYNCED",
+      UnclassifiedSettingsKey,
+    ] = true;
+void _everySettingIsClassified;
 
 // ── persisted state (~/.devwebui/connections.json, 0600) ─────────────────────────
 const stateFile = (): string => path.join(dataDir(), "connections.json");
