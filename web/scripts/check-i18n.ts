@@ -98,6 +98,37 @@ function flatten(obj: unknown, prefix = "", out = new Set<string>()): Set<string
 }
 const enKeys = flatten(enBase);
 
+// Flags prose-like string literals inside a `{{ expr }}` interpolation node. Pulled out of
+// visit() so this loop's branches score against this small function instead of visit's.
+function flagInterpLiterals(file: string, node: AstNode): void {
+  const expr = (typeof node.content === "object" ? node.content?.content : undefined) ?? "";
+  // High-precision: only flag string literals that read like prose.
+  for (const m of expr.matchAll(/(['"`])((?:\\.|(?!\1).)*)\1/g)) {
+    const lit = m[2];
+    if (
+      HAS_LETTER.test(lit) &&
+      (SENTENCE_LIKE.test(lit) || ENDS_SENTENCE.test(lit)) &&
+      !ALLOWLIST.has(lit.trim())
+    ) {
+      add(file, node.loc.start.line, "warn", "hardcoded-in-expr", JSON.stringify(lit));
+    }
+  }
+}
+
+// Flags hardcoded prose in an element node's static translatable attrs. Pulled out of visit()
+// so this loop's branches score against this small function instead of visit's.
+function flagTranslatableAttrs(file: string, node: AstNode): void {
+  if (!Array.isArray(node.props)) return;
+  for (const p of node.props) {
+    if (p.type === ATTRIBUTE && TRANSLATABLE_ATTRS.has(p.name)) {
+      const val = String(p.value?.content ?? "").trim();
+      if (val && HAS_LETTER.test(val) && !ALLOWLIST.has(val)) {
+        add(file, p.loc.start.line, "error", "hardcoded-attr", `${p.name}=${JSON.stringify(val)}`);
+      }
+    }
+  }
+}
+
 // --- template AST walk: hardcoded text + attributes -------------------------------
 function checkTemplate(file: string, source: string) {
   let descriptor: ReturnType<typeof parse>["descriptor"];
@@ -120,37 +151,11 @@ function checkTemplate(file: string, source: string) {
       return;
     }
     if (node.type === INTERPOLATION) {
-      const expr = (typeof node.content === "object" ? node.content?.content : undefined) ?? "";
-      // High-precision: only flag string literals that read like prose.
-      for (const m of expr.matchAll(/(['"`])((?:\\.|(?!\1).)*)\1/g)) {
-        const lit = m[2];
-        if (
-          HAS_LETTER.test(lit) &&
-          (SENTENCE_LIKE.test(lit) || ENDS_SENTENCE.test(lit)) &&
-          !ALLOWLIST.has(lit.trim())
-        ) {
-          add(file, node.loc.start.line, "warn", "hardcoded-in-expr", JSON.stringify(lit));
-        }
-      }
+      flagInterpLiterals(file, node);
       return;
     }
     // Element: check its static translatable attributes, then recurse.
-    if (Array.isArray(node.props)) {
-      for (const p of node.props) {
-        if (p.type === ATTRIBUTE && TRANSLATABLE_ATTRS.has(p.name)) {
-          const val = String(p.value?.content ?? "").trim();
-          if (val && HAS_LETTER.test(val) && !ALLOWLIST.has(val)) {
-            add(
-              file,
-              p.loc.start.line,
-              "error",
-              "hardcoded-attr",
-              `${p.name}=${JSON.stringify(val)}`,
-            );
-          }
-        }
-      }
-    }
+    flagTranslatableAttrs(file, node);
     visitChildren(node.children);
   };
 

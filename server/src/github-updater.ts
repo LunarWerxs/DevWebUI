@@ -323,6 +323,76 @@ function failure(message: string): UpdateApplyResult {
   };
 }
 
+// Downloads the release asset, authenticates it against the published checksum manifest, unpacks
+// it, and verifies the extracted binary reports the expected version. Pulled out of applyUpdate
+// so this chain of guard clauses scores against this function instead of applyUpdate's; returns
+// the staged candidate path on success, or the failure result to return verbatim on any check.
+async function downloadAndStageUpdate(
+  asset: ReleaseAsset,
+  checksumAsset: ReleaseAsset,
+  remoteVersion: string,
+  staging: string,
+  bundledName: string,
+): Promise<
+  { ok: true; candidate: string; output: string[] } | { ok: false; result: UpdateApplyResult }
+> {
+  const output: string[] = [];
+  rmSync(staging, { recursive: true, force: true });
+  mkdirSync(staging, { recursive: true });
+  const archive = join(staging, asset.name);
+  output.push(`downloading ${asset.name} (${Math.round(asset.size / 1048576)} MB)`);
+  const response = await fetch(asset.browser_download_url, {
+    headers: { accept: "application/octet-stream", "user-agent": `${SERVICE}/${VERSION}` },
+    redirect: "follow",
+  });
+  if (!response.ok)
+    return { ok: false, result: failure(`download failed (HTTP ${response.status})`) };
+  const bytes = new Uint8Array(await response.arrayBuffer());
+
+  // ---- verify BEFORE anything executes ----------------------------------------
+  // Order matters. Everything past this point either unpacks or RUNS the payload, so
+  // the integrity check has to come first: extracting an attacker-controlled archive
+  // (zip-slip) or spawning it for a version banner is already game over. Fetch the
+  // manifest, match this exact asset name, compare digests, and stop dead on mismatch.
+  const sumsResponse = await fetch(checksumAsset.browser_download_url, {
+    headers: { accept: "text/plain", "user-agent": `${SERVICE}/${VERSION}` },
+    redirect: "follow",
+  });
+  if (!sumsResponse.ok)
+    return {
+      ok: false,
+      result: failure(`couldn't fetch ${CHECKSUM_ASSET} (HTTP ${sumsResponse.status})`),
+    };
+  const expected = parseChecksums(await sumsResponse.text())[asset.name];
+  if (!expected)
+    return { ok: false, result: failure(`${CHECKSUM_ASSET} has no entry for ${asset.name}`) };
+  const actual = sha256(bytes);
+  if (actual !== expected)
+    return {
+      ok: false,
+      result: failure(
+        `the download does not match its published checksum — refusing to install (expected ${expected.slice(0, 12)}…, got ${actual.slice(0, 12)}…)`,
+      ),
+    };
+  output.push(`verified sha256 ${actual.slice(0, 12)}…`);
+
+  writeFileSync(archive, bytes);
+  await extract(archive, staging);
+
+  const candidate = join(staging, bundledName);
+  if (!existsSync(candidate))
+    return { ok: false, result: failure(`the update archive has no ${bundledName}`) };
+  // Sanity check, NOT a security control (the checksum above is): catches a corrupt or
+  // wrong-architecture build that would otherwise be installed and fail on next boot.
+  if (!(await verifyVersion(candidate, remoteVersion))) {
+    return {
+      ok: false,
+      result: failure("the downloaded executable failed its version self-check"),
+    };
+  }
+  return { ok: true, candidate, output };
+}
+
 export async function applyUpdate(): Promise<UpdateApplyResult> {
   const status = await checkForUpdate({ fresh: true });
   if (!status.ok) return failure(status.reason ?? "update check failed");
@@ -350,51 +420,18 @@ export async function applyUpdate(): Promise<UpdateApplyResult> {
   const staging = join(installDir, ".update-staging");
   const oldExecutable = join(installDir, `${basename(executable)}.old-${status.checkedAt}`);
   const bundledName = process.platform === "win32" ? "devwebui.exe" : "devwebui";
-  const output: string[] = [];
   let movedAside = false;
 
   try {
-    rmSync(staging, { recursive: true, force: true });
-    mkdirSync(staging, { recursive: true });
-    const archive = join(staging, asset.name);
-    output.push(`downloading ${asset.name} (${Math.round(asset.size / 1048576)} MB)`);
-    const response = await fetch(asset.browser_download_url, {
-      headers: { accept: "application/octet-stream", "user-agent": `${SERVICE}/${VERSION}` },
-      redirect: "follow",
-    });
-    if (!response.ok) return failure(`download failed (HTTP ${response.status})`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-
-    // ---- verify BEFORE anything executes ----------------------------------------
-    // Order matters. Everything past this point either unpacks or RUNS the payload, so
-    // the integrity check has to come first: extracting an attacker-controlled archive
-    // (zip-slip) or spawning it for a version banner is already game over. Fetch the
-    // manifest, match this exact asset name, compare digests, and stop dead on mismatch.
-    const sumsResponse = await fetch(checksumAsset.browser_download_url, {
-      headers: { accept: "text/plain", "user-agent": `${SERVICE}/${VERSION}` },
-      redirect: "follow",
-    });
-    if (!sumsResponse.ok)
-      return failure(`couldn't fetch ${CHECKSUM_ASSET} (HTTP ${sumsResponse.status})`);
-    const expected = parseChecksums(await sumsResponse.text())[asset.name];
-    if (!expected) return failure(`${CHECKSUM_ASSET} has no entry for ${asset.name}`);
-    const actual = sha256(bytes);
-    if (actual !== expected)
-      return failure(
-        `the download does not match its published checksum — refusing to install (expected ${expected.slice(0, 12)}…, got ${actual.slice(0, 12)}…)`,
-      );
-    output.push(`verified sha256 ${actual.slice(0, 12)}…`);
-
-    writeFileSync(archive, bytes);
-    await extract(archive, staging);
-
-    const candidate = join(staging, bundledName);
-    if (!existsSync(candidate)) return failure(`the update archive has no ${bundledName}`);
-    // Sanity check, NOT a security control (the checksum above is): catches a corrupt or
-    // wrong-architecture build that would otherwise be installed and fail on next boot.
-    if (!(await verifyVersion(candidate, remoteVersion))) {
-      return failure("the downloaded executable failed its version self-check");
-    }
+    const staged = await downloadAndStageUpdate(
+      asset,
+      checksumAsset,
+      remoteVersion,
+      staging,
+      bundledName,
+    );
+    if (!staged.ok) return staged.result;
+    const { candidate, output } = staged;
 
     renameSync(executable, oldExecutable);
     movedAside = true;
