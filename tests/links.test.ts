@@ -51,7 +51,7 @@ function processDef(
     id: `${projectId}.${over.localId}`,
     name: over.localId,
     command: keepAliveCommand(),
-    cwd: process.cwd(),
+    cwd: import.meta.dir,
     autostart: true,
     projectId,
     projectName: projectId,
@@ -63,8 +63,8 @@ function project(id: string, processes: ProcessDef[]): LoadedProject {
   return {
     id,
     name: id,
-    path: `${process.cwd()}\\${id}.devwebui`,
-    dir: process.cwd(),
+    path: `${import.meta.dir}\\${id}.devwebui`,
+    dir: import.meta.dir,
     processes,
   };
 }

@@ -59,7 +59,7 @@ function processDef(over: Partial<ProcessDef> & { localId: string; command: stri
   return {
     id: `waitfor-test.${over.localId}`,
     name: over.localId,
-    cwd: process.cwd(),
+    cwd: import.meta.dir,
     autostart: true,
     projectId: "waitfor-test",
     projectName: "WaitForTest",
@@ -71,8 +71,8 @@ function project(processes: ProcessDef[]): LoadedProject {
   return {
     id: "waitfor-test",
     name: "WaitForTest",
-    path: `${process.cwd()}\\.devwebui`,
-    dir: process.cwd(),
+    path: `${import.meta.dir}\\.devwebui`,
+    dir: import.meta.dir,
     processes,
   };
 }

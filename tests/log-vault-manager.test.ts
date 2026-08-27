@@ -38,7 +38,7 @@ function processDef(id: string, command: string): ProcessDef {
     localId: id,
     name: id,
     command,
-    cwd: process.cwd(),
+    cwd: import.meta.dir,
     autostart: false,
     projectId: "logvault-mgr-test",
     projectName: "LogVaultMgrTest",
@@ -49,8 +49,8 @@ function project(processes: ProcessDef[]): LoadedProject {
   return {
     id: "logvault-mgr-test",
     name: "LogVaultMgrTest",
-    path: `${process.cwd()}\\.devwebui`,
-    dir: process.cwd(),
+    path: `${import.meta.dir}\\.devwebui`,
+    dir: import.meta.dir,
     processes,
   };
 }

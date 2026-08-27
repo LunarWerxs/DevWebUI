@@ -19,7 +19,7 @@ function def(overrides: Partial<ProcessDef> = {}): ProcessDef {
     localId: "web",
     name: "Web",
     command: "npm run dev",
-    cwd: process.cwd(),
+    cwd: path.join(import.meta.dir, ".."),
     projectId: "project",
     projectName: "Project",
     ...overrides,

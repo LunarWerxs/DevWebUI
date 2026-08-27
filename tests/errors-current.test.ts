@@ -80,8 +80,8 @@ function project(processes: ProcessDef[]): LoadedProject {
   return {
     id: "cur-test",
     name: "CurTest",
-    path: `${process.cwd()}\\.devwebui`,
-    dir: process.cwd(),
+    path: `${import.meta.dir}\\.devwebui`,
+    dir: import.meta.dir,
     processes,
   };
 }
@@ -122,7 +122,7 @@ test("a stale persisted error is hidden on boot, but a fresh error this session 
           localId: "web",
           name: "web",
           command: keepAlive(),
-          cwd: process.cwd(),
+          cwd: import.meta.dir,
           autostart: true,
           projectId: "cur-test",
           projectName: "CurTest",
