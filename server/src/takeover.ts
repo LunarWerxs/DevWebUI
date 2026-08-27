@@ -41,46 +41,51 @@ type VsCodeTask = {
   runOptions?: { runOn?: string };
 };
 
+/** tasks.json triggers: any task with `runOptions.runOn === "folderOpen"`. */
+function detectVsCodeTaskTriggers(tasksFile: string): AutostartTrigger[] {
+  if (!existsSync(tasksFile)) return [];
+  const j = readJsonc<{ tasks?: VsCodeTask[] }>(tasksFile);
+  const out: AutostartTrigger[] = [];
+  for (const t of j?.tasks ?? []) {
+    if (!t || typeof t !== "object" || t.runOptions?.runOn !== "folderOpen") continue;
+    const cmd = [t.command, ...(Array.isArray(t.args) ? t.args.map(String) : [])]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    out.push({
+      kind: "vscode-task",
+      file: tasksFile,
+      label: t.label ? `VS Code task “${t.label}”` : "VS Code task",
+      detail: cmd ? `runs \`${cmd}\` when the folder opens` : "runs when the folder opens",
+    });
+  }
+  return out;
+}
+
+/** settings.json trigger: the "Vite" extension's `vite.autoStart` flag. */
+function detectViteExtensionTrigger(settingsFile: string): AutostartTrigger[] {
+  if (!existsSync(settingsFile)) return [];
+  const j = readJsonc<Record<string, unknown>>(settingsFile);
+  if (!j || j["vite.autoStart"] !== true) return [];
+  const cmd = typeof j["vite.devCommand"] === "string" ? (j["vite.devCommand"] as string) : "";
+  return [
+    {
+      kind: "vite-extension",
+      file: settingsFile,
+      label: "“Vite” VS Code extension",
+      detail: cmd
+        ? `auto-starts \`${cmd}\` when the folder opens`
+        : "auto-starts the dev server when the folder opens",
+    },
+  ];
+}
+
 /** Inspect a folder's .vscode config for dev servers that start outside DevWebUI. */
 export function detectAutostartTriggers(dir: string): AutostartTrigger[] {
-  const out: AutostartTrigger[] = [];
-
-  const tasksFile = path.join(dir, ".vscode", "tasks.json");
-  if (existsSync(tasksFile)) {
-    const j = readJsonc<{ tasks?: VsCodeTask[] }>(tasksFile);
-    for (const t of j?.tasks ?? []) {
-      if (t && typeof t === "object" && t.runOptions?.runOn === "folderOpen") {
-        const cmd = [t.command, ...(Array.isArray(t.args) ? t.args.map(String) : [])]
-          .filter(Boolean)
-          .join(" ")
-          .trim();
-        out.push({
-          kind: "vscode-task",
-          file: tasksFile,
-          label: t.label ? `VS Code task “${t.label}”` : "VS Code task",
-          detail: cmd ? `runs \`${cmd}\` when the folder opens` : "runs when the folder opens",
-        });
-      }
-    }
-  }
-
-  const settingsFile = path.join(dir, ".vscode", "settings.json");
-  if (existsSync(settingsFile)) {
-    const j = readJsonc<Record<string, unknown>>(settingsFile);
-    if (j && j["vite.autoStart"] === true) {
-      const cmd = typeof j["vite.devCommand"] === "string" ? (j["vite.devCommand"] as string) : "";
-      out.push({
-        kind: "vite-extension",
-        file: settingsFile,
-        label: "“Vite” VS Code extension",
-        detail: cmd
-          ? `auto-starts \`${cmd}\` when the folder opens`
-          : "auto-starts the dev server when the folder opens",
-      });
-    }
-  }
-
-  return out;
+  return [
+    ...detectVsCodeTaskTriggers(path.join(dir, ".vscode", "tasks.json")),
+    ...detectViteExtensionTrigger(path.join(dir, ".vscode", "settings.json")),
+  ];
 }
 
 /** Back a file up exactly once (preserve the pristine original across re-runs). */

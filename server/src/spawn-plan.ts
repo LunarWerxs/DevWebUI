@@ -76,6 +76,26 @@ const WIN_DIRECT_EXTS = [".exe", ".com"];
  * quote, rather than guessing. On POSIX, backslash is itself a metacharacter (see POSIX_META),
  * so a POSIX command containing one takes the shell path and never reaches the escape logic.
  */
+/** Consume a run of backslashes at `i` (Windows rules) and resolve it against a following quote.
+ *  Returns the index just past the run (plus the escaped quote, if any) and the literal text to emit. */
+function consumeBackslashRun(command: string, i: number): { i: number; text: string } {
+  let n = 0;
+  while (command[i] === "\\") {
+    n++;
+    i++;
+  }
+  if (command[i] === '"') {
+    let text = "\\".repeat(n >> 1); // each PAIR before a quote → one literal backslash
+    if (n % 2 === 1) {
+      text += '"'; // odd → the trailing backslash escapes the quote → literal "
+      i++;
+    }
+    // even → backslashes emitted; the quote itself is handled on the next iteration
+    return { i, text };
+  }
+  return { i, text: "\\".repeat(n) }; // not before a quote → every backslash is literal (path separators)
+}
+
 export function tokenize(command: string, meta: Set<string>): string[] | null {
   const tokens: string[] = [];
   const escapes = !meta.has("\\"); // Windows: backslash is a path sep / quote-escape lead, not a shell op
@@ -88,22 +108,10 @@ export function tokenize(command: string, meta: Set<string>): string[] | null {
 
     // Backslash run (Windows rules only) — resolved against a following quote, in any quote state.
     if (ch === "\\" && escapes) {
-      let n = 0;
-      while (command[i] === "\\") {
-        n++;
-        i++;
-      }
+      const consumed = consumeBackslashRun(command, i);
+      cur += consumed.text;
+      i = consumed.i;
       has = true;
-      if (command[i] === '"') {
-        cur += "\\".repeat(n >> 1); // each PAIR before a quote → one literal backslash
-        if (n % 2 === 1) {
-          cur += '"'; // odd → the trailing backslash escapes the quote → literal "
-          i++;
-        }
-        // even → backslashes emitted; the quote itself is handled on the next iteration
-      } else {
-        cur += "\\".repeat(n); // not before a quote → every backslash is literal (path separators)
-      }
       continue;
     }
 
