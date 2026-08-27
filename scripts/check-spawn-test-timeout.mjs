@@ -155,6 +155,48 @@ const REGEX_OPENS_AFTER = new Set([
 const REGEX_OPENS_AFTER_KEYWORD =
   /\b(?:return|typeof|instanceof|case|in|of|new|delete|void|do|else|yield|await)$/;
 
+/** One step of the in-string scan at `i` (quote char `quote`, tracked `prev`). Blanks into `out`
+ *  as needed and returns where to resume + the string state to carry forward. */
+function blankStringStep(text, out, i, quote, prev) {
+  const ch = text[i];
+  if (ch === "\\") {
+    if (text[i] !== "\n") out[i] = " ";
+    if (text[i + 1] !== "\n") out[i + 1] = " ";
+    return { i: i + 2, quote, prev };
+  }
+  if (ch === quote) return { i: i + 1, quote: null, prev: ch };
+  if (ch !== "\n") out[i] = " ";
+  return { i: i + 1, quote, prev };
+}
+
+/** Blank a `//` line comment starting at `i`; returns the index just past it. */
+function blankLineComment(text, out, i) {
+  while (i < text.length && text[i] !== "\n") out[i++] = " ";
+  return i;
+}
+
+/** Blank a `/* … *‍/` block comment starting at `i`; returns the index just past it. */
+function blankBlockComment(text, out, i) {
+  const end = text.indexOf("*/", i + 2);
+  const stop = end === -1 ? text.length : end + 2;
+  for (; i < stop; i++) if (text[i] !== "\n") out[i] = " ";
+  return stop;
+}
+
+/** If a regex literal opens at `i` (given the previous significant char `prev`), blank it and
+ *  return the index just past it; otherwise null (caller falls through to default handling). */
+function blankRegexIfOpens(text, out, i, prev) {
+  const opens =
+    prev === "" ||
+    REGEX_OPENS_AFTER.has(prev) ||
+    REGEX_OPENS_AFTER_KEYWORD.test(text.slice(0, i).trimEnd());
+  if (!opens) return null;
+  const end = endOfRegex(text, i);
+  if (end === -1) return null;
+  for (let j = i; j < end; j++) if (text[j] !== "\n") out[j] = " ";
+  return end;
+}
+
 /** Blank comments and the INTERIOR of every string/template literal, index-for-index (line numbers
  *  are computed against the untouched text). Quotes and brackets survive so call spans still
  *  balance. A spawn cannot happen inside a comment or a string, so removing both is what makes this
@@ -165,48 +207,31 @@ function blankNonCode(text) {
   let prev = "";
   let i = 0;
   while (i < text.length) {
-    const ch = text[i];
     if (inString) {
-      if (ch === "\\") {
-        if (text[i] !== "\n") out[i] = " ";
-        if (text[i + 1] !== "\n") out[i + 1] = " ";
-        i += 2;
-        continue;
-      }
-      if (ch === inString) {
-        inString = null;
-        prev = ch;
-        i++;
-        continue;
-      }
-      if (ch !== "\n") out[i] = " ";
-      i++;
+      const next = blankStringStep(text, out, i, inString, prev);
+      i = next.i;
+      inString = next.quote;
+      prev = next.prev;
       continue;
     }
+    const ch = text[i];
     if (ch === '"' || ch === "'" || ch === "`") {
       inString = ch;
       i++;
       continue;
     }
     if (ch === "/" && text[i + 1] === "/") {
-      while (i < text.length && text[i] !== "\n") out[i++] = " ";
+      i = blankLineComment(text, out, i);
       continue;
     }
     if (ch === "/" && text[i + 1] === "*") {
-      const end = text.indexOf("*/", i + 2);
-      const stop = end === -1 ? text.length : end + 2;
-      for (; i < stop; i++) if (text[i] !== "\n") out[i] = " ";
+      i = blankBlockComment(text, out, i);
       continue;
     }
-    if (
-      ch === "/" &&
-      (prev === "" ||
-        REGEX_OPENS_AFTER.has(prev) ||
-        REGEX_OPENS_AFTER_KEYWORD.test(text.slice(0, i).trimEnd()))
-    ) {
-      const end = endOfRegex(text, i);
-      if (end !== -1) {
-        for (; i < end; i++) if (text[i] !== "\n") out[i] = " ";
+    if (ch === "/") {
+      const regexEnd = blankRegexIfOpens(text, out, i, prev);
+      if (regexEnd !== null) {
+        i = regexEnd;
         prev = "/";
         continue;
       }

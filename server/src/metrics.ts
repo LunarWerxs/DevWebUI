@@ -105,128 +105,169 @@ const PE32_PID_OFFSET = 8;
 const PE32_PARENT_OFFSET = 32;
 const TH32CS_SNAPPROCESS = 0x00000002;
 
+async function openKernel32() {
+  const { dlopen, FFIType, ptr } = await import("bun:ffi");
+  const { symbols } = dlopen("kernel32.dll", {
+    OpenProcess: { args: [FFIType.u32, FFIType.i32, FFIType.u32], returns: FFIType.ptr },
+    CloseHandle: { args: [FFIType.ptr], returns: FFIType.i32 },
+    GetProcessTimes: {
+      args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr],
+      returns: FFIType.i32,
+    },
+    // K32-prefixed export lives in kernel32 (Win7+), so no separate psapi.dll load.
+    K32GetProcessMemoryInfo: {
+      args: [FFIType.ptr, FFIType.ptr, FFIType.u32],
+      returns: FFIType.i32,
+    },
+    // Toolhelp snapshot — enumerate the whole process table in-process (no spawn).
+    CreateToolhelp32Snapshot: { args: [FFIType.u32, FFIType.u32], returns: FFIType.ptr },
+    Process32First: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+    Process32Next: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+  });
+  return { symbols, ptr };
+}
+type Kernel32 = Awaited<ReturnType<typeof openKernel32>>;
+
+/** Scratch buffers reused across samples — the manager serialises sampling (its metricsRunning
+ *  guard), so there's never an overlapping read into these. */
+function createWin32Buffers() {
+  const creation = new Uint8Array(8);
+  const exit = new Uint8Array(8);
+  const kernel = new Uint8Array(8);
+  const user = new Uint8Array(8);
+  const mem = new Uint8Array(PMC_SIZE);
+  const pe = new Uint8Array(PE32_SIZE);
+  return {
+    creation,
+    exit,
+    kernel,
+    user,
+    mem,
+    pe,
+    dvK: new DataView(kernel.buffer),
+    dvU: new DataView(user.buffer),
+    dvM: new DataView(mem.buffer),
+    dvPe: new DataView(pe.buffer),
+  };
+}
+type Win32Buffers = ReturnType<typeof createWin32Buffers>;
+
+const win32U64 = (dv: DataView, off: number) =>
+  dv.getUint32(off, true) + dv.getUint32(off + 4, true) * 2 ** 32;
+
+/** Build a system-wide parent→children map from one toolhelp snapshot. On any failure returns an
+ *  empty map → descendants() degrades to the single requested pid. */
+function snapshotWin32Children(k: Kernel32, buf: Win32Buffers): Map<number, number[]> {
+  const children = new Map<number, number[]>();
+  let snap: number | null = null;
+  try {
+    snap = k.symbols.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  } catch {
+    return children;
+  }
+  if (!snap) return children; // null/0 handle → give up. INVALID_HANDLE_VALUE (-1, truthy) falls through; Process32First then returns 0 and the loop below is simply skipped.
+  try {
+    buf.dvPe.setUint32(0, PE32_SIZE, true); // dwSize — required before Process32First
+    let ok = k.symbols.Process32First(snap, k.ptr(buf.pe));
+    while (ok) {
+      const pid = buf.dvPe.getUint32(PE32_PID_OFFSET, true);
+      const parent = buf.dvPe.getUint32(PE32_PARENT_OFFSET, true);
+      const list = children.get(parent);
+      if (list) list.push(pid);
+      else children.set(parent, [pid]);
+      ok = k.symbols.Process32Next(snap, k.ptr(buf.pe));
+    }
+  } catch {
+    /* partial map is fine — we just walk what we got */
+  } finally {
+    try {
+      k.symbols.CloseHandle(snap);
+    } catch {
+      /* ignore */
+    }
+  }
+  return children;
+}
+
+/** Sample one root pid's whole descendant tree; returns null if nothing was actually measured
+ *  (caller then keeps the last-known value instead of flashing 0% / 0 B). */
+function sampleWin32Root(
+  k: Kernel32,
+  buf: Win32Buffers,
+  root: number,
+  children: Map<number, number[]>,
+  t: number,
+  last: Map<number, { cpu100ns: number; t: number }>,
+  seen: Set<number>,
+): Sample | null {
+  let cpu = 0;
+  let memory = 0;
+  let any = false; // got at least one real CPU/memory reading?
+  for (const pid of descendants(root, children)) {
+    const h = k.symbols.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+    if (!h) continue; // process gone or access denied — leave it out of the sum
+    // Opened OK → keep this pid's CPU history even if a read below transiently
+    // fails, so a one-off GetProcessTimes failure can't evict it and force a
+    // spurious 0% on the next cycle (the cleanup loop prunes only truly-gone pids).
+    seen.add(pid);
+    try {
+      if (
+        k.symbols.GetProcessTimes(h, k.ptr(buf.creation), k.ptr(buf.exit), k.ptr(buf.kernel), k.ptr(buf.user))
+      ) {
+        any = true;
+        const cpu100ns = win32U64(buf.dvK, 0) + win32U64(buf.dvU, 0); // kernel + user, in 100-ns ticks
+        const prev = last.get(pid);
+        last.set(pid, { cpu100ns, t });
+        if (prev) {
+          const cpuMs = (cpu100ns - prev.cpu100ns) / 1e4; // 100-ns ticks → ms
+          const wallMs = t - prev.t;
+          if (wallMs > 0) cpu += Math.max(0, (cpuMs / wallMs) * 100);
+        }
+      }
+      if (k.symbols.K32GetProcessMemoryInfo(h, k.ptr(buf.mem), PMC_SIZE)) {
+        any = true;
+        memory += win32U64(buf.dvM, WORKING_SET_OFFSET);
+      }
+    } finally {
+      k.symbols.CloseHandle(h);
+    }
+  }
+  return any ? { cpu, memory } : null;
+}
+
+/** Sample CPU+memory for a batch of root pids (each summed over its whole descendant tree),
+ *  using already-open kernel32 handles + scratch buffers. */
+async function sampleWin32Pids(
+  pids: number[],
+  k: Kernel32,
+  buf: Win32Buffers,
+  last: Map<number, { cpu100ns: number; t: number }>,
+): Promise<Record<number, Sample>> {
+  const out: Record<number, Sample> = {};
+  if (pids.length === 0) return out;
+
+  const children = snapshotWin32Children(k, buf);
+  const t = performance.now();
+  const seen = new Set<number>();
+  for (const root of pids) {
+    const sample = sampleWin32Root(k, buf, root, children, t, last, seen);
+    if (sample) out[root] = sample;
+  }
+  // Drop history for pids we no longer track so the map can't grow without bound.
+  for (const pid of last.keys()) if (!seen.has(pid)) last.delete(pid);
+  return out;
+}
+
 async function tryBuildWindowsFfi(): Promise<Sampler | null> {
   try {
-    const { dlopen, FFIType, ptr } = await import("bun:ffi");
-    const { symbols } = dlopen("kernel32.dll", {
-      OpenProcess: { args: [FFIType.u32, FFIType.i32, FFIType.u32], returns: FFIType.ptr },
-      CloseHandle: { args: [FFIType.ptr], returns: FFIType.i32 },
-      GetProcessTimes: {
-        args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr],
-        returns: FFIType.i32,
-      },
-      // K32-prefixed export lives in kernel32 (Win7+), so no separate psapi.dll load.
-      K32GetProcessMemoryInfo: {
-        args: [FFIType.ptr, FFIType.ptr, FFIType.u32],
-        returns: FFIType.i32,
-      },
-      // Toolhelp snapshot — enumerate the whole process table in-process (no spawn).
-      CreateToolhelp32Snapshot: { args: [FFIType.u32, FFIType.u32], returns: FFIType.ptr },
-      Process32First: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-      Process32Next: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
-    });
-
-    // Scratch buffers reused across calls — the manager serialises sampling (its
-    // metricsRunning guard), so there's never an overlapping read into these.
-    const creation = new Uint8Array(8);
-    const exit = new Uint8Array(8);
-    const kernel = new Uint8Array(8);
-    const user = new Uint8Array(8);
-    const mem = new Uint8Array(PMC_SIZE);
-    const pe = new Uint8Array(PE32_SIZE);
-    const dvK = new DataView(kernel.buffer);
-    const dvU = new DataView(user.buffer);
-    const dvM = new DataView(mem.buffer);
-    const dvPe = new DataView(pe.buffer);
-    const u64 = (dv: DataView, off: number) =>
-      dv.getUint32(off, true) + dv.getUint32(off + 4, true) * 2 ** 32;
-
-    // Build a system-wide parent→children map from one toolhelp snapshot. On any
-    // failure we return an empty map → descendants() degrades to the single pid.
-    const snapshotChildren = (): Map<number, number[]> => {
-      const children = new Map<number, number[]>();
-      let snap: number | null = null;
-      try {
-        snap = symbols.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-      } catch {
-        return children;
-      }
-      if (!snap) return children; // null/0 handle → give up. INVALID_HANDLE_VALUE (-1, truthy) falls through; Process32First then returns 0 and the loop below is simply skipped.
-      try {
-        dvPe.setUint32(0, PE32_SIZE, true); // dwSize — required before Process32First
-        let ok = symbols.Process32First(snap, ptr(pe));
-        while (ok) {
-          const pid = dvPe.getUint32(PE32_PID_OFFSET, true);
-          const parent = dvPe.getUint32(PE32_PARENT_OFFSET, true);
-          const list = children.get(parent);
-          if (list) list.push(pid);
-          else children.set(parent, [pid]);
-          ok = symbols.Process32Next(snap, ptr(pe));
-        }
-      } catch {
-        /* partial map is fine — we just walk what we got */
-      } finally {
-        try {
-          symbols.CloseHandle(snap);
-        } catch {
-          /* ignore */
-        }
-      }
-      return children;
-    };
-
+    const k = await openKernel32();
+    const buf = createWin32Buffers();
     // CPU% needs deltas: remember each pid's cumulative CPU time + the wall clock
     // at last read. Keyed by the actual OS pid (NOT the requested root), so a child
     // that comes and goes contributes accurate per-pid deltas to its tree's total.
     // performance.now() is a monotonic clock (immune to wall-clock jumps).
     const last = new Map<number, { cpu100ns: number; t: number }>();
-
-    return async (pids: number[]) => {
-      const out: Record<number, Sample> = {};
-      if (pids.length === 0) return out;
-
-      const children = snapshotChildren();
-      const t = performance.now();
-      const seen = new Set<number>();
-      for (const root of pids) {
-        let cpu = 0;
-        let memory = 0;
-        let any = false; // got at least one real CPU/memory reading? (else omit → keep last-known)
-        for (const pid of descendants(root, children)) {
-          const h = symbols.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-          if (!h) continue; // process gone or access denied — leave it out of the sum
-          // Opened OK → keep this pid's CPU history even if a read below transiently
-          // fails, so a one-off GetProcessTimes failure can't evict it and force a
-          // spurious 0% on the next cycle (the cleanup loop prunes only truly-gone pids).
-          seen.add(pid);
-          try {
-            if (symbols.GetProcessTimes(h, ptr(creation), ptr(exit), ptr(kernel), ptr(user))) {
-              any = true;
-              const cpu100ns = u64(dvK, 0) + u64(dvU, 0); // kernel + user, in 100-ns ticks
-              const prev = last.get(pid);
-              last.set(pid, { cpu100ns, t });
-              if (prev) {
-                const cpuMs = (cpu100ns - prev.cpu100ns) / 1e4; // 100-ns ticks → ms
-                const wallMs = t - prev.t;
-                if (wallMs > 0) cpu += Math.max(0, (cpuMs / wallMs) * 100);
-              }
-            }
-            if (symbols.K32GetProcessMemoryInfo(h, ptr(mem), PMC_SIZE)) {
-              any = true;
-              memory += u64(dvM, WORKING_SET_OFFSET);
-            }
-          } finally {
-            symbols.CloseHandle(h);
-          }
-        }
-        // Only emit when we actually measured something; otherwise omit so the
-        // caller keeps the last-known value instead of flashing 0% / 0 B.
-        if (any) out[root] = { cpu, memory };
-      }
-      // Drop history for pids we no longer track so the map can't grow without bound.
-      for (const pid of last.keys()) if (!seen.has(pid)) last.delete(pid);
-      return out;
-    };
+    return (pids: number[]) => sampleWin32Pids(pids, k, buf, last);
   } catch {
     return null; // not under Bun, FFI blocked, or symbol mismatch — fall back
   }

@@ -611,75 +611,56 @@ Desktop shortcuts (what a .lnk from "Add desktop shortcut" runs):
 Connection: DEVWEBUI_URL / DEVWEBUI_PORT override the daemon location.`);
 }
 
+/** One dispatch-table entry per CLI verb; `args` is the parsed rest, `ref` is `args._[0]`. */
+type CliHandler = (args: ReturnType<typeof parseArgs>, ref: string | undefined) => Promise<void> | void;
+
+const CLI_COMMANDS: Record<string, CliHandler> = {
+  "--version": () => console.log(pkg.version),
+  version: () => console.log(pkg.version),
+
+  start: (args) => startCmd(args),
+  stop: () => stopCmd(),
+  status: (args) => statusCmd(args),
+  list: (args) => listCmd(args),
+  ps: (args) => listCmd(args),
+
+  "start-process": (_args, ref) => processActionCmd("start", ref),
+  "stop-process": (_args, ref) => processActionCmd("stop", ref),
+  "restart-process": (_args, ref) => processActionCmd("restart", ref),
+  "enable-process": (_args, ref) => processActionCmd("enable", ref),
+  "disable-process": (_args, ref) => processActionCmd("disable", ref),
+
+  "start-all": () => bulkCmd(ROUTES.startAll, "Started all processes."),
+  "stop-all": () => bulkCmd(ROUTES.stopAll, "Stopped all processes."),
+
+  "open-process": (args) => openCmd("process", args),
+  "open-project": (args) => openCmd("project", args),
+  open: (args) => openDropCmd(args),
+
+  // Run the stdio MCP server IN THIS PROCESS (it connects StdioServerTransport on import),
+  // so `devwebui mcp` is exactly what a tool-calling agent spawns. Emits only JSON-RPC on stdout.
+  mcp: async () => {
+    await import("./mcp");
+  },
+
+  "-h": () => printHelp(),
+  "--help": () => printHelp(),
+  help: () => printHelp(),
+};
+
 export async function main(argv: string[]): Promise<void> {
   const cmd = argv[0] ?? "help";
   const args = parseArgs(argv.slice(1));
   const ref = args._[0];
 
-  switch (cmd) {
-    case "--version":
-    case "version":
-      console.log(pkg.version);
-      break;
-
-    case "start":
-      await startCmd(args);
-      break;
-    case "stop":
-      await stopCmd();
-      break;
-    case "status":
-      await statusCmd(args);
-      break;
-    case "list":
-    case "ps":
-      await listCmd(args);
-      break;
-    case "start-process":
-      await processActionCmd("start", ref);
-      break;
-    case "stop-process":
-      await processActionCmd("stop", ref);
-      break;
-    case "restart-process":
-      await processActionCmd("restart", ref);
-      break;
-    case "enable-process":
-      await processActionCmd("enable", ref);
-      break;
-    case "disable-process":
-      await processActionCmd("disable", ref);
-      break;
-    case "start-all":
-      await bulkCmd(ROUTES.startAll, "Started all processes.");
-      break;
-    case "stop-all":
-      await bulkCmd(ROUTES.stopAll, "Stopped all processes.");
-      break;
-    case "open-process":
-      await openCmd("process", args);
-      break;
-    case "open-project":
-      await openCmd("project", args);
-      break;
-    case "open":
-      await openDropCmd(args);
-      break;
-    case "mcp":
-      // Run the stdio MCP server IN THIS PROCESS (it connects StdioServerTransport on import),
-      // so `devwebui mcp` is exactly what a tool-calling agent spawns. Emits only JSON-RPC on stdout.
-      await import("./mcp");
-      break;
-    case "-h":
-    case "--help":
-    case "help":
-      printHelp();
-      break;
-    default:
-      console.error(`Unknown command: ${cmd}\n`);
-      printHelp();
-      process.exitCode = 1;
+  const handler = CLI_COMMANDS[cmd];
+  if (!handler) {
+    console.error(`Unknown command: ${cmd}\n`);
+    printHelp();
+    process.exitCode = 1;
+    return;
   }
+  await handler(args, ref);
 }
 
 /**
