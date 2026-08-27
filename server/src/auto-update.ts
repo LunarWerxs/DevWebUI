@@ -27,20 +27,10 @@
  * decoupled from any particular transport.
  */
 import { checkForUpdate, applyUpdate } from "./updater.ts";
-
-/** Check cadence bounds (seconds): 15 min floor, 7 day ceiling, default 6 h. */
-export const AUTO_UPDATE_INTERVAL_MIN_S = 900;
-export const AUTO_UPDATE_INTERVAL_MAX_S = 604_800;
-export const AUTO_UPDATE_INTERVAL_DEFAULT_S = 21_600;
-
-/** Clamp a requested cadence into [MIN, MAX]; a non-finite value falls back to the default. */
-export function clampAutoUpdateInterval(secs: number): number {
-  if (!Number.isFinite(secs)) return AUTO_UPDATE_INTERVAL_DEFAULT_S;
-  return Math.min(
-    AUTO_UPDATE_INTERVAL_MAX_S,
-    Math.max(AUTO_UPDATE_INTERVAL_MIN_S, Math.round(secs)),
-  );
-}
+import {
+  AUTO_UPDATE_INTERVAL_DEFAULT_S,
+  clampAutoUpdateInterval,
+} from "./auto-update-interval.ts";
 
 // ── injectable side-effects (real impls by default; index.ts wires `relaunch`, tests swap all) ──
 export interface AutoUpdateHooks {
