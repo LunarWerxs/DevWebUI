@@ -298,7 +298,8 @@ setAutoUpdateHooks({
       // ~800ms handoff, so a tray Quit (`taskkill /T /F`) landing in that window kills the outgoing
       // daemon AND its replacement, leaving the user with none. Going through WMI is also why the
       // port, the relaunch signal and the resume list ride as FLAGS: it carries no environment.
-      const plan = buildDetachedSpawn(process.platform, relaunchArgv);
+      // hideWindow: the successor is a CONSOLE program - without ShowWindow=0 every auto-update relaunch pops a visible console hosting the daemon (kit fix 2026-08-30).
+      const plan = buildDetachedSpawn(process.platform, relaunchArgv, { hideWindow: true });
       const child = spawn(plan.argv[0] as string, plan.argv.slice(1), {
         cwd: process.cwd(),
         detached: plan.detached,
