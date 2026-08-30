@@ -612,7 +612,10 @@ Connection: DEVWEBUI_URL / DEVWEBUI_PORT override the daemon location.`);
 }
 
 /** One dispatch-table entry per CLI verb; `args` is the parsed rest, `ref` is `args._[0]`. */
-type CliHandler = (args: ReturnType<typeof parseArgs>, ref: string | undefined) => Promise<void> | void;
+type CliHandler = (
+  args: ReturnType<typeof parseArgs>,
+  ref: string | undefined,
+) => Promise<void> | void;
 
 const CLI_COMMANDS: Record<string, CliHandler> = {
   "--version": () => console.log(pkg.version),

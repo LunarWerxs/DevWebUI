@@ -6,11 +6,13 @@ import {
   setUpdateNotifyEnabled,
   setAutoUpdateBroadcast,
   stopAutoUpdate,
+} from "../server/src/auto-update.ts";
+import {
   clampAutoUpdateInterval,
   AUTO_UPDATE_INTERVAL_MIN_S,
   AUTO_UPDATE_INTERVAL_MAX_S,
   AUTO_UPDATE_INTERVAL_DEFAULT_S,
-} from "../server/src/auto-update.ts";
+} from "../server/src/auto-update-interval.ts";
 import type { UpdateApplyResult, UpdateStatus } from "../shared/dto.ts";
 
 // The auto-update orchestrator's decision logic, driven through injected hooks so nothing actually

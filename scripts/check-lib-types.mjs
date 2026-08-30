@@ -124,7 +124,9 @@ function classifyExportLine(line) {
 
   if (/^(interface|type)\b/.test(rest)) return { skip: true }; // type-only: `type X =` and `type { ... }`
   if (rest.startsWith("*")) {
-    return { unsupported: "`export *` re-export is not analyzable — enumerate it or exclude the file" };
+    return {
+      unsupported: "`export *` re-export is not analyzable — enumerate it or exclude the file",
+    };
   }
   if (rest.startsWith("default")) return { names: ["default"] };
   if (rest.startsWith("{")) return parseNamedClause(rest, line);

@@ -63,7 +63,8 @@ async function handleOauthCallback(c: Context, manager: Manager): Promise<Respon
   const origin = new URL(c.req.url).origin;
   const code = c.req.query("code");
   const stateTok = c.req.query("state");
-  const ok = code && stateTok ? await handleCallback(origin, code, stateTok).catch(() => false) : false;
+  const ok =
+    code && stateTok ? await handleCallback(origin, code, stateTok).catch(() => false) : false;
   // If sync was already enabled before this sign-in, converge now that we have a token: pull the
   // remote doc (applying it) OR seed the store from local if the remote is empty. `enable()` does
   // exactly that pull-or-seed; run it in the background so the redirect never waits on the network.

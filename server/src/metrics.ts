@@ -212,7 +212,13 @@ function sampleWin32Root(
     seen.add(pid);
     try {
       if (
-        k.symbols.GetProcessTimes(h, k.ptr(buf.creation), k.ptr(buf.exit), k.ptr(buf.kernel), k.ptr(buf.user))
+        k.symbols.GetProcessTimes(
+          h,
+          k.ptr(buf.creation),
+          k.ptr(buf.exit),
+          k.ptr(buf.kernel),
+          k.ptr(buf.user),
+        )
       ) {
         any = true;
         const cpu100ns = win32U64(buf.dvK, 0) + win32U64(buf.dvU, 0); // kernel + user, in 100-ns ticks

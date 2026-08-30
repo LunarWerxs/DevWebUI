@@ -27,10 +27,7 @@
  * decoupled from any particular transport.
  */
 import { checkForUpdate, applyUpdate } from "./updater.ts";
-import {
-  AUTO_UPDATE_INTERVAL_DEFAULT_S,
-  clampAutoUpdateInterval,
-} from "./auto-update-interval.ts";
+import { AUTO_UPDATE_INTERVAL_DEFAULT_S, clampAutoUpdateInterval } from "./auto-update-interval.ts";
 
 // ── injectable side-effects (real impls by default; index.ts wires `relaunch`, tests swap all) ──
 export interface AutoUpdateHooks {

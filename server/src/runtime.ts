@@ -16,10 +16,7 @@ import path from "node:path";
 import { writeJsonAtomic } from "./atomic-write";
 import { dataDir } from "./data-dir";
 import { OS_SKIP, type SkipOs } from "./scan";
-import {
-  AUTO_UPDATE_INTERVAL_DEFAULT_S,
-  clampAutoUpdateInterval,
-} from "./auto-update-interval.ts";
+import { AUTO_UPDATE_INTERVAL_DEFAULT_S, clampAutoUpdateInterval } from "./auto-update-interval.ts";
 import type { RuntimePref, Settings } from "../../shared/dto";
 
 export type { RuntimePref, Settings } from "../../shared/dto";
