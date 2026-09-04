@@ -58,8 +58,8 @@ function toolNamed(name: string): McpEngineTool {
   return t;
 }
 
-test("all 31 tools are loaded", () => {
-  expect(TOOLS.length).toBe(31);
+test("all 36 tools are loaded", () => {
+  expect(TOOLS.length).toBe(36);
 });
 
 // One row per tool: the args it's invoked with, and the request it MUST produce. `body` is
@@ -191,6 +191,27 @@ const cases: Case[] = [
     args: { processId: "p1.api" },
     method: "POST",
     url: "/api/errors/clear?processId=p1.api",
+  },
+  { name: "list_alert_rules", args: {}, method: "GET", url: "/api/alerts/rules" },
+  {
+    name: "add_alert_rule",
+    args: { processId: "p1.api", metric: "cpu", threshold: 80, forMs: 120000 },
+    method: "POST",
+    url: "/api/alerts/rules",
+    body: { processId: "p1.api", metric: "cpu", threshold: 80, forMs: 120000 },
+  },
+  {
+    name: "remove_alert_rule",
+    args: { id: "rule1" },
+    method: "DELETE",
+    url: "/api/alerts/rules/rule1",
+  },
+  { name: "list_alert_events", args: {}, method: "GET", url: "/api/alerts/events" },
+  {
+    name: "clear_alert_events",
+    args: { processId: "p1.api" },
+    method: "POST",
+    url: "/api/alerts/events/clear?processId=p1.api",
   },
   {
     name: "enable_process",

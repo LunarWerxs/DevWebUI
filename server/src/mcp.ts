@@ -425,6 +425,76 @@ const TOOLS: McpEngineTool[] = [
       ),
   },
   {
+    name: "list_alert_rules",
+    description:
+      "List configured threshold alert rules (fire when a process's CPU or memory sample stays over a threshold for a continuous duration).",
+    inputSchema: S(),
+    run: () => api(ROUTES.alertRules),
+  },
+  {
+    name: "add_alert_rule",
+    description:
+      "Create a threshold alert rule: fire once a process's CPU or memory sample stays over `threshold`, continuously, for `forMs` milliseconds.",
+    inputSchema: S(
+      {
+        processId: { type: "string", description: "Process id to watch." },
+        metric: {
+          type: "string",
+          enum: ["cpu", "memory"],
+          description: "Which live metric to watch.",
+        },
+        threshold: {
+          type: "number",
+          description: "CPU percent-of-one-core, or memory bytes, that trips the rule.",
+        },
+        forMs: {
+          type: "number",
+          description:
+            "How long the metric must stay over threshold before firing, in ms (optional, default 0).",
+        },
+        enabled: {
+          type: "boolean",
+          description: "Whether the rule is active (optional, default true).",
+        },
+      },
+      ["processId", "metric", "threshold"],
+    ),
+    run: (a) =>
+      api(ROUTES.alertRules, {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          processId: a.processId,
+          metric: a.metric,
+          threshold: a.threshold,
+          forMs: a.forMs ?? 0,
+          enabled: a.enabled,
+        }),
+      }),
+  },
+  {
+    name: "remove_alert_rule",
+    description: "Delete an alert rule by id.",
+    inputSchema: S({ id: { type: "string" } }, ["id"]),
+    run: (a) => api(ROUTES.alertRule.build(str(a.id)), { method: "DELETE" }),
+  },
+  {
+    name: "list_alert_events",
+    description: "List the history of fired alert events, most recent first.",
+    inputSchema: S(),
+    run: () => api(ROUTES.alertEvents),
+  },
+  {
+    name: "clear_alert_events",
+    description: "Clear the fired-alert-event history (optionally for a single process id).",
+    inputSchema: S({ processId: { type: "string" } }),
+    run: (a) =>
+      api(
+        `${ROUTES.alertEventsClear}${a.processId ? `?processId=${encodeURIComponent(str(a.processId))}` : ""}`,
+        { method: "POST" },
+      ),
+  },
+  {
     name: "enable_process",
     description:
       "Enable a process (turn it on) and start it; the on/off choice persists across daemon restarts.",
