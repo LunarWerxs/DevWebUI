@@ -42,6 +42,7 @@ import {
 import { toast } from "vue-sonner";
 import InfoHint from "@/shell/InfoHint.vue";
 import CloudSyncSection from "./settings/CloudSyncSection.vue";
+import AlertsSection from "./settings/AlertsSection.vue";
 import { getSettings, openPortableWindow, saveSettings, type RuntimePref } from "@/api";
 import { useAppStore } from "@/store";
 import { setLocale } from "@/i18n";
@@ -93,14 +94,17 @@ const hideTrayIcon = ref(false);
 const loadedPortableMode = ref(false);
 const saving = ref(false);
 
-// Two tabs: everyday knobs under General, everything else (server startup, how the UI opens,
-// project scanning) under Advanced. Sections stay mounted behind v-show (SettingsTabs rule): the
-// panel-open watcher below hydrates every tab's fields in one go.
-type TabId = "general" | "advanced";
+// Three tabs: everyday knobs under General, everything else (server startup, how the UI opens,
+// project scanning) under Advanced, and threshold alert rules + fired-event history under
+// Alerts (self-contained — AlertsSection.vue owns its own fetch/save, unlike the other two
+// tabs which this panel hydrates itself). Sections stay mounted behind v-show (SettingsTabs
+// rule): the panel-open watcher below hydrates every tab's fields in one go.
+type TabId = "general" | "advanced" | "alerts";
 const tab = ref<TabId>("general");
 const tabs = computed<{ id: TabId; label: string }[]>(() => [
   { id: "general", label: t("settings.tabGeneral") },
   { id: "advanced", label: t("settings.tabAdvanced") },
+  { id: "alerts", label: t("settings.tabAlerts") },
 ]);
 
 // OS names are proper nouns — deliberately left untranslated.
@@ -362,6 +366,11 @@ async function save() {
           />
         </div>
       </SettingsGroup>
+      </div>
+
+      <!-- Alerts: threshold rules on process CPU/memory + fired-event history ─────────── -->
+      <div v-show="tab === 'alerts'">
+        <AlertsSection />
       </div>
     </div>
 

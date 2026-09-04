@@ -19,6 +19,7 @@
  *   devwebui enable-process  <id|name>
  *   devwebui disable-process <id|name>
  *   devwebui start-all | stop-all              start / stop every managed process
+ *   devwebui alerts list|add|remove|events|clear   threshold alert rules + fired-event history
  *   devwebui open-process <file> <id>          desktop-shortcut launcher: boot+load+start+focus
  *   devwebui open-project <file>               desktop-shortcut launcher for a whole codebase
  *   devwebui mcp                               run the stdio MCP server for AI agents
@@ -35,7 +36,7 @@ import { closeSync, existsSync, mkdirSync, openSync, statSync, unlinkSync } from
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ROUTES } from "../../shared/routes";
-import type { ScanResult } from "../../shared/dto";
+import type { AlertEvent, AlertMetric, AlertRule, ScanResult } from "../../shared/dto";
 import { daemonUrl, focusPath } from "../../shared/constants";
 import { dataDir } from "./data-dir";
 import { findLiveInstance, readInstanceInfo, type InstanceInfo } from "./instance";
@@ -294,6 +295,138 @@ async function resolveProcessId(ref: string): Promise<string> {
     );
   }
   throw new UsageError(`No process matches "${ref}". Run \`devwebui list\` to see them.`);
+}
+
+// ── alerts (threshold rules on process CPU/memory + fired-event history) ─────────────────────
+// Mirrors the five MCP alert tools (server/src/mcp.ts) 1:1 over the same REST routes, so a
+// human at a terminal and an AI agent over MCP have identical capability — see AI_GUIDE.md's
+// GUI/CLI/MCP parity convention.
+
+function parseMetric(raw: string | undefined): AlertMetric {
+  if (raw === "cpu" || raw === "memory") return raw;
+  throw new UsageError(`metric must be "cpu" or "memory", got ${raw ? `"${raw}"` : "nothing"}`);
+}
+
+function fmtThreshold(metric: AlertMetric, value: number): string {
+  return metric === "cpu" ? `${value}%` : `${Math.round(value / 1_048_576)} MB`;
+}
+
+function printAlertRules(rules: AlertRule[]): void {
+  if (!rules.length) {
+    console.log(
+      "No alert rules. Add one with `devwebui alerts add <process> <cpu|memory> <threshold>`.",
+    );
+    return;
+  }
+  const rows = [["ID", "PROCESS", "METRIC", "THRESHOLD", "FOR", "ENABLED"]];
+  for (const r of rules) {
+    rows.push([
+      r.id,
+      r.processId,
+      r.metric,
+      fmtThreshold(r.metric, r.threshold),
+      `${Math.round(r.forMs / 1000)}s`,
+      r.enabled ? "yes" : "no",
+    ]);
+  }
+  console.log(table(rows));
+}
+
+function printAlertEvents(events: AlertEvent[]): void {
+  if (!events.length) {
+    console.log("No fired alert events.");
+    return;
+  }
+  const rows = [["FIRED", "PROCESS", "PROJECT", "METRIC", "VALUE", "THRESHOLD"]];
+  for (const e of events) {
+    rows.push([
+      new Date(e.firedAt).toISOString(),
+      e.processName,
+      e.projectName,
+      e.metric,
+      fmtThreshold(e.metric, e.value),
+      fmtThreshold(e.metric, e.threshold),
+    ]);
+  }
+  console.log(table(rows));
+}
+
+const ALERTS_USAGE = `Usage:
+  devwebui alerts list [--json]
+  devwebui alerts add <process> <cpu|memory> <threshold> [--for-secs N] [--disabled]
+    threshold is percent-of-one-core for cpu, or a byte count for memory
+    (matching the daemon's live process metrics — see \`devwebui status\`).
+  devwebui alerts remove <ruleId>
+  devwebui alerts events [--json]
+  devwebui alerts clear [--process <id|name>]`;
+
+async function alertsCmd(args: Args): Promise<void> {
+  await requireLive();
+  const [sub, ...rest] = args._;
+
+  if (sub === "list") {
+    const rules = await api<AlertRule[]>(ROUTES.alertRules);
+    if (args.json) console.log(JSON.stringify(rules, null, 2));
+    else printAlertRules(rules);
+    return;
+  }
+
+  if (sub === "add") {
+    const [ref, metricRaw, thresholdRaw] = rest;
+    if (!ref || !metricRaw || thresholdRaw === undefined) throw new UsageError(ALERTS_USAGE);
+    const metric = parseMetric(metricRaw);
+    const threshold = Number(thresholdRaw);
+    if (!Number.isFinite(threshold)) {
+      throw new UsageError(`threshold must be a number, got "${thresholdRaw}"`);
+    }
+    const forSecs = typeof args["for-secs"] === "string" ? Number(args["for-secs"]) : 0;
+    if (!Number.isFinite(forSecs) || forSecs < 0) {
+      throw new UsageError(`--for-secs must be a non-negative number, got "${args["for-secs"]}"`);
+    }
+    const processId = await resolveProcessId(ref);
+    const rule = await api<AlertRule>(
+      ROUTES.alertRules,
+      jsonPost({
+        processId,
+        metric,
+        threshold,
+        forMs: Math.round(forSecs * 1000),
+        enabled: args.disabled ? false : undefined,
+      }),
+    );
+    console.log(
+      `Added alert rule ${rule.id}: ${processId} ${metric} > ${fmtThreshold(metric, threshold)} for ${forSecs}s.`,
+    );
+    return;
+  }
+
+  if (sub === "remove") {
+    const [id] = rest;
+    if (!id) throw new UsageError(ALERTS_USAGE);
+    await api(ROUTES.alertRule.build(id), { method: "DELETE" });
+    console.log(`Removed alert rule ${id}.`);
+    return;
+  }
+
+  if (sub === "events") {
+    const events = await api<AlertEvent[]>(ROUTES.alertEvents);
+    if (args.json) console.log(JSON.stringify(events, null, 2));
+    else printAlertEvents(events);
+    return;
+  }
+
+  if (sub === "clear") {
+    const processId =
+      typeof args.process === "string" ? await resolveProcessId(args.process) : undefined;
+    await api(
+      `${ROUTES.alertEventsClear}${processId ? `?processId=${encodeURIComponent(processId)}` : ""}`,
+      { method: "POST" },
+    );
+    console.log(processId ? `Cleared alert events for ${processId}.` : "Cleared all alert events.");
+    return;
+  }
+
+  throw new UsageError(ALERTS_USAGE);
 }
 
 // ── verbs ──────────────────────────────────────────────────────────────────────────────────────
@@ -599,6 +732,14 @@ Drive a running daemon:
   devwebui start-all | stop-all              Start / stop every managed process
   devwebui mcp                               Run the stdio MCP server (for AI agents)
 
+Threshold alerts ("alert if this process exceeds 80% CPU for 2 minutes"):
+  devwebui alerts list [--json]              List configured alert rules
+  devwebui alerts add <process> <cpu|memory> <threshold> [--for-secs N] [--disabled]
+                                             Add a rule (threshold: CPU % or memory in bytes)
+  devwebui alerts remove <ruleId>            Delete a rule
+  devwebui alerts events [--json]            List fired alert events, most recent first
+  devwebui alerts clear [--process <id|name>] Clear fired-event history (optionally one process)
+
 Desktop shortcuts (what a .lnk from "Add desktop shortcut" runs):
   devwebui open-process <file.devwebui> <id> Boot the daemon if needed, load the project if
                                              needed, start that process (+ its linked group)
@@ -635,6 +776,8 @@ const CLI_COMMANDS: Record<string, CliHandler> = {
 
   "start-all": () => bulkCmd(ROUTES.startAll, "Started all processes."),
   "stop-all": () => bulkCmd(ROUTES.stopAll, "Stopped all processes."),
+
+  alerts: (args) => alertsCmd(args),
 
   "open-process": (args) => openCmd("process", args),
   "open-project": (args) => openCmd("project", args),

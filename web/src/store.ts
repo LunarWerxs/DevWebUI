@@ -91,8 +91,8 @@ export const useAppStore = defineStore("app", () => {
   }
   const logs = ref<Record<string, LogEntry[]>>({});
   const errors = ref<ErrorEvent[]>([]);
-  // No GUI consumes this yet (see server/src/alerts.ts) - fetched/subscribed here now so a
-  // follow-up alerts panel doesn't also need to patch the store's SSE plumbing.
+  // Fired-alert-event history (see server/src/alerts.ts); rendered by
+  // components/settings/AlertsSection.vue.
   const alertEvents = ref<AlertEvent[]>([]);
   /** Absolute dirs of detected projects the user dismissed (hidden from the background scan). */
   const ignoredProjects = ref<string[]>([]);
@@ -291,6 +291,13 @@ export const useAppStore = defineStore("app", () => {
   function clearErrorsLocal(processId?: string) {
     errors.value = processId ? errors.value.filter((e) => e.processId !== processId) : [];
     void api.clearErrors(processId).catch(() => {}); // self-healing — doc block above: next SSE snapshot resurfaces on failure
+  }
+
+  /** Same optimistic-then-reconcile pattern as {@link clearErrorsLocal} — alertEvents is also
+   *  server-authoritative over the "alerts" SSE event (see connect() below). */
+  function clearAlertEventsLocal(processId?: string) {
+    alertEvents.value = processId ? alertEvents.value.filter((e) => e.processId !== processId) : [];
+    void api.clearAlertEvents(processId).catch(() => {});
   }
 
   function applyStatus(p: ProcessView | null) {
@@ -621,6 +628,7 @@ export const useAppStore = defineStore("app", () => {
     errorCountByProcess,
     dismissError,
     clearErrorsLocal,
+    clearAlertEventsLocal,
     refresh,
     toggleStar,
     ignoredProjects,

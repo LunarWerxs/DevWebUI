@@ -133,7 +133,7 @@ Save the result as `<repo-name>.devwebui` in the repo root. Then in DevWebUI cli
 
 DevWebUI exposes an MCP server — a thin stdio client over the running daemon, so the GUI and
 agents share one state. Register it as shown in the README's
-[MCP section](README.md#drive-it-from-an-ai-agent-mcp), then use the **31 tools**:
+[MCP section](README.md#drive-it-from-an-ai-agent-mcp), then use the **36 tools**:
 
 **Projects**
 
@@ -176,6 +176,15 @@ agents share one state. Register it as shown in the README's
 - `list_errors` — the de-duplicated record of process errors (stderr / crashes / error-looking stdout), most recent first.
 - `clear_errors` — clear the error log (optionally for a single process id).
 - `diagnose_process` — Incident Autopilot: a structured root-cause guess (exit code + error log + port ownership + command) plus a suggested remediation (never auto-executed).
+
+**Threshold alerts**
+
+- `list_alert_rules` / `add_alert_rule` / `remove_alert_rule` - configure rules that fire once a
+  process's CPU or memory sample stays over a threshold, continuously, for a set duration (e.g.
+  "alert if this process exceeds 80% CPU for 2 minutes"). Same GUI (Settings -> Alerts) and CLI
+  (`devwebui alerts add|remove`) surface - all three agree.
+- `list_alert_events` / `clear_alert_events` - the fired-event history a rule has produced,
+  most recent first; clear it all or for one process.
 
 **Common flows:** to onboard a repo, write its `.devwebui` file (above) then `load_project` with the
 absolute path — or `scan_projects` to find existing ones. Build or reshape a project with

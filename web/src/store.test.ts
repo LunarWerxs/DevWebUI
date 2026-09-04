@@ -11,17 +11,18 @@ import { createPinia, setActivePinia } from "pinia";
 import { nextTick } from "vue";
 import * as api from "./api";
 import { useAppStore } from "./store";
-import type { ErrorEvent, ProcessView, ProjectView } from "./types";
+import type { AlertEvent, ErrorEvent, ProcessView, ProjectView } from "./types";
 import { MAX_LOG_LINES } from "../../shared/constants";
 
 // Keep the rest of "./api" real (getProjects/getErrors/etc. aren't exercised here) and only
-// intercept the two calls the optimistic-update paths fire in the background.
+// intercept the calls the optimistic-update paths fire in the background.
 vi.mock("./api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api")>();
   return {
     ...actual,
     dismissError: vi.fn(async () => {}),
     clearErrors: vi.fn(async () => {}),
+    clearAlertEvents: vi.fn(async () => {}),
   };
 });
 
@@ -104,6 +105,19 @@ function projectView(over: Partial<ProjectView> & { id: string }): ProjectView {
     ...over,
   };
 }
+
+const mkAlertEvent = (processId: string, id: string): AlertEvent => ({
+  id,
+  ruleId: "rule1",
+  processId,
+  processName: "Web",
+  projectId: "p1",
+  projectName: "P1",
+  metric: "cpu",
+  threshold: 80,
+  value: 91,
+  firedAt: 1,
+});
 
 const mkErr = (processId: string, fingerprint: string): ErrorEvent => ({
   fingerprint,
@@ -236,6 +250,17 @@ describe("SSE event application", () => {
     expect(store.updateAvailableReason).toBe("dirty");
   });
 
+  it("'alerts' fully replaces the fired-event list", async () => {
+    const store = useAppStore();
+    store.connect();
+    const incoming: AlertEvent[] = [mkAlertEvent("p1.web", "e1")];
+    const h = sseHandle();
+    h.event.value = "alerts";
+    h.data.value = JSON.stringify(incoming);
+    await nextTick();
+    expect(store.alertEvents).toEqual(incoming);
+  });
+
   it("every log line gets a stable seq so the drawer keys on identity, not array index", async () => {
     const store = useAppStore();
     store.connect();
@@ -275,5 +300,19 @@ describe("optimistic updates", () => {
     store.clearErrorsLocal();
     expect(store.errors).toEqual([]);
     expect(api.clearErrors).toHaveBeenCalledWith(undefined);
+  });
+
+  it("clearAlertEventsLocal clears by processId, or everything when omitted, and forwards the same scope to the daemon", () => {
+    const store = useAppStore();
+    store.alertEvents = [mkAlertEvent("p1.web", "a"), mkAlertEvent("p1.api", "b")];
+
+    store.clearAlertEventsLocal("p1.web");
+    expect(store.alertEvents.map((e) => e.id)).toEqual(["b"]);
+    expect(api.clearAlertEvents).toHaveBeenCalledWith("p1.web");
+
+    store.alertEvents = [mkAlertEvent("p1.web", "a"), mkAlertEvent("p1.api", "b")];
+    store.clearAlertEventsLocal();
+    expect(store.alertEvents).toEqual([]);
+    expect(api.clearAlertEvents).toHaveBeenCalledWith(undefined);
   });
 });
