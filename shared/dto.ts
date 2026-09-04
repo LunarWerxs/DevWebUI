@@ -332,6 +332,52 @@ export interface ErrorEvent {
   lastSeen: number;
 }
 
+// ---- alert rules (user-defined threshold alerting on process CPU/memory) --
+// Adapted from PostHog products/alerts/ (threshold alerting on insights/dashboards, MIT):
+// see server/src/alerts.ts for the evaluation + persistence this DTO layer describes.
+
+/** Which live metric an alert rule watches - the same stream {@link ProcessView} carries. */
+export type AlertMetric = "cpu" | "memory";
+
+/**
+ * A user-defined threshold rule: "alert if this process exceeds 80% CPU for 2 minutes".
+ * `threshold` is a CPU percent-of-one-core or a memory byte count, matching
+ * {@link ProcessView.cpu} / {@link ProcessView.memory} respectively.
+ */
+export interface AlertRule {
+  id: string;
+  processId: string;
+  metric: AlertMetric;
+  threshold: number;
+  /** The metric must stay over `threshold`, continuously, for this many ms before firing. */
+  forMs: number;
+  enabled: boolean;
+  createdAt: number;
+}
+
+/** Input for creating/updating an alert rule; the server assigns `id`/`createdAt`. */
+export interface AlertRuleInput {
+  processId: string;
+  metric: AlertMetric;
+  threshold: number;
+  forMs: number;
+  enabled?: boolean;
+}
+
+/** One firing of an alert rule, as projected to a client (see server/src/alerts.ts). */
+export interface AlertEvent {
+  id: string;
+  ruleId: string;
+  processId: string;
+  processName: string;
+  projectId: string;
+  projectName: string;
+  metric: AlertMetric;
+  threshold: number;
+  value: number; // the sample that tripped it
+  firedAt: number;
+}
+
 // ---- desktop shortcuts (Windows) -------------------------------------------
 
 /** Why {@link ShortcutResult} came back unsuccessful. */

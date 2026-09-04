@@ -101,6 +101,7 @@ export function registerRealtime(app: Hono, manager: Manager) {
   manager.on("log", (l) => broadcast("log", l));
   manager.on("projects", (p) => broadcast("projects", p));
   manager.on("errors", (e) => broadcast("errors", e));
+  manager.on("alerts", (e) => broadcast("alerts", e));
   // Auto-update lifecycle events (see server/src/auto-update.ts): the module itself has no
   // transport, so server/src/index.ts wires its broadcast hook to `manager.emit("autoUpdate", …)`,
   // relayed out to SSE clients here exactly like every other manager event.
@@ -116,6 +117,7 @@ export function registerRealtime(app: Hono, manager: Manager) {
       syncClientCount();
       await stream.writeSSE({ event: "projects", data: JSON.stringify(manager.listProjects()) });
       await stream.writeSSE({ event: "errors", data: JSON.stringify(manager.listErrors()) });
+      await stream.writeSSE({ event: "alerts", data: JSON.stringify(manager.listAlertEvents()) });
       const ping = setInterval(() => void client.send("ping", Date.now()), 15000);
       stream.onAbort(() => {
         clearInterval(ping);

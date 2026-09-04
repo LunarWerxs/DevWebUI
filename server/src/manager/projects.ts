@@ -66,6 +66,7 @@ export class ManagerWithProjects extends ManagerWithLifecycle {
         if (e) this.discardEntry(e);
         this.entries.delete(pid);
         this.errors.clear(pid);
+        this.alerts.removeRulesForProcess(pid); // process removed from the file: its rules can never match again
         clearEnabledOverrides([pid]); // process removed from the file — forget its toggle
       }
     }
@@ -114,6 +115,7 @@ export class ManagerWithProjects extends ManagerWithLifecycle {
     await Promise.all(proj.processIds.map((pid) => this.stop(pid)));
     for (const pid of proj.processIds) {
       this.errors.clear(pid);
+      this.alerts.removeRulesForProcess(pid);
       deleteLogs(pid); // no reader can ever reach these again — don't leave them on disk
     }
     clearEnabledOverrides(proj.processIds); // explicit removal — drop its toggles

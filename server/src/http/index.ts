@@ -15,6 +15,7 @@ import {
 import { registerProjectRoutes } from "./project-routes";
 import { registerProcessRoutes } from "./process-routes";
 import { registerConnectionsRoutes } from "./connections-routes";
+import { registerAlertRoutes } from "./alert-routes";
 
 function embeddedContentType(pathname: string): string {
   const ext = path.extname(pathname).toLowerCase();
@@ -54,6 +55,7 @@ export function createApp(manager: Manager, options: CreateAppOptions = {}) {
   registerProjectRoutes(app, manager);
   registerProcessRoutes(app, manager);
   registerConnectionsRoutes(app, manager);
+  registerAlertRoutes(app, manager);
 
   // Serve the built GUI from the daemon. Resolve web/dist in BOTH shapes: dev (relative to this
   // source) and compiled (a `web/dist` shipped next to the single-file binary — see scripts/build.ts).

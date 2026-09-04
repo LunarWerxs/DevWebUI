@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import treeKill from "tree-kill";
+import { AlertStore, type AlertEvent, type AlertRule, type AlertRuleInput } from "../alerts";
 import { diagnose, type Diagnosis } from "../diagnose";
 import { ErrorRecorder, type ErrorInfo, type ErrorEvent, isErrorActive } from "../errors";
 import { BufferedLogWriter, tailLog } from "../log-vault";
@@ -24,6 +25,11 @@ export abstract class ManagerBase extends EventEmitter {
   protected projects = new Map<string, Project>();
   protected errorsDirty = false;
   protected errors = new ErrorRecorder(() => (this.errorsDirty = true));
+  // Threshold alerting over the same CPU/memory stream (server/src/alerts.ts): evaluated
+  // once per metrics tick (see ManagerWithMonitoring.pollMetrics). Fired events push out
+  // over SSE the same way a newly-current error does, via alertsDirty below.
+  protected alertsDirty = false;
+  protected alerts = new AlertStore(() => (this.alertsDirty = true));
   // Start of THIS daemon session. Any persisted error the recorder just loaded from
   // disk was seen before now, so it's filtered out of what the GUI sees (see
   // listErrors) — the log survives for diagnosis, but stale errors never resurface
@@ -131,6 +137,31 @@ export abstract class ManagerBase extends EventEmitter {
 
   dismissError(fingerprint: string): boolean {
     return this.errors.dismiss(fingerprint);
+  }
+
+  // ---- alert rules (threshold alerting on CPU/memory) --------------------
+  listAlertRules(): AlertRule[] {
+    return this.alerts.listRules();
+  }
+
+  addAlertRule(input: AlertRuleInput): AlertRule {
+    return this.alerts.addRule(input);
+  }
+
+  updateAlertRule(id: string, input: Partial<AlertRuleInput>): AlertRule | null {
+    return this.alerts.updateRule(id, input);
+  }
+
+  removeAlertRule(id: string): boolean {
+    return this.alerts.removeRule(id);
+  }
+
+  listAlertEvents(): AlertEvent[] {
+    return this.alerts.listEvents();
+  }
+
+  clearAlertEvents(processId?: string): void {
+    this.alerts.clearEvents(processId);
   }
 
   /**

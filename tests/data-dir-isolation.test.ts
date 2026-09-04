@@ -56,8 +56,9 @@ const TESTS_DIR = import.meta.dir;
 
 // Modules whose (value, non-type) import means the test persists something under ~/.devwebui:
 // Manager (spawn/log/error pipeline), log-vault (appendLog), runtime (settings.json), state.json,
-// instance pointer, connections.json, and http (createApp mounts a Manager). `errors`/`diagnose`
-// are deliberately absent — they're imported for TYPES by pure in-memory analyzer tests.
+// instance pointer, connections.json, http (createApp mounts a Manager), and alerts
+// (alerts-rules.json / alerts-events.ndjson). `errors`/`diagnose` are deliberately absent:
+// they're imported for TYPES by pure in-memory analyzer tests.
 const WRITER_MODULES = [
   "manager",
   "log-vault",
@@ -66,6 +67,7 @@ const WRITER_MODULES = [
   "instance",
   "connections",
   "http",
+  "alerts",
 ];
 const WRITER_IMPORT = new RegExp(
   // A value import (`import … from`, NOT `import type …`) of one of the writer modules — the barrel
