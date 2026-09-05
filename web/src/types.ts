@@ -11,6 +11,10 @@ export type {
   ProjectMetaInput,
   ErrorEvent,
   ErrorSource,
+  AlertEvent,
+  AlertMetric,
+  AlertRule,
+  AlertRuleInput,
 } from "../../shared/dto";
 
 /** How a project panel lays out its processes. */

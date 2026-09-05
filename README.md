@@ -146,8 +146,8 @@ state. Start the daemon, then register:
 }
 ```
 
-31 tools cover projects, processes (start/stop/restart, enable/disable, all), logs and the error
-log. **Full list →** [`AI_GUIDE.md`](AI_GUIDE.md#for-an-ai-driving-devwebui-over-mcp)
+36 tools cover projects, processes (start/stop/restart, enable/disable, all), logs, the error
+log, and threshold alerts. **Full list →** [`AI_GUIDE.md`](AI_GUIDE.md#for-an-ai-driving-devwebui-over-mcp)
 
 ## CLI
 
@@ -155,6 +155,7 @@ log. **Full list →** [`AI_GUIDE.md`](AI_GUIDE.md#for-an-ai-driving-devwebui-ov
 devwebui start | stop | status | list                 # boot / stop the daemon, inspect state
 devwebui start-process | stop-process | restart-process <id|name>
 devwebui start-all | stop-all
+devwebui alerts list | add | remove | events | clear  # threshold alert rules + fired-event history
 devwebui open <folder|file.devwebui>                  # add/drop a project; starts it if already added
 devwebui mcp                                           # the stdio MCP server for agents
 ```
@@ -217,14 +218,14 @@ daemon on port 4000 and the GUI on port 4010. macOS and Linux tray support is on
 **How is DevWebUI different from PM2's web UI, hotel, or exo?**
 Hotel and exo are local dev-server GUIs that haven't shipped a release in a while, and PM2's web
 dashboard (PM2 Plus / PM2.io) is a paid product beyond its free tier. DevWebUI is actively
-maintained, free, and local-first, and pairs its GUI with a 31-tool MCP server so AI agents can
+maintained, free, and local-first, and pairs its GUI with a 36-tool MCP server so AI agents can
 drive the same daemon you click.
 
 **Can AI agents control DevWebUI directly?**
-Yes. DevWebUI ships a stdio MCP server (`devwebui mcp`, or `server/src/mcp.ts`) with 31 tools
-covering projects, starting/stopping/restarting processes, enabling/disabling them, logs, and the
-error log. It's a thin client over the same running daemon the GUI uses, so an agent and a human
-see and change the same state.
+Yes. DevWebUI ships a stdio MCP server (`devwebui mcp`, or `server/src/mcp.ts`) with 36 tools
+covering projects, starting/stopping/restarting processes, enabling/disabling them, logs, the
+error log, and threshold alerts. It's a thin client over the same running daemon the GUI uses, so
+an agent and a human see and change the same state.
 
 **How do I add a project?**
 Drop a `.devwebui` file (one per repo, listing its dev servers) in the repo root and click **Add

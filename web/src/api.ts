@@ -1,4 +1,13 @@
-import type { ErrorEvent, LogLine, ProcessInput, ProjectMetaInput, ProjectView } from "./types";
+import type {
+  AlertEvent,
+  AlertRule,
+  AlertRuleInput,
+  ErrorEvent,
+  LogLine,
+  ProcessInput,
+  ProjectMetaInput,
+  ProjectView,
+} from "./types";
 import { ROUTES } from "../../shared/routes";
 import { httpFetch, httpJson } from "@/lib/httpClient";
 export { ApiError } from "@/lib/httpClient";
@@ -49,6 +58,8 @@ const jsonInit = (method: string, body: unknown): RequestInit => ({
 // ---- reads (consumed by the store) ----
 export const getProjects = () => reqJson<ProjectView[]>(ROUTES.projects);
 export const getErrors = () => reqJson<ErrorEvent[]>(ROUTES.errors);
+export const getAlertRules = () => reqJson<AlertRule[]>(ROUTES.alertRules);
+export const getAlertEvents = () => reqJson<AlertEvent[]>(ROUTES.alertEvents);
 export const getProcessLogs = (id: string) =>
   reqJson<{ lines: LogLine[] }>(ROUTES.processLogs.build(id));
 
@@ -89,6 +100,18 @@ export const clearErrors = (processId?: string) =>
   post(`${ROUTES.errorsClear}${processId ? `?processId=${encodeURIComponent(processId)}` : ""}`);
 export const dismissError = (fingerprint: string) =>
   req(ROUTES.errorsDismiss, jsonInit("POST", { fingerprint }));
+
+// ---- alert rules (threshold alerting on process CPU/memory) ----
+export const addAlertRule = (input: AlertRuleInput) =>
+  reqJson<AlertRule>(ROUTES.alertRules, jsonInit("POST", input));
+export const updateAlertRule = (id: string, input: Partial<AlertRuleInput>) =>
+  reqJson<AlertRule>(ROUTES.alertRule.build(id), jsonInit("PUT", input));
+export const removeAlertRule = (id: string) =>
+  req(ROUTES.alertRule.build(id), { method: "DELETE" });
+export const clearAlertEvents = (processId?: string) =>
+  post(
+    `${ROUTES.alertEventsClear}${processId ? `?processId=${encodeURIComponent(processId)}` : ""}`,
+  );
 
 /**
  * Free a process's declared port. Without `confirm`, a managed holder is stopped cleanly

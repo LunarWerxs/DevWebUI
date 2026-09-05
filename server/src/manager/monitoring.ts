@@ -49,6 +49,10 @@ export class ManagerWithMonitoring extends ManagerBase {
         // recorder list — so stale/previous-session records don't leak in via SSE.
         this.emit("errors", this.listErrors());
       }
+      if (this.alertsDirty) {
+        this.alertsDirty = false;
+        this.emit("alerts", this.listAlertEvents());
+      }
     } finally {
       this.tickRunning = false;
     }
@@ -87,6 +91,22 @@ export class ManagerWithMonitoring extends ManagerBase {
       e.memory = s ? s.memory : null;
       this.emitStatus(e);
     }
+    // Threshold alerting (server/src/alerts.ts): evaluate every enabled rule against THIS
+    // tick's fresh samples, on the same cadence the numbers themselves update. A stopped
+    // process is simply absent from `running`, which the store reads as "not breaching"
+    // (see AlertStore.evaluate) rather than a stale, frozen last-known value. A firing sets
+    // alertsDirty (the store's onChange hook), flushed out over SSE by `tick()` above,
+    // same fire-then-flush shape errors.ts uses for the error log.
+    this.alerts.evaluate(
+      running.map((e) => ({
+        processId: e.def.id,
+        processName: e.def.name,
+        projectId: e.def.projectId,
+        projectName: e.def.projectName,
+        cpu: e.cpu,
+        memory: e.memory,
+      })),
+    );
   }
 
   private async pollPorts(): Promise<void> {

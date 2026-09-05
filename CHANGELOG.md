@@ -4,6 +4,27 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Threshold alerts on CPU/memory**, GUI + CLI + MCP ("alert if this process exceeds 80% CPU
+  for 2 minutes"), adapted from PostHog's Alerts product onto the CPU/memory stream every
+  managed process already reports (`server/src/metrics.ts`). A rule fires once a process's
+  sample has stayed over its threshold for a continuous, user-set duration, then stays quiet
+  until the metric drops back under threshold and breaches again: one sustained incident is one
+  fired event, not one every tick. Rules and fired-event history persist across restarts
+  (`~/.devwebui/alerts-rules.json` / `alerts-events.ndjson`); the in-memory "how long has this
+  been breaching" timer deliberately does not, so a restart can never fire an alert instantly
+  off a stale, already-elapsed window. REST surface: `GET/POST /api/alerts/rules`,
+  `PUT/DELETE /api/alerts/rules/:id`, `GET /api/alerts/events`, `POST /api/alerts/events/clear`,
+  a live `alerts` SSE event, matching MCP tools (`list_alert_rules`, `add_alert_rule`,
+  `remove_alert_rule`, `list_alert_events`, `clear_alert_events`), a new **Settings → Alerts**
+  tab to add/remove rules and review fired events (`web/src/components/settings/
+  AlertsSection.vue`), and `devwebui alerts list|add|remove|events|clear` on the CLI
+  (`server/src/cli.ts`) mirroring the MCP tools 1:1 - GUI, CLI and MCP now agree on every
+  alerting operation, per the product's usual parity convention.
+
 ## [0.8.7] - 2026-08-15
 
 ### Fixed

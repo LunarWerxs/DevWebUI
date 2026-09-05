@@ -39,6 +39,11 @@ export const ROUTES = {
   errorsClear: "/api/errors/clear",
   errorsDismiss: "/api/errors/dismiss",
 
+  // ---- alert rules (threshold alerting on process CPU/memory) ----
+  alertRules: "/api/alerts/rules",
+  alertEvents: "/api/alerts/events",
+  alertEventsClear: "/api/alerts/events/clear",
+
   // ---- "Sync my settings with Connections" (optional, opt-in) ----
   authMe: "/api/auth/me",
   authLogout: "/api/auth/logout",
@@ -106,6 +111,13 @@ export const ROUTES = {
     build: (id: string) => `/api/processes/${id}/shortcut`,
   },
 
+  // ---- parameterized: alert rules ----
+  /** PUT/DELETE one alert rule by id. */
+  alertRule: {
+    pattern: "/api/alerts/rules/:id",
+    build: (id: string) => `/api/alerts/rules/${id}`,
+  },
+
   // ---- parameterized: projects ----
   /** PUT project-level metadata (rename + recolor) — rewrites the .devwebui file's top-level name/color. */
   projectUpdate: {
@@ -147,6 +159,7 @@ export const ROUTES = {
 // (a `pattern` string + a `build` function) without widening the literal
 // `pattern` types that the `as const` above preserves for Hono.
 type _AssertParamRoutes = {
+  alertRule: typeof ROUTES.alertRule extends ParamRoute ? true : never;
   processAction: typeof ROUTES.processAction extends ParamRoute ? true : never;
   processLogs: typeof ROUTES.processLogs extends ParamRoute ? true : never;
   processLogFile: typeof ROUTES.processLogFile extends ParamRoute ? true : never;
@@ -161,6 +174,7 @@ type _AssertParamRoutes = {
   projectShortcut: typeof ROUTES.projectShortcut extends ParamRoute ? true : never;
 };
 const _assert: _AssertParamRoutes = {
+  alertRule: true,
   processAction: true,
   processLogs: true,
   processLogFile: true,

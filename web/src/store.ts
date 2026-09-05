@@ -11,6 +11,7 @@ import type { SyncStatus } from "./api";
 import type { UpdateApplyResult, UpdateStatus } from "./api";
 import { MAX_LOG_LINES } from "../../shared/constants";
 import type {
+  AlertEvent,
   AppNotification,
   ErrorEvent,
   LogEntry,
@@ -90,6 +91,9 @@ export const useAppStore = defineStore("app", () => {
   }
   const logs = ref<Record<string, LogEntry[]>>({});
   const errors = ref<ErrorEvent[]>([]);
+  // Fired-alert-event history (see server/src/alerts.ts); rendered by
+  // components/settings/AlertsSection.vue.
+  const alertEvents = ref<AlertEvent[]>([]);
   /** Absolute dirs of detected projects the user dismissed (hidden from the background scan). */
   const ignoredProjects = ref<string[]>([]);
 
@@ -289,6 +293,13 @@ export const useAppStore = defineStore("app", () => {
     void api.clearErrors(processId).catch(() => {}); // self-healing — doc block above: next SSE snapshot resurfaces on failure
   }
 
+  /** Same optimistic-then-reconcile pattern as {@link clearErrorsLocal} — alertEvents is also
+   *  server-authoritative over the "alerts" SSE event (see connect() below). */
+  function clearAlertEventsLocal(processId?: string) {
+    alertEvents.value = processId ? alertEvents.value.filter((e) => e.processId !== processId) : [];
+    void api.clearAlertEvents(processId).catch(() => {});
+  }
+
   function applyStatus(p: ProcessView | null) {
     if (!p) return;
     const proj = projects.value.find((x) => x.id === p.projectId);
@@ -299,15 +310,16 @@ export const useAppStore = defineStore("app", () => {
   }
 
   async function refresh() {
-    const [p, e] = await Promise.all([api.getProjects(), api.getErrors()]);
+    const [p, e, a] = await Promise.all([api.getProjects(), api.getErrors(), api.getAlertEvents()]);
     projects.value = p;
     errors.value = e;
+    alertEvents.value = a;
   }
 
   function connect() {
     const { status, data, event } = useEventSource(
       "/api/stream",
-      ["projects", "errors", "status", "log", "update_available"],
+      ["projects", "errors", "status", "log", "update_available", "alerts"],
       { autoReconnect: { retries: -1, delay: 2500 } },
     );
     watch(status, (s) => (connected.value = s === "OPEN"));
@@ -344,6 +356,9 @@ export const useAppStore = defineStore("app", () => {
           }
           break;
         }
+        case "alerts":
+          alertEvents.value = parsed;
+          break;
         case "update_available":
           // The daemon's scheduled check (server/src/auto-update.ts) found a newer version while
           // auto-apply was off (or blocked) and announced it — the OFFER, never the act. Nothing
@@ -582,6 +597,7 @@ export const useAppStore = defineStore("app", () => {
     updateApplying,
     logs,
     errors,
+    alertEvents,
     notifications,
     unreadNotifications,
     monitorResources,
@@ -612,6 +628,7 @@ export const useAppStore = defineStore("app", () => {
     errorCountByProcess,
     dismissError,
     clearErrorsLocal,
+    clearAlertEventsLocal,
     refresh,
     toggleStar,
     ignoredProjects,
