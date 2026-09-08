@@ -24,6 +24,17 @@ import type { McpEngineTool } from "../server/src/mcp-stdio.mjs";
 
 let TOOLS: McpEngineTool[] = [];
 const originalFetch = globalThis.fetch;
+
+// !! SNAPSHOT THE REAL EXPORTS HERE, AT MODULE SCOPE, BEFORE ANY mock.module CALL.
+// `import * as realMcpStdio` is a LIVE namespace: once mock.module swaps the module in the
+// process-wide registry, that binding reflects the STUB, so restoring with
+// `mock.module(path, () => realMcpStdio)` in afterAll put the stub back rather than the real
+// module. The symptom was not an import error - it was silence. Every later file got a
+// `runMcpStdio` that resolves immediately without reading input or writing output, so
+// server-lib/mcp-stdio.test.ts's four stream tests waited for responses that could never
+// come and failed as timeouts. That looked like a bug in runMcpStdio and was this line.
+// A spread taken before the mock is a plain object and cannot be re-pointed.
+const realExports = { ...realMcpStdio };
 let calls: { url: string; init?: RequestInit }[] = [];
 
 beforeAll(async () => {
@@ -38,7 +49,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  mock.module("../server/src/mcp-stdio.mjs", () => realMcpStdio); // undo the stub for later test files
+  mock.module("../server/src/mcp-stdio.mjs", () => realExports); // the snapshot, NOT the live namespace
   globalThis.fetch = originalFetch;
   delete process.env.DEVWEBUI_URL;
 });
