@@ -239,17 +239,27 @@ export class AlertStore {
   private scheduleSaveEvents(): void {
     this.eventsDirty = true;
     if (this.saveTimer) return;
+    // Resolve the DESTINATION now, not when the timer fires. `eventsFile()` reads
+    // `dataDir()`, which reads DEVWEBUI_HOME lazily, so a debounced write used to land
+    // wherever that pointed a moment LATER - a different directory than the state it was
+    // scheduled for. Production never moves its data dir, so this only ever bit tests:
+    // alerts.test.ts gives each test its own throwaway home and restores the shared one in
+    // afterEach, and whichever side of that restore the timer landed on decided where the
+    // fired events were written. On macOS it lost the race, the events went to the SUITE's
+    // home, and alert-routes.test.ts then read them back and failed its "list starts empty"
+    // assertion - a cross-file failure with no visible connection to either file.
+    const target = eventsFile();
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
-      if (this.eventsDirty) this.saveEvents();
+      if (this.eventsDirty) this.saveEvents(target);
     }, SAVE_DEBOUNCE_MS);
   }
 
-  private saveEvents(): void {
+  private saveEvents(target: string = eventsFile()): void {
     this.eventsDirty = false;
     try {
-      mkdirSync(dataDir(), { recursive: true });
-      writeFileAtomic(eventsFile(), `${this.events.map((e) => JSON.stringify(e)).join("\n")}\n`);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileAtomic(target, `${this.events.map((e) => JSON.stringify(e)).join("\n")}\n`);
     } catch {
       /* best-effort */
     }
