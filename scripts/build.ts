@@ -9,7 +9,7 @@
  * Run: `bun run scripts/build.ts`  (or `bun run dist`)
  */
 import { $ } from "bun";
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import pkg from "../package.json";
 
@@ -67,15 +67,48 @@ function writeReleaseEntrypoint(): string {
     `/${relative(webRoot, file).replaceAll("\\", "/")}`,
     `asset${index}`,
   ]);
+
+  // Windows-only: embed the tray toolkit (host exe + config + icon) beside the web assets, the
+  // same way, so a compiled release exe can actually show a tray icon — see
+  // server/src/tray-bootstrap.d.mts (materializeTrayToolkit reads __DEVWEBUI_EMBEDDED_TRAY__).
+  // Every kit app had instead shipped a compiled exe that could never show its icon, with each
+  // README noting that down as a limitation (found live 2026-09-11) — so a toolkit file missing
+  // from misc\ fails the build now instead of silently shipping that same bug again.
+  const trayNames = ["lunarwerx-tray.exe", "DevWebUI-Tray.json", "DevWebUI.ico"];
+  const trayImports: string[] = [];
+  const trayRoutes: string[] = [];
+  if (isWin) {
+    trayNames.forEach((name, index) => {
+      const src = join(ROOT, "misc", name);
+      if (!existsSync(src)) {
+        throw new Error(
+          `missing tray toolkit file: ${src} — a build without the tray toolkit ships an app that can never show its icon`,
+        );
+      }
+      trayImports.push(
+        `import tray${index} from ${JSON.stringify(importPath(entry, src))} with { type: "file" };`,
+      );
+      trayRoutes.push(`  ${JSON.stringify(name)}: tray${index},`);
+    });
+  }
+  const trayBlock = trayRoutes.length
+    ? `(globalThis as { __DEVWEBUI_EMBEDDED_TRAY__?: Readonly<Record<string, string>> })
+  .__DEVWEBUI_EMBEDDED_TRAY__ = Object.freeze({
+${trayRoutes.join("\n")}
+});
+`
+    : "";
+
   writeFileSync(
     entry,
     `${imports.join("\n")}
+${trayImports.join("\n")}
 
 (globalThis as { __DEVWEBUI_EMBEDDED_WEB__?: Readonly<Record<string, string>> })
   .__DEVWEBUI_EMBEDDED_WEB__ = Object.freeze({
 ${routes.map(([route, asset]) => `  ${JSON.stringify(route)}: ${asset},`).join("\n")}
 });
-(globalThis as { __DEVWEBUI_RELEASE_BUILD__?: boolean }).__DEVWEBUI_RELEASE_BUILD__ = true;
+${trayBlock}(globalThis as { __DEVWEBUI_RELEASE_BUILD__?: boolean }).__DEVWEBUI_RELEASE_BUILD__ = true;
 await import(${JSON.stringify(importPath(entry, join(ROOT, "server", "src", "index.ts")))});
 `,
   );

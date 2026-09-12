@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { buildDetachedSpawn } from "./detached-spawn.mjs";
 import { buildRelaunchArgv } from "./relaunch-argv.mjs";
+import { materializeTrayToolkit, startTrayHostIfMissing } from "./tray-bootstrap.mjs";
 import { Manager } from "./manager";
 import { createApp } from "./http";
 import { applyToManager } from "./http/connections-routes";
@@ -32,6 +35,7 @@ import { initFileLogging } from "./log-file.mjs";
 import { dataDir } from "./data-dir";
 import { openUi } from "./open-ui";
 import { cleanupStaleUpdateArtifacts } from "./updater";
+import pkg from "../../package.json";
 
 // ---------------------------------------------------------------------------
 // CLI dispatch — must stay the FIRST side effect in this file.
@@ -375,6 +379,43 @@ const server = bunRuntime.serve({
   fetch: app.fetch,
   idleTimeout: 255, // keep SSE connections alive (Bun max)
 });
+
+// Tray icon: a compiled release exe embeds the tray toolkit (scripts/build.ts's
+// __DEVWEBUI_EMBEDDED_TRAY__) but nothing ever unpacked or started it — every kit app shipped a
+// compiled exe that could never show its icon, and each README wrote that down as a known
+// limitation (found live 2026-09-11). materializeTrayToolkit()/startTrayHostIfMissing() are the
+// shared kit primitive (server/src/tray-bootstrap.mjs) that actually closes that gap.
+const embeddedTray =
+  (globalThis as { __DEVWEBUI_EMBEDDED_TRAY__?: Readonly<Record<string, string>> })
+    .__DEVWEBUI_EMBEDDED_TRAY__ ?? null;
+const compiled = isCompiledBinary();
+const appRoot = compiled
+  ? dirname(process.execPath)
+  : resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const tray = await materializeTrayToolkit({
+  appRoot,
+  compiled,
+  stateDir: dataDir(),
+  version: pkg.version,
+  exePath: process.execPath,
+  configFile: "DevWebUI-Tray.json",
+  iconFile: "DevWebUI.ico",
+  embedded: embeddedTray,
+});
+if (tray.wrote.length) {
+  console.log(`[devwebui] placed the tray toolkit in ${tray.dir} (${tray.wrote.join(", ")})`);
+}
+void startTrayHostIfMissing({
+  appRoot,
+  compiled,
+  configFile: "DevWebUI-Tray.json",
+  hideTray: () => readSettings().hideTrayIcon === true,
+  toolkitDir: tray.dir,
+})
+  .then((r) => {
+    if (r.start) console.log(`[devwebui] started the tray host (${r.exe}) - nothing else had`);
+  })
+  .catch((e) => console.error("[devwebui] tray host start failed:", e));
 
 if (releaseDoubleClick && process.env.DEVWEBUI_NO_OPEN !== "1") {
   const url = `http://127.0.0.1:${server.port}/`;
