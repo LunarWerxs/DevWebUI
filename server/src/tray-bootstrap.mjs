@@ -227,6 +227,13 @@ export function trayHostProbeArgv(configFile) {
  */
 export function trayHostDecision(input) {
   if (input.platform !== 'win32') return { start: false, reason: 'not-windows' }
+  // ⛔ NEVER ON A BUILD AGENT (found 2026-09-12, by three release pipelines going red at once).
+  // A CI runner has no desktop to put an icon on, and the host is DETACHED on purpose so it
+  // outlives the daemon it supervises - which is right on a person's machine and wrong here: each
+  // app's release job boots the compiled exe against a scratch HOME, kills it, and deletes that
+  // directory, and the surviving host held it open. "EBUSY: resource busy or locked" on a smoke
+  // test that had already printed its own ✓ is what that looks like from the other end.
+  if (input.headless) return { start: false, reason: 'headless' }
   // A source checkout is launched from its own shortcut, which IS the tray host. Starting it from
   // `bun run dev` would give every developer an icon they did not ask for.
   if (!input.compiled) return { start: false, reason: 'not-compiled' }
@@ -254,14 +261,24 @@ function defaultSpawnHost(exe, cwd, configFile) {
  * Start the tray host if nothing else has. `toolkitDir` is where a materialized copy landed; without
  * one this looks in `<appRoot>/misc`, which is the source checkout and the extracted zip.
  */
+/** A build agent, not a person's desktop. The standard markers every major CI sets; an explicit
+ *  `headless` in deps wins, so a caller (or a test) can state it outright. */
+export function isHeadlessEnv(env = process.env) {
+  return Boolean(
+    env.CI || env.GITHUB_ACTIONS || env.TF_BUILD || env.BUILDKITE || env.JENKINS_URL || env.GITLAB_CI,
+  )
+}
+
 export async function startTrayHostIfMissing(deps) {
   const toolkitDir = deps.toolkitDir || join(deps.appRoot, 'misc')
   const exe = join(toolkitDir, TRAY_HOST_EXE)
   const exists = deps.exists ?? existsSync
   const platform = deps.platform ?? process.platform
+  const headless = deps.headless ?? isHeadlessEnv(deps.env)
   // Cheap facts first, so the process probe only ever runs when it could change the answer.
   const structural = trayHostDecision({
     platform,
+    headless,
     compiled: deps.compiled,
     toolkitPresent: exists(exe) && exists(join(toolkitDir, deps.configFile)),
     hideTray: deps.hideTray(),
@@ -270,6 +287,7 @@ export async function startTrayHostIfMissing(deps) {
   if (!structural.start) return { ...structural, exe }
   const decision = trayHostDecision({
     platform,
+    headless: false, // already ruled out above; this call only asks about the process probe
     compiled: deps.compiled,
     toolkitPresent: true,
     hideTray: false,

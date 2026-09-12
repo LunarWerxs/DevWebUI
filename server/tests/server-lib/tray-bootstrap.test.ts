@@ -17,6 +17,7 @@ import { describe, expect, test } from 'bun:test'
 import { join as nodeJoin } from 'node:path'
 import {
   isCompleteTrayToolkit,
+  isHeadlessEnv,
   materializeTrayToolkit,
   parseTrayHostCount,
   patchTrayConfig,
@@ -214,6 +215,9 @@ describe('starting the host', () => {
           configFile: CONFIG,
           hideTray: () => false,
           platform: 'win32',
+          // Stated outright: this suite RUNS on CI, where the env sniff is true and every one of
+          // these cases would otherwise assert the wrong thing.
+          headless: false,
           exists: () => true,
           isRunning,
           spawnHost: (exe: string, cwd: string, config: string) =>
@@ -258,9 +262,27 @@ describe('starting the host', () => {
     expect(s.spawned).toEqual([])
   })
 
+  test('a build agent gets no tray host at all', async () => {
+    // ⛔ Three release pipelines went red at once on 2026-09-12, all with "EBUSY: resource busy or
+    // locked" deleting the smoke test's scratch HOME - AFTER the smoke test had printed its own ✓.
+    // The host is detached so it outlives the daemon it supervises, which is right on a desktop and
+    // exactly wrong on a runner that boots the exe, kills it, and removes the directory.
+    const s = start(async () => false, { headless: true })
+    expect(await s.run()).toMatchObject({ start: false, reason: 'headless' })
+    expect(s.spawned).toEqual([])
+  })
+
+  test('isHeadlessEnv reads the markers CI actually sets', () => {
+    expect(isHeadlessEnv({})).toBe(false)
+    expect(isHeadlessEnv({ CI: 'true' })).toBe(true)
+    expect(isHeadlessEnv({ GITHUB_ACTIONS: 'true' })).toBe(true)
+    expect(isHeadlessEnv({ PATH: '/usr/bin' })).toBe(false)
+  })
+
   test('the pure decision keeps every skip distinguishable', () => {
     const base = {
       platform: 'win32',
+      headless: false,
       compiled: true,
       toolkitPresent: true,
       hideTray: false,

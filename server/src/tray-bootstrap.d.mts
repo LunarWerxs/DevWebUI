@@ -84,10 +84,14 @@ export function trayHostProbeArgv(configFile?: string): string[];
 
 export type TrayHostSkipReason =
   | 'not-windows'
+  | 'headless'
   | 'not-compiled'
   | 'no-tray-toolkit'
   | 'hidden-by-setting'
   | 'already-running';
+
+/** A build agent rather than a person's desktop (CI / GITHUB_ACTIONS / TF_BUILD / …). */
+export function isHeadlessEnv(env?: Record<string, string | undefined>): boolean;
 
 export type TrayHostDecision = { start: true } | { start: false; reason: TrayHostSkipReason };
 
@@ -98,6 +102,8 @@ export function trayHostDecision(input: {
   toolkitPresent: boolean;
   hideTray: boolean;
   alreadyRunning: boolean;
+  /** A build agent: no desktop to put an icon on, and a detached host would outlive the job. */
+  headless?: boolean;
 }): TrayHostDecision;
 
 export interface StartTrayHostDeps {
@@ -105,6 +111,9 @@ export interface StartTrayHostDeps {
   compiled: boolean;
   configFile: string;
   hideTray: () => boolean;
+  /** Overrides the CI sniff (isHeadlessEnv). */
+  headless?: boolean;
+  env?: Record<string, string | undefined>;
   /** Where a materialized copy landed; without one, `<appRoot>/misc` is used. */
   toolkitDir?: string | null;
   platform?: string;
