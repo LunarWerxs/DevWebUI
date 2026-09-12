@@ -81,8 +81,8 @@ $RECYCLE.BIN/
 .saydeploy/
 .agents/
 
-# Local root rebuild convenience wrapper (delegates to misc/Rebuild.bat)
-/Rebuild.bat
+# Local root rebuild convenience wrapper (delegates to misc/rebuild_devwebui.bat)
+/rebuild_devwebui.bat
 
 # Local AI memory for this repo. Deliberately NOT published.
 /.claude/memory/

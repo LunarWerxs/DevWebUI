@@ -65,7 +65,7 @@ $TrayConfig = @{
   # "Rebuild & Restart" rebuilds the GUI from SOURCE — a developer convenience so UI edits
   # show up without a manual build. Public/end users get a prebuilt web\dist and no
   # server\src tree (or necessarily bun) to build with, so this is gated by IsDevTree
-  # below; end users do their own rebuilds with the standalone misc\Rebuild.bat instead.
+  # below; end users do their own rebuilds with the standalone misc\rebuild_devwebui.bat instead.
   RebuildCommand       = "bun run build"
   RebuildLogName       = "DevWebUI-Rebuild.log"
 
@@ -73,7 +73,7 @@ $TrayConfig = @{
   # prebuilt web\dist and no server\src tree to rebuild from, so offering that menu item
   # there would just fail. Shows ONLY when DEVWEBUI_DEV=1 is explicitly set — public users,
   # including source-checkout users, never see it; devs opt in with DEVWEBUI_DEV=1 or use
-  # the standalone misc\Rebuild.bat instead.
+  # the standalone misc\rebuild_devwebui.bat instead.
   IsDevTree            = ($env:DEVWEBUI_DEV -eq "1")
 
   # Full-shutdown sentinel: the daemon drops this when a user picks "Shut Down" in the web
