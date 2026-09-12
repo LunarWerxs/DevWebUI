@@ -4,7 +4,32 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.8] - 2026-09-12
+
+### Fixed
+
+- **The single-file `devwebui.exe` ships its tray icon.** It embedded every Vite asset and nothing
+  from `misc\`, so `misc\lunarwerx-tray.exe` could not exist beside it and the download most people
+  take could never show a tray icon, never offer Quit and never get the auto-restart supervisor.
+  The README said so, as though 340 KB of Win32 binary were a reason rather than an omission. The
+  host, its config and its icon now ride inside the binary and are written out to
+  `<dataDir>/tray/<version>` on first run, with the config's shipped `appRoot: ".."` (correct only
+  for the extracted zip) replaced by the absolute directory of the RUNNING exe and `compiledExe`
+  set to its real filename - so a renamed or relocated download still gets a working watchdog.
+  Version-scoped, because Windows cannot overwrite a running image.
+
+- **"Is the tray already running?" stopped answering for a DIFFERENT app.** Caught here, live: the
+  toolkit landed correctly and the host still did not start, because the shared probe counted
+  processes by binary NAME and every LunarWerx app runs the same `lunarwerx-tray.exe` - it was
+  seeing AgentHydra's host. With four apps sharing the binary, only the first to start would ever
+  get a tray. It is scoped to this app's own config filename now (the host carries it on its
+  command line). The same probe also read a non-zero PowerShell exit as "running", which is exactly
+  what an ABSENT process produces, so the answer was backwards in the case it exists to detect.
+
+  Both fixes live in the shared kit (`server/src/tray-bootstrap.mjs`), because AgentHydra, RepoYeti
+  and ReDesign shipped the identical hole.
+
+
 
 ### Added
 
@@ -648,7 +673,8 @@ First public, open-source release.
   `zod` is intentionally held at 3.x — `@modelcontextprotocol/sdk` is not yet
   zod-4 compatible, so bumping it would break the MCP server.
 
-[Unreleased]: https://github.com/LunarWerxs/devwebui/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/LunarWerxs/devwebui/compare/v0.8.8...HEAD
+[0.8.8]: https://github.com/LunarWerxs/devwebui/compare/v0.8.7...v0.8.8
 [0.8.3]: https://github.com/LunarWerxs/devwebui/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/LunarWerxs/devwebui/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/LunarWerxs/devwebui/compare/v0.8.0...v0.8.1
