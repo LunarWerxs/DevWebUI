@@ -1,7 +1,14 @@
 // Server-internal types live here; the cross-boundary DTOs are re-exported from
-// the shared module so existing `import { ProcessView } from "./types"` call
-// sites across the server keep working.
-export type { Status, ProcessView, ProjectView, LogLine } from "../../shared/dto";
+// the shared module so a module nested under src/<dir>/ reaches them as
+// `../types` rather than climbing to the repo root.
+export type {
+  FreePortResult,
+  LogLine,
+  PortOwner,
+  ProcessView,
+  ProjectView,
+  Status,
+} from "../../shared/dto";
 
 export interface ProcessDef {
   id: string; // global, unique: `${projectId}.${localId}`

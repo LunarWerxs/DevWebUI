@@ -9,7 +9,7 @@
 import type { Context, Hono } from "hono";
 import type { Manager } from "../manager";
 import type { Settings } from "../runtime";
-import { ROUTES } from "../../../shared/routes";
+import { ROUTES } from "../routes";
 import {
   buildAuthorizeUrl,
   handleCallback,

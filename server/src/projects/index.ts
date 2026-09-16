@@ -1,7 +1,7 @@
 // The .devwebui schema (ID_RE / ProcessSchema / DevWebUIFileSchema / DevWebUIProcess)
-// is the single source of truth in ../../shared/schema; re-export the inferred type
-// so existing `import { DevWebUIProcess } from "./projects"` call sites keep working.
-export type { DevWebUIProcess } from "../../../shared/schema";
+// is the single source of truth in ../schema (itself a re-export of the shared one);
+// re-export the inferred type so `import { DevWebUIProcess } from "./projects"` works.
+export type { DevWebUIProcess } from "../schema";
 
 export {
   projectIdFromPath,

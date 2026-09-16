@@ -1,8 +1,8 @@
 import { ManagerWithProjects } from "./projects";
 
 // `FreePortResult` (the outcome of a manual "free this port" request) is a shared
-// DTO; re-export it so existing `import { FreePortResult } from "./manager"` works.
-export type { FreePortResult } from "../../../shared/dto";
+// DTO; re-export it so `import { FreePortResult } from "./manager"` works.
+export type { FreePortResult } from "../types";
 export { START_STAGGER_MS } from "./types";
 
 /**

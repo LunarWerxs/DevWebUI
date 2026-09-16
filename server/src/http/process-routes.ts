@@ -10,7 +10,7 @@ import {
   updateProjectMeta,
 } from "../projects";
 import type { ProjectView } from "../types";
-import { ROUTES } from "../../../shared/routes";
+import { ROUTES } from "../routes";
 import { createProcessShortcut, createProjectShortcut } from "../shortcuts";
 import { fail, guard, readBody } from "./core";
 

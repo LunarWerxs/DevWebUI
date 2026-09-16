@@ -10,13 +10,13 @@ import {
   setAutoUpdateIntervalSecs,
   setUpdateNotifyEnabled,
 } from "../auto-update";
-import { ROUTES } from "../../../shared/routes";
 import {
   DASHBOARD_WINDOW_SIZE,
   FOCUS_PATH_PREFIX,
   FOCUS_WINDOW_SIZE,
   WINDOW_SIZE_HINT_PARAM,
-} from "../../../shared/constants";
+} from "../constants";
+import { ROUTES } from "../routes";
 import { windowSizeHintFor } from "../window-size";
 import {
   instanceFilePath,

@@ -1,11 +1,10 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import treeKill from "tree-kill";
-import type { FreePortResult, PortOwner } from "../../../shared/dto";
 import { freePort, isPortListening, killPids, portOwners } from "../ports";
 import { effectiveRuntime, withRuntime } from "../runtime";
 import { planManagedSpawn } from "../spawn-plan";
 import { setEnabledOverride, setProjectOverride } from "../state";
-import type { ProcessDef, Status } from "../types";
+import type { FreePortResult, PortOwner, ProcessDef, Status } from "../types";
 import { ManagerWithMonitoring } from "./monitoring";
 import {
   KILL_GRACE_MS,

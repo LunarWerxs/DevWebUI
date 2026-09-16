@@ -4,6 +4,7 @@ import { autoAnimatePlugin } from "@formkit/auto-animate/vue";
 import App from "./App.vue";
 import { i18n } from "./i18n";
 import { startSignInNudgeSession } from "./lib/sign-in-nudge";
+import { installChunkReloadRecovery } from "./lib/chunk-reload-recovery";
 import { installImeCompositionGuard } from "./lib/ime-composition-guard";
 import "./style.css";
 import "vue-sonner/style.css";
@@ -13,23 +14,10 @@ import "vue-sonner/style.css";
 // text. One document-level guard (kit-synced) instead of a check at ~every Enter handler.
 installImeCompositionGuard();
 
-// Recover from stale-chunk errors. When the daemon ships a new build, its hashed chunk names
-// change; a tab still running the old build then lazy-imports a chunk that no longer exists on disk
-// and the import rejects (Vite fires `vite:preloadError`). Reload once to pull the fresh build
-// instead of showing a dead view. A short timestamp guard prevents a reload loop if the new build
-// is genuinely broken (chunk truly missing) — pairs with the server's /assets/* 404 (see
-// server/src/http/index.ts).
-window.addEventListener("vite:preloadError", (event) => {
-  const KEY = "devwebui:last-chunk-reload";
-  const now = Date.now();
-  if (now - Number(sessionStorage.getItem(KEY) ?? 0) < 10_000) {
-    console.error("[devwebui] chunk failed to load again right after a reload", event);
-    return;
-  }
-  sessionStorage.setItem(KEY, String(now));
-  event.preventDefault();
-  window.location.reload();
-});
+// Recover from stale-chunk errors (a tab on an old build lazy-importing a chunk the new build
+// renamed). Reloads once, with a timestamp guard against a reload loop - see the module for the
+// full reasoning and its pairing with the server's /assets/* 404.
+installChunkReloadRecovery();
 
 // Counts one session for the Connections sign-in prompt. Here, not in the store, because the
 // store is built lazily: an owner who never opens the settings pane would never accrue a session

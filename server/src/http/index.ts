@@ -98,7 +98,8 @@ export function createApp(manager: Manager, options: CreateAppOptions = {}) {
     // rebuild/auto-update) must return a real 404 — NOT fall through to the index.html SPA fallback,
     // which hands the browser text/html for a module script ("Failed to load module script … MIME
     // type text/html"). The client recovers from the 404 via a vite:preloadError reload (see
-    // web/src/main.ts). Navigation routes (no /assets/ prefix) still fall through to the SPA below.
+    // web/src/lib/chunk-reload-recovery.ts). Navigation routes (no /assets/ prefix) still fall
+    // through to the SPA below.
     app.get("/assets/*", (c) => c.text("not found", 404, { "cache-control": "no-store" }));
     // Root-level public files (icon.svg / icon-light.svg / favicon.ico / logo-*.svg) must resolve
     // as real files first — without this the SPA fallback below answers the browser's favicon

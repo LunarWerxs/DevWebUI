@@ -3,8 +3,8 @@
 // this codebase's own process-routes.ts / core.ts conventions (readBody/fail/guard, one
 // handler per route, a thin registration function).
 import type { Context, Hono } from "hono";
-import type { AlertMetric, AlertRuleInput } from "../../../shared/dto";
-import { ROUTES } from "../../../shared/routes";
+import type { AlertMetric, AlertRuleInput } from "../alerts";
+import { ROUTES } from "../routes";
 import type { Manager } from "../manager";
 import { fail, guard, readBody } from "./core";
 

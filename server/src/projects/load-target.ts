@@ -3,7 +3,7 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { writeJsonAtomic } from "../atomic-write";
 import { detectProject, type Detection } from "../detect";
-import { DevWebUIFileSchema } from "../../../shared/schema";
+import { DevWebUIFileSchema } from "../schema";
 
 // ---------------------------------------------------------------------------
 // Resolve a user-supplied path (pasted or dropped) to an absolute .devwebui

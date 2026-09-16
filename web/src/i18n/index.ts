@@ -7,4 +7,13 @@ import en from "./locales/en";
 // The locale registry with translation-provenance metadata stays
 // app-local in `./locales` (imported directly by the language picker); the factory
 // just needs the message catalogs and derives which locales exist from their keys.
-export const { i18n, setLocale, t } = createAppI18n({ en }, "devwebui.locale");
+const app = createAppI18n({ en }, "devwebui.locale");
+
+/** The vue-i18n instance `main.ts` installs with `app.use(i18n)`. */
+export const i18n = app.i18n;
+
+/** Switch the active locale, persisting the choice under `devwebui.locale`. */
+export const setLocale = app.setLocale;
+
+/** Translate a key against the active locale. */
+export const t = app.t;

@@ -5,7 +5,7 @@ import { writeFileAtomic, writeJsonAtomic } from "../atomic-write";
 import { dataDir } from "../data-dir";
 import { detectProjectRuntime } from "../runtime";
 import type { LoadedProject, ProcessDef } from "../types";
-import { DevWebUIFileSchema, ProcessSchema, type DevWebUIProcess } from "../../../shared/schema";
+import { DevWebUIFileSchema, ProcessSchema, type DevWebUIProcess } from "../schema";
 
 /**
  * Canonicalize a path for hashing/comparison: absolute, forward slashes (so an

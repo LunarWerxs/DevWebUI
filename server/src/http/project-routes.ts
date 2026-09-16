@@ -27,7 +27,7 @@ import {
 import { scanForDevWebUI, SCAN_PRESETS, type ScanPreset } from "../scan";
 import { readSettings } from "../runtime";
 import type { ProjectView } from "../types";
-import { ROUTES } from "../../../shared/routes";
+import { ROUTES } from "../routes";
 import { fail, guard, readBody } from "./core";
 
 /** True the first time a given .devwebui path is loaded on this machine. */
@@ -200,7 +200,7 @@ async function handleProjectsScan(c: Context) {
       roots,
       preset,
       detectPackages: typeof body.detectPackages === "boolean" ? body.detectPackages : undefined,
-      // Explicit numbers still override the preset (back-compat with older callers).
+      // Explicit numbers override the preset (scan.ts applies them on top of it).
       maxDepth: typeof body.maxDepth === "number" ? body.maxDepth : undefined,
       limit: typeof body.limit === "number" ? body.limit : undefined,
       budgetMs: typeof body.budgetMs === "number" ? body.budgetMs : undefined,

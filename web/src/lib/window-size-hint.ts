@@ -5,7 +5,7 @@
 // placement are both ignored (verified Edge 150, 2026-07-16). The daemon can't stop
 // that from outside, so it tags the URL with the size the window should have and the
 // page fixes itself here, once, at startup.
-import { WINDOW_SIZE_HINT_PARAM, parseWindowSizeHint } from "../../../shared/constants";
+import { WINDOW_SIZE_HINT_PARAM, parseWindowSizeHint } from "../constants";
 
 /**
  * Resize this window to the daemon's hint, then strip the param from the address so a
