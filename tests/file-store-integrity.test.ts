@@ -8,8 +8,8 @@
 // instead of throwing. File-store cases hit the on-disk file directly, no processes spawned.
 // ───────────────────────────────────────────────────────────────────────────────
 import "./isolate"; // CWD-proof data-dir isolation — must load before any server/src import
-import { expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { writeFileAtomic } from "../server/src/atomic-write";
@@ -20,9 +20,19 @@ import {
   updateProcessInFile,
 } from "../server/src/projects/file-store";
 
+// Every scratch root this file creates is registered here and reaped by the file-wide
+// afterAll below, so a failing (or crashing) test cannot leave one behind.
+const scratchDirs: string[] = [];
+
 function tempDir(prefix: string): string {
-  return mkdtempSync(path.join(os.tmpdir(), prefix));
+  const dir = mkdtempSync(path.join(os.tmpdir(), prefix));
+  scratchDirs.push(dir);
+  return dir;
 }
+
+afterAll(() => {
+  for (const dir of scratchDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function makeProjectFile(over: Record<string, unknown> = {}): string {
   const dir = tempDir("devwebui-fsintegrity-");

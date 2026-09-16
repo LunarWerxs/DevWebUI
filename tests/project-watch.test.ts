@@ -13,8 +13,8 @@
 // pid — that safety property is what makes auto-reload safe to have at all.
 // ───────────────────────────────────────────────────────────────────────────────
 import "./isolate"; // CWD-proof data-dir isolation — must load before any server/src import
-import { expect, test } from "bun:test";
-import { mkdtempSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Manager } from "../server/src/manager";
@@ -39,6 +39,21 @@ const quote = (s: string): string => `"${s.replace(/"/g, '\\"')}"`;
 const keepAliveCommand = () =>
   `${quote(process.execPath)} -e ${quote("setInterval(() => {}, 1000)")}`;
 
+// ONE mkdtempSync call site for the whole file: every scratch root goes through tempDir,
+// is registered here, and is reaped by the file-wide afterAll below — outcome-independent,
+// unlike a trailing rmSync in a passing body.
+const scratchDirs: string[] = [];
+
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), prefix));
+  scratchDirs.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of scratchDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 function projectJson(processIds: string[], name = "Fixture", command = "node -e 0"): string {
   return JSON.stringify({
     name,
@@ -48,7 +63,7 @@ function projectJson(processIds: string[], name = "Fixture", command = "node -e 
 
 /** A temp .devwebui + a Manager with it loaded + a started watcher. */
 function harness(initial: string[] = ["web"]) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "devwebui-watch-"));
+  const dir = tempDir("devwebui-watch-");
   const file = path.join(dir, ".devwebui");
   writeFileSync(file, projectJson(initial));
 
@@ -195,7 +210,7 @@ test("a byte-identical rewrite is a no-op (no churn from touches or the daemon's
 // only a process whose exec shape actually moved — these two pin both halves with a
 // REAL child process, not a mock.
 test("adding a process to the file leaves a RUNNING sibling untouched (same pid)", async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "devwebui-watch-live-"));
+  const dir = tempDir("devwebui-watch-live-");
   const file = path.join(dir, ".devwebui");
   writeFileSync(file, projectJson(["web"], "Live", keepAliveCommand()));
   const manager = new Manager();
@@ -228,7 +243,7 @@ test("changing a running process's COMMAND is HELD, not applied — restart appl
   // A .devwebui landing on disk (a git pull, a branch switch, a teammate's commit) must
   // never be able to relaunch a running server on a new command by itself. The watch
   // registers the change and flags it; only an explicit restart re-execs.
-  const dir = mkdtempSync(path.join(os.tmpdir(), "devwebui-watch-restart-"));
+  const dir = tempDir("devwebui-watch-restart-");
   const file = path.join(dir, ".devwebui");
   writeFileSync(file, projectJson(["web"], "Live", keepAliveCommand()));
   const manager = new Manager();
@@ -266,7 +281,7 @@ test("changing a running process's COMMAND is HELD, not applied — restart appl
 });
 
 test("a process ADDED to the file by a watch reload does not auto-start, even with autostart:true", async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "devwebui-watch-newproc-"));
+  const dir = tempDir("devwebui-watch-newproc-");
   const file = path.join(dir, ".devwebui");
   writeFileSync(file, projectJson(["web"], "Live", keepAliveCommand()));
   const manager = new Manager();
@@ -326,7 +341,7 @@ test("the watch set self-syncs off the manager: a project removed is unwatched",
 test("a project loaded AFTER start() is picked up and watched", async () => {
   const h = harness(["web"]);
   try {
-    const dir2 = mkdtempSync(path.join(os.tmpdir(), "devwebui-watch-2-"));
+    const dir2 = tempDir("devwebui-watch-2-");
     const file2 = path.join(dir2, ".devwebui");
     writeFileSync(
       file2,

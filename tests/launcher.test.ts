@@ -51,7 +51,7 @@ const MISC = join(ROOT, "misc");
 const isWin = process.platform === "win32";
 
 /** Loud assertion — a failure here should read like a stop sign, not a diff. */
-function must(cond: unknown, msg: string): asserts cond {
+function assert(cond: unknown, msg: string): asserts cond {
   if (!cond) throw new Error(`THOU SHALT NOT PASS — ${msg}`);
 }
 const read = (p: string): string => readFileSync(p, "utf8");
@@ -79,9 +79,9 @@ const REQUIRED = [
 test("launcher machinery exists, is non-empty, and is COMMITTED (a clone must be able to make the shortcut)", () => {
   for (const name of REQUIRED) {
     const abs = join(MISC, name);
-    must(existsSync(abs), `misc/${name} is MISSING — the tray launcher is incomplete`);
-    must(statSync(abs).size > 0, `misc/${name} is EMPTY`);
-    must(
+    assert(existsSync(abs), `misc/${name} is MISSING — the tray launcher is incomplete`);
+    assert(statSync(abs).size > 0, `misc/${name} is EMPTY`);
+    assert(
       tracked(`misc/${name}`),
       `misc/${name} is NOT committed to git — a fresh clone would have NO shortcut or tray. Run: git add misc/`,
     );
@@ -96,7 +96,7 @@ test("the tray icon is a real .ico file (so the tray icon can't silently be brok
   // ICO header: reserved=0x0000, type=0x0001(icon), count>=1.
   const headerOk = buf.length > 6 && buf[0] === 0 && buf[1] === 0 && buf[2] === 1 && buf[3] === 0;
   const count = buf.length > 6 ? buf[4]! | (buf[5]! << 8) : 0;
-  must(
+  assert(
     headerOk && count >= 1,
     `misc/DevWebUI.ico is not a valid icon (bad header / 0 images) — the tray icon would be broken`,
   );
@@ -108,7 +108,7 @@ test("the tray icon is a real .ico file (so the tray icon can't silently be brok
     const w = buf[6 + i * 16]!;
     frames.push(w === 0 ? 256 : w);
   }
-  must(
+  assert(
     frames.some((w) => w >= 1 && w <= 48),
     `misc/DevWebUI.ico has no small (<=48px) frame (frames: ${frames.join(",")}) — a 256-only icon renders blank in the tray`,
   );
@@ -116,11 +116,11 @@ test("the tray icon is a real .ico file (so the tray icon can't silently be brok
 
 test("misc/Tray-Host.ps1 is the real shared tray-host engine (must never be hand-edited in this repo)", () => {
   const engine = read(join(MISC, "Tray-Host.ps1"));
-  must(
+  assert(
     /function\s+Start-TrayHost/.test(engine),
     "Tray-Host.ps1 is missing function Start-TrayHost — has it been replaced with a local fork?",
   );
-  must(
+  assert(
     /function\s+Invoke-TrayHostSelfTest/.test(engine),
     "Tray-Host.ps1 is missing function Invoke-TrayHostSelfTest — has it been replaced with a local fork?",
   );
@@ -128,13 +128,13 @@ test("misc/Tray-Host.ps1 is the real shared tray-host engine (must never be hand
 
 test("misc/Tray-Launch.vbs and misc/New-TrayShortcut.ps1 are the real shared pieces (must never be hand-edited in this repo)", () => {
   const vbs = read(join(MISC, "Tray-Launch.vbs"));
-  must(
+  assert(
     /WScript\.Shell|discover/i.test(vbs),
     "Tray-Launch.vbs doesn't look like the shared auto-discovering launcher — has it been replaced with a local per-app fork?",
   );
 
   const engine = read(join(MISC, "New-TrayShortcut.ps1"));
-  must(
+  assert(
     /function\s+New-TrayShortcut/.test(engine),
     "New-TrayShortcut.ps1 is missing function New-TrayShortcut — has it been replaced with a local per-app fork?",
   );
@@ -142,15 +142,15 @@ test("misc/Tray-Launch.vbs and misc/New-TrayShortcut.ps1 are the real shared pie
 
 test("misc/Tray-Launch.vbs auto-discovers the sibling *-Tray.ps1 adapter (zero-config, no hard-coded name)", () => {
   const vbs = read(join(MISC, "Tray-Launch.vbs"));
-  must(
+  assert(
     /Right\(lname,\s*9\)\s*=\s*"-tray\.ps1"/.test(vbs),
     "Tray-Launch.vbs doesn't auto-discover the sibling adapter by matching '*-tray.ps1'",
   );
-  must(
+  assert(
     !/DevWebUI-Tray\.ps1/.test(vbs),
     "Tray-Launch.vbs must stay zero-config — it must NOT hard-code DevWebUI-Tray.ps1 by name",
   );
-  must(
+  assert(
     /matchCount\s*=\s*0/.test(vbs) && /matchCount\s*>\s*1/.test(vbs),
     "Tray-Launch.vbs doesn't abort when zero or more than one adapter is found",
   );
@@ -158,47 +158,47 @@ test("misc/Tray-Launch.vbs auto-discovers the sibling *-Tray.ps1 adapter (zero-c
 
 test("DevWebUI-Tray.ps1 is a thin adapter that dot-sources the shared engine and calls into it", () => {
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(
+  assert(
     /\.\s*\(Join-Path\s+\$scriptDir\s+["']Tray-Host\.ps1["']\)/.test(tray),
     "DevWebUI-Tray.ps1 doesn't dot-source misc/Tray-Host.ps1 — it's no longer a thin adapter",
   );
-  must(
+  assert(
     /Invoke-TrayHostSelfTest\s+\$TrayConfig/.test(tray),
     "DevWebUI-Tray.ps1 doesn't call the engine's Invoke-TrayHostSelfTest",
   );
-  must(
+  assert(
     /Start-TrayHost\s+\$TrayConfig/.test(tray),
     "DevWebUI-Tray.ps1 doesn't call the engine's Start-TrayHost",
   );
-  must(
+  assert(
     /\[switch\]\$SelfTest/.test(tray),
     "DevWebUI-Tray.ps1 is missing the [switch]$SelfTest param",
   );
-  must(/\[int\]\$Port\s*=\s*4000/.test(tray), "DevWebUI-Tray.ps1's default port drifted from 4000");
+  assert(/\[int\]\$Port\s*=\s*4000/.test(tray), "DevWebUI-Tray.ps1's default port drifted from 4000");
 });
 
 test("Create-Shortcut.ps1 is a thin adapter: it dot-sources New-TrayShortcut.ps1 rather than reimplementing it", () => {
   const cs = read(join(MISC, "Create-Shortcut.ps1"));
-  must(
+  assert(
     /\.\s*\(Join-Path\s+\$scriptDir\s+["']New-TrayShortcut\.ps1["']\)/.test(cs),
     "Create-Shortcut.ps1 doesn't dot-source misc/New-TrayShortcut.ps1 — it's no longer a thin adapter",
   );
-  must(/New-TrayShortcut\b/.test(cs), "Create-Shortcut.ps1 doesn't call New-TrayShortcut");
-  must(
+  assert(/New-TrayShortcut\b/.test(cs), "Create-Shortcut.ps1 doesn't call New-TrayShortcut");
+  assert(
     /-LnkName\s+["']DevWebUI["']/.test(cs),
     "Create-Shortcut.ps1 doesn't pass -LnkName DevWebUI",
   );
-  must(
+  assert(
     /-IconFile\s+["']DevWebUI\.ico["']/.test(cs),
     "Create-Shortcut.ps1 doesn't pass -IconFile DevWebUI.ico",
   );
-  must(
+  assert(
     /-Description\s+["']Launch DevWebUI \(system tray\)["']/.test(cs),
     "Create-Shortcut.ps1 doesn't pass the expected -Description",
   );
   // Must NOT reimplement the shortcut-building machinery itself (that lives in the
   // shared engine now) — a stray CreateShortcut call would mean drift back to a full copy.
-  must(
+  assert(
     !/New-Object -ComObject WScript\.Shell/.test(cs),
     "Create-Shortcut.ps1 still builds the .lnk itself instead of delegating to New-TrayShortcut.ps1",
   );
@@ -206,29 +206,29 @@ test("Create-Shortcut.ps1 is a thin adapter: it dot-sources New-TrayShortcut.ps1
 
 test("launcher chain is wired: shortcut → wscript → Tray-Launch.vbs → DevWebUI-Tray.ps1 → daemon + icon", () => {
   const cs = read(join(MISC, "Create-Shortcut.ps1"));
-  must(/DevWebUI\.ico/.test(cs), "Create-Shortcut.ps1 doesn't set the tray icon");
+  assert(/DevWebUI\.ico/.test(cs), "Create-Shortcut.ps1 doesn't set the tray icon");
 
   const vbs = read(join(MISC, "Tray-Launch.vbs"));
-  must(
+  assert(
     /sh\.Run\s+"powershell/.test(vbs),
     "Tray-Launch.vbs doesn't launch the discovered adapter via powershell",
   );
 
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(
+  assert(
     /server[\\/]src[\\/]index\.ts/.test(tray),
     "DevWebUI-Tray.ps1's EntryFile doesn't point at the daemon (server/src/index.ts)",
   );
-  must(
+  assert(
     /StartCommand\s*=\s*["']bun server\/src\/index\.ts["']/.test(tray),
     "DevWebUI-Tray.ps1's StartCommand doesn't start the daemon (bun server/src/index.ts)",
   );
-  must(/DevWebUI\.ico/.test(tray), "DevWebUI-Tray.ps1 doesn't load the tray icon DevWebUI.ico");
-  must(
+  assert(/DevWebUI\.ico/.test(tray), "DevWebUI-Tray.ps1 doesn't load the tray icon DevWebUI.ico");
+  assert(
     /DEVWEBUI_TRAY_SHUTDOWN_TOKEN/.test(tray),
     "DevWebUI-Tray.ps1 doesn't wire the tray shutdown-token env var to the daemon",
   );
-  must(
+  assert(
     /x-devwebui/.test(tray),
     "DevWebUI-Tray.ps1 doesn't set the x-devwebui shutdown header prefix",
   );
@@ -237,8 +237,8 @@ test("launcher chain is wired: shortcut → wscript → Tray-Launch.vbs → DevW
   // generic engine machinery now — assert it lives in the engine, parameterized by the
   // adapter's ShutdownTokenEnvVar/ShutdownHeaderPrefix above.
   const engine = read(join(MISC, "Tray-Host.ps1"));
-  must(/\/api\/shutdown/.test(engine), "Tray-Host.ps1 doesn't request daemon shutdown");
-  must(
+  assert(/\/api\/shutdown/.test(engine), "Tray-Host.ps1 doesn't request daemon shutdown");
+  assert(
     /\$headerPrefix-shutdown-token/.test(engine),
     "Tray-Host.ps1 doesn't build the shutdown-token header from the app's header prefix",
   );
@@ -247,16 +247,16 @@ test("launcher chain is wired: shortcut → wscript → Tray-Launch.vbs → DevW
 test("engine: mutex is acquired BEFORE the tray icon, and a losing launch creates no icon", () => {
   const engine = read(join(MISC, "Tray-Host.ps1"));
 
-  must(
+  assert(
     /New-Object System\.Threading\.Mutex\(\$true,\s*\$Config\.MutexName/.test(engine),
     "Tray-Host.ps1 doesn't acquire a named single-instance mutex from $Config.MutexName",
   );
 
   const mutexIdx = engine.indexOf("New-Object System.Threading.Mutex($true, $Config.MutexName");
   const trayVisibleIdx = engine.indexOf("$tray.Visible = $true");
-  must(mutexIdx >= 0, "Tray-Host.ps1 mutex acquisition not found");
-  must(trayVisibleIdx >= 0, "Tray-Host.ps1 never unconditionally makes the tray icon visible");
-  must(
+  assert(mutexIdx >= 0, "Tray-Host.ps1 mutex acquisition not found");
+  assert(trayVisibleIdx >= 0, "Tray-Host.ps1 never unconditionally makes the tray icon visible");
+  assert(
     mutexIdx < trayVisibleIdx,
     "Tray-Host.ps1 must acquire the single-instance mutex BEFORE creating the tray icon",
   );
@@ -265,17 +265,17 @@ test("engine: mutex is acquired BEFORE the tray icon, and a losing launch create
   // WITHOUT creating a NotifyIcon or starting any timer — so a relaunch never stacks a
   // second tray icon while still opening/focusing the existing instance's UI.
   const loserBlock = engine.match(/if \(-not \$script:ownsTrayMutex\)\s*\{([\s\S]*?)\n {2}\}/);
-  must(loserBlock, "Tray-Host.ps1 doesn't branch on losing the single-instance mutex");
+  assert(loserBlock, "Tray-Host.ps1 doesn't branch on losing the single-instance mutex");
   const loserBody = loserBlock[1] ?? "";
-  must(
+  assert(
     /Open-AppUi/.test(loserBody),
     "Tray-Host.ps1's mutex-loser branch doesn't open the running instance's UI",
   );
-  must(
+  assert(
     /\breturn\b/.test(loserBody),
     "Tray-Host.ps1's mutex-loser branch doesn't exit without creating a tray icon",
   );
-  must(
+  assert(
     !/New-TrayHostIcon|New-Object System\.Windows\.Forms\.NotifyIcon/.test(loserBody),
     "Tray-Host.ps1's mutex-loser branch must not create a NotifyIcon — exactly one tray icon total",
   );
@@ -284,11 +284,11 @@ test("engine: mutex is acquired BEFORE the tray icon, and a losing launch create
 test("engine: the NotifyIcon is always created; only .Visible is gated on hideTrayIcon, then live-resynced", () => {
   const engine = read(join(MISC, "Tray-Host.ps1"));
 
-  must(
+  assert(
     /function Get-HideTrayIcon/.test(engine),
     "Tray-Host.ps1 is missing a Get-HideTrayIcon reader",
   );
-  must(
+  assert(
     /\.hideTrayIcon/.test(engine),
     "Tray-Host.ps1 doesn't read the hideTrayIcon field from runtime.json",
   );
@@ -298,12 +298,12 @@ test("engine: the NotifyIcon is always created; only .Visible is gated on hideTr
   // The hideTrayIcon gate must come strictly AFTER that unconditional line, never replace it.
   const trayVisibleIdx = engine.indexOf("$tray.Visible = $true");
   const gateIdx = engine.indexOf("if (Get-HideTrayIcon) { $tray.Visible = $false }");
-  must(trayVisibleIdx >= 0, "Tray-Host.ps1 never unconditionally makes the tray icon visible");
-  must(
+  assert(trayVisibleIdx >= 0, "Tray-Host.ps1 never unconditionally makes the tray icon visible");
+  assert(
     gateIdx >= 0,
     "Tray-Host.ps1 doesn't gate tray visibility on the saved hideTrayIcon preference",
   );
-  must(
+  assert(
     trayVisibleIdx < gateIdx,
     "Tray-Host.ps1 must set Visible=$true unconditionally BEFORE gating it on hideTrayIcon",
   );
@@ -313,7 +313,7 @@ test("engine: the NotifyIcon is always created; only .Visible is gated on hideTr
   // restart. (DevWebUI's OLD script did this on its 500ms watchTimer; the engine folds
   // it into the 5s healthTimer tick instead — a documented, intentional engine behavior,
   // not a per-app divergence, so this test targets the engine.)
-  must(
+  assert(
     /\$healthTimer\.Add_Tick\(\{[\s\S]*?Get-HideTrayIcon[\s\S]*?\$tray\.Visible[\s\S]*?\}\)/.test(
       engine,
     ),
@@ -323,29 +323,29 @@ test("engine: the NotifyIcon is always created; only .Visible is gated on hideTr
 
 test("engine: routes every browser-open through Open-AppUi with a dedicated portable-window profile", () => {
   const engine = read(join(MISC, "Tray-Host.ps1"));
-  must(
+  assert(
     /function Resolve-ChromiumBrowser/.test(engine),
     "Tray-Host.ps1 is missing Resolve-ChromiumBrowser",
   );
-  must(/function Open-AppUi/.test(engine), "Tray-Host.ps1 is missing Open-AppUi");
-  must(/--app=\$url/.test(engine), "Open-AppUi doesn't launch a chromeless --app= window");
-  must(
+  assert(/function Open-AppUi/.test(engine), "Tray-Host.ps1 is missing Open-AppUi");
+  assert(/--app=\$url/.test(engine), "Open-AppUi doesn't launch a chromeless --app= window");
+  assert(
     /\.portableMode/.test(engine),
     "Open-AppUi doesn't read the portableMode field from runtime.json",
   );
-  must(
+  assert(
     /--user-data-dir=/.test(engine),
     "Open-AppUi doesn't give the portable window a dedicated profile via --user-data-dir",
   );
-  must(
+  assert(
     /portable-profile/.test(engine),
     "Open-AppUi doesn't derive the shared portable-profile dir from runtime.json's location",
   );
   // Open-AppUi's own body must never gate on tray visibility — opening the UI and hiding
   // the icon are orthogonal concerns.
   const fnBlock = engine.match(/function Open-AppUi[\s\S]*?\n {2}\}/);
-  must(fnBlock, "Tray-Host.ps1's Open-AppUi function body could not be extracted");
-  must(
+  assert(fnBlock, "Tray-Host.ps1's Open-AppUi function body could not be extracted");
+  assert(
     !/\$tray\.Visible/.test(fnBlock[0]),
     "Tray-Host.ps1's Open-AppUi must not reference $tray.Visible — opening the UI must not depend on icon visibility",
   );
@@ -353,13 +353,13 @@ test("engine: routes every browser-open through Open-AppUi with a dedicated port
 
 test("engine: health probe validates body.ok, and honours a per-app service-id when the adapter sets one", () => {
   const engine = read(join(MISC, "Tray-Host.ps1"));
-  must(/function Test-Daemon/.test(engine), "Tray-Host.ps1 is missing Test-Daemon");
-  must(/\/api\/health/.test(engine), "Tray-Host.ps1 doesn't probe /api/health");
-  must(
+  assert(/function Test-Daemon/.test(engine), "Tray-Host.ps1 is missing Test-Daemon");
+  assert(/\/api\/health/.test(engine), "Tray-Host.ps1 doesn't probe /api/health");
+  assert(
     /r\.service\s+-eq\s+\$service/.test(engine),
     "Tray-Host.ps1's Test-Daemon doesn't validate body.service against the per-app ServiceName when set",
   );
-  must(
+  assert(
     /return\s+\[bool\]\$r\.ok/.test(engine),
     "Tray-Host.ps1's Test-Daemon doesn't fall back to a bare body.ok check when ServiceName is $null",
   );
@@ -370,7 +370,7 @@ test("engine: health probe validates body.ok, and honours a per-app service-id w
   // text/html SPA fallback) for an app daemon. The payload now stamps `service`, so the adapter
   // names it and the tray can reject an impostor on a recycled port like every sibling app does.
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(
+  assert(
     /ServiceName\s*=\s*["']devwebui["']/.test(tray),
     "DevWebUI-Tray.ps1 must declare ServiceName = 'devwebui' (its /api/health stamps that service id)",
   );
@@ -378,15 +378,15 @@ test("engine: health probe validates body.ok, and honours a per-app service-id w
 
 test("engine: full-shutdown sentinel is polled and cleared, reusing Quit's teardown", () => {
   const engine = read(join(MISC, "Tray-Host.ps1"));
-  must(
+  assert(
     /\$script:shutdownRequestFile\s*=\s*\$Config\.SentinelFile/.test(engine),
     "Tray-Host.ps1 doesn't read the per-app SentinelFile from config",
   );
-  must(
+  assert(
     /Remove-Item \$script:shutdownRequestFile/.test(engine),
     "Tray-Host.ps1 doesn't clear a stale sentinel",
   );
-  must(
+  assert(
     /\$watchTimer\.Add_Tick\(\{[\s\S]*?Test-Path \$script:shutdownRequestFile[\s\S]*?Invoke-QuitApp[\s\S]*?\}\)/.test(
       engine,
     ),
@@ -394,7 +394,7 @@ test("engine: full-shutdown sentinel is polled and cleared, reusing Quit's teard
   );
 
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(
+  assert(
     /SentinelFile\s*=\s*Join-Path \$dwHome "shutdown\.request"/.test(tray),
     "DevWebUI-Tray.ps1 doesn't declare its shutdown.request sentinel path (sibling of runtime.json)",
   );
@@ -404,11 +404,11 @@ test("tray 'Stop all processes': posts the same route the GUI does, off the UI t
   const engine = read(join(MISC, "Tray-Host.ps1"));
 
   // Opt-in: no ActionPath ⇒ no extra menu item at all (the sibling apps have none).
-  must(
+  assert(
     /\$actionPath\s*=\s*Get-TrayConfigValue \$Config 'ActionPath' \$null/.test(engine),
     "Tray-Host.ps1 doesn't read the optional ActionPath from config",
   );
-  must(
+  assert(
     /if \(\$actionItem\) \{\s*\$menu\.Items\.Add/.test(engine),
     "Tray-Host.ps1 adds the app-action menu item unconditionally — it must exist only when ActionPath is configured",
   );
@@ -417,28 +417,28 @@ test("tray 'Stop all processes': posts the same route the GUI does, off the UI t
   // takes seconds to answer (DevWebUI waits out each child's SIGTERM grace) must never freeze
   // the tray menu, which is exactly what an Invoke-RestMethod on the UI thread would do.
   const fn = engine.match(/function Invoke-AppAction[\s\S]*?\n {2}\}/);
-  must(fn, "Tray-Host.ps1 is missing Invoke-AppAction");
-  must(
+  assert(fn, "Tray-Host.ps1 is missing Invoke-AppAction");
+  assert(
     /PowerShell\]::Create\(\)[\s\S]*?BeginInvoke\(\)/.test(fn[0]),
     "Invoke-AppAction doesn't run the POST on a background runspace — a slow daemon would block the tray menu",
   );
-  must(
+  assert(
     /\$actionTimer\.Add_Tick\(\{[\s\S]*?EndInvoke[\s\S]*?ShowBalloonTip[\s\S]*?\}\)/.test(engine),
     "Tray-Host.ps1 doesn't marshal the app-action result back to the UI thread with a balloon",
   );
   // It acts on what the daemon RUNS, never on the daemon process: no stop/kill/quit path here.
-  must(
+  assert(
     !/Stop-DaemonHere|Invoke-QuitApp|taskkill/.test(fn[0]),
     "Invoke-AppAction must not stop or kill the daemon — it only POSTs to it",
   );
 
   // The adapter points it at the same route the web UI's "Stop all" and `devwebui stop-all` use.
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(
+  assert(
     new RegExp(`ActionPath\\s*=\\s*"${ROUTES.stopAll}"`).test(tray),
     `DevWebUI-Tray.ps1 must point ActionPath at ${ROUTES.stopAll} (shared/routes.ts stopAll)`,
   );
-  must(
+  assert(
     /ActionLabel\s*=\s*"Stop all processes"/.test(tray),
     'DevWebUI-Tray.ps1 must label the item "Stop all processes" — a bare "Stop all" reads as "stop DevWebUI itself" next to Restart and Quit',
   );
@@ -446,7 +446,7 @@ test("tray 'Stop all processes': posts the same route the GUI does, off the UI t
 
 test("adapter: single-instance mutex name is the exact literal DevWebUITrayHost", () => {
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(
+  assert(
     /MutexName\s*=\s*"DevWebUITrayHost"/.test(tray),
     'DevWebUI-Tray.ps1 must declare MutexName = "DevWebUITrayHost" (exact literal — a rename breaks single-instance continuity for existing installs)',
   );
@@ -454,13 +454,13 @@ test("adapter: single-instance mutex name is the exact literal DevWebUITrayHost"
 
 test("adapter: declares its icon, display name, self-test marker, and menu label", () => {
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(/IconFile\s*=\s*"DevWebUI\.ico"/.test(tray), "DevWebUI-Tray.ps1 doesn't declare IconFile");
-  must(/DisplayName\s*=\s*"DevWebUI"/.test(tray), "DevWebUI-Tray.ps1 doesn't declare DisplayName");
-  must(
+  assert(/IconFile\s*=\s*"DevWebUI\.ico"/.test(tray), "DevWebUI-Tray.ps1 doesn't declare IconFile");
+  assert(/DisplayName\s*=\s*"DevWebUI"/.test(tray), "DevWebUI-Tray.ps1 doesn't declare DisplayName");
+  assert(
     /SelfTestMarker\s*=\s*"DEVWEBUI_TRAY_SELFTEST"/.test(tray),
     "DevWebUI-Tray.ps1 doesn't declare the DEVWEBUI_TRAY_SELFTEST marker",
   );
-  must(
+  assert(
     /MenuOpenLabel\s*=\s*"Open DevWebUI"/.test(tray),
     'DevWebUI-Tray.ps1 doesn\'t declare MenuOpenLabel = "Open DevWebUI"',
   );
@@ -468,12 +468,12 @@ test("adapter: declares its icon, display name, self-test marker, and menu label
 
 test("adapter: resolves the config dir via DEVWEBUI_HOME (else ~/.devwebui), matching server/src/data-dir.ts", () => {
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(
+  assert(
     /\$env:DEVWEBUI_HOME/.test(tray),
     "DevWebUI-Tray.ps1 doesn't honour the DEVWEBUI_HOME env override",
   );
-  must(/\.devwebui/.test(tray), "DevWebUI-Tray.ps1 doesn't fall back to ~/.devwebui");
-  must(
+  assert(/\.devwebui/.test(tray), "DevWebUI-Tray.ps1 doesn't fall back to ~/.devwebui");
+  assert(
     /InfoFile\s*=\s*Join-Path \$dwHome "runtime\.json"/.test(tray),
     "DevWebUI-Tray.ps1 doesn't point InfoFile at $dwHome/runtime.json",
   );
@@ -481,11 +481,11 @@ test("adapter: resolves the config dir via DEVWEBUI_HOME (else ~/.devwebui), mat
 
 test("adapter: dev-tree gate for Rebuild & Restart requires DEVWEBUI_DEV=1 only", () => {
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(
+  assert(
     /IsDevTree\s*=\s*\(\$env:DEVWEBUI_DEV -eq "1"\)/.test(tray),
     "DevWebUI-Tray.ps1's IsDevTree rule drifted from (DEVWEBUI_DEV=1)",
   );
-  must(
+  assert(
     !/IsDevTree\s*=\s*\(\$env:DEVWEBUI_DEV -eq "1"\)\s*-or/.test(tray),
     "DevWebUI-Tray.ps1's IsDevTree rule still has a -or clause (server\\src should no longer gate this)",
   );
@@ -493,17 +493,17 @@ test("adapter: dev-tree gate for Rebuild & Restart requires DEVWEBUI_DEV=1 only"
 
 test("adapter: first-run bootstrap installs deps and builds the GUI only when missing", () => {
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(
+  assert(
     /FirstRun\s*=\s*\{/.test(tray),
     "DevWebUI-Tray.ps1 doesn't supply a FirstRun bootstrap scriptblock",
   );
   const firstRunBlock = tray.match(/FirstRun\s*=\s*\{[\s\S]*?\n {2}\}/);
-  must(firstRunBlock, "DevWebUI-Tray.ps1's FirstRun scriptblock body could not be extracted");
-  must(
+  assert(firstRunBlock, "DevWebUI-Tray.ps1's FirstRun scriptblock body could not be extracted");
+  assert(
     /node_modules/.test(firstRunBlock[0]) && /bun install/.test(firstRunBlock[0]),
     "DevWebUI-Tray.ps1's FirstRun doesn't install deps when node_modules is missing",
   );
-  must(
+  assert(
     /web\\dist/.test(firstRunBlock[0]) && /bun run build/.test(firstRunBlock[0]),
     "DevWebUI-Tray.ps1's FirstRun doesn't build the GUI when web\\dist is missing",
   );
@@ -511,11 +511,11 @@ test("adapter: first-run bootstrap installs deps and builds the GUI only when mi
 
 test("adapter: rebuild command and its log filename are declared", () => {
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(
+  assert(
     /RebuildCommand\s*=\s*"bun run build"/.test(tray),
     'DevWebUI-Tray.ps1 must declare RebuildCommand = "bun run build"',
   );
-  must(
+  assert(
     /RebuildLogName\s*=\s*"DevWebUI-Rebuild\.log"/.test(tray),
     'DevWebUI-Tray.ps1 must declare RebuildLogName = "DevWebUI-Rebuild.log"',
   );
@@ -523,7 +523,7 @@ test("adapter: rebuild command and its log filename are declared", () => {
 
 test("adapter: attaches to a live daemon rather than warning/refusing (OnStrayDaemon = attach)", () => {
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
-  must(
+  assert(
     /OnStrayDaemon\s*=\s*"attach"/.test(tray),
     'DevWebUI-Tray.ps1 must declare OnStrayDaemon = "attach"',
   );
@@ -547,11 +547,11 @@ test.skipIf(!isWin)(
       { cwd: ROOT },
     );
     const out = (r.stdout?.toString() ?? "") + (r.stderr?.toString() ?? "");
-    must(
+    assert(
       out.includes("DEVWEBUI_TRAY_SELFTEST_OK"),
       `the tray self-test did not pass:\n${out.trim()}`,
     );
-    must(r.exitCode === 0, `tray self-test exit code ${r.exitCode}:\n${out.trim()}`);
+    assert(r.exitCode === 0, `tray self-test exit code ${r.exitCode}:\n${out.trim()}`);
   },
   // 20s: a real PowerShell run that loads an icon into a NotifyIcon and probes PATH. 462ms here.
   20000,
@@ -573,10 +573,10 @@ test.skipIf(!isWin)(
       ],
       { cwd: ROOT },
     );
-    must(gen.exitCode === 0, `Create-Shortcut.ps1 failed:\n${gen.stderr?.toString()?.trim()}`);
+    assert(gen.exitCode === 0, `Create-Shortcut.ps1 failed:\n${gen.stderr?.toString()?.trim()}`);
 
     const lnk = join(ROOT, "DevWebUI.lnk");
-    must(existsSync(lnk), "no DevWebUI.lnk in the project root after running Create-Shortcut.ps1");
+    assert(existsSync(lnk), "no DevWebUI.lnk in the project root after running Create-Shortcut.ps1");
 
     const resolve = [
       `$ws = New-Object -ComObject WScript.Shell;`,
@@ -598,19 +598,19 @@ test.skipIf(!isWin)(
     // The shortcut now runs the NATIVE tray host directly. wscript + Tray-Launch.vbs existed only
     // to start PowerShell without a console flash, and the native host suppresses its own console,
     // so both layers are gone: the daemon is created at ~25ms instead of ~475ms.
-    must(
+    assert(
       /lunarwerx-tray\.exe$/i.test(info.target),
       `shortcut target isn't the native tray host: ${info.target}`,
     );
-    must(!/wscript/i.test(info.target), `shortcut still goes through wscript: ${info.target}`);
+    assert(!/wscript/i.test(info.target), `shortcut still goes through wscript: ${info.target}`);
     // The config filename IS the per-app surface: the binary is generic and shared.
-    must(
+    assert(
       /DevWebUI-Tray\.json/i.test(info.args),
       `shortcut doesn't pass DevWebUI-Tray.json: ${info.args}`,
     );
-    must(info.targetExists, "shortcut points at a lunarwerx-tray.exe that doesn't exist");
-    must(info.configExists, "shortcut names a DevWebUI-Tray.json that doesn't exist");
-    must(info.iconExists, "shortcut's tray icon (DevWebUI.ico) doesn't exist");
+    assert(info.targetExists, "shortcut points at a lunarwerx-tray.exe that doesn't exist");
+    assert(info.configExists, "shortcut names a DevWebUI-Tray.json that doesn't exist");
+    assert(info.iconExists, "shortcut's tray icon (DevWebUI.ico) doesn't exist");
     expect(info.iconExists && info.targetExists && info.configExists).toBe(true);
   },
   // 20s: two PowerShell runs, one of which regenerates the .lnk through COM. 882ms here, the

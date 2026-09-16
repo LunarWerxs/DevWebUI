@@ -14,8 +14,8 @@
 // the on-disk .devwebui file directly, no processes spawned.
 // ───────────────────────────────────────────────────────────────────────────────
 import "./isolate"; // CWD-proof data-dir isolation — must load before any server/src import
-import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Manager } from "../server/src/manager";
@@ -111,6 +111,8 @@ test("startWithLinks: links are symmetric — link declared only on A, starting 
     manager.startWithLinks("links-test.b");
     await waitFor(() => manager.view("links-test.b")?.status === "running");
     await waitFor(() => manager.view("links-test.a")?.status === "running");
+    // The link is declared on A only; starting B must still have brought A up.
+    expect(manager.view("links-test.a")?.status).toBe("running");
   } finally {
     await manager.stopProject("links-test");
     manager.dispose();
@@ -133,6 +135,9 @@ test("startWithLinks: transitivity across mixed directions — A links B, C link
     await waitFor(() => manager.view("links-test.a")?.status === "running");
     await waitFor(() => manager.view("links-test.b")?.status === "running");
     await waitFor(() => manager.view("links-test.c")?.status === "running");
+    // A reaches C only through B, and C declares its link with the opposite direction.
+    expect(manager.view("links-test.b")?.status).toBe("running");
+    expect(manager.view("links-test.c")?.status).toBe("running");
   } finally {
     await manager.stopProject("links-test");
     manager.dispose();
@@ -443,8 +448,22 @@ test("startWithLinks: a waitForPort cycle between companions doesn't block the a
 
 // ── file store: links are kept consistent on disk, no processes spawned ──────
 
+// Every scratch root this file creates is registered here and reaped by the file-wide
+// afterAll below, so a failing (or crashing) test cannot leave one behind.
+const scratchDirs: string[] = [];
+
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), prefix));
+  scratchDirs.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of scratchDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 function makeTempDevWebUIFile(): string {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "devwebui-links-test-"));
+  const dir = tempDir("devwebui-links-test-");
   const file = path.join(dir, ".devwebui");
   writeFileSync(
     file,

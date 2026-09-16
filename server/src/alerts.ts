@@ -176,7 +176,7 @@ export class AlertStore {
       }
       const sample = byProcess.get(rule.processId);
       const value = sample ? (rule.metric === "cpu" ? sample.cpu : sample.memory) : null;
-      const over = value !== null && value !== undefined && value > rule.threshold;
+      const over = value != null && value > rule.threshold;
       if (!over || !sample) {
         this.breach.delete(rule.id); // stopped, missing, or dropped back under - breach resets
         continue;

@@ -6,14 +6,28 @@
 // File-store cases hit the on-disk .devwebui directly; no processes are spawned.
 // ───────────────────────────────────────────────────────────────────────────────
 import "./isolate"; // CWD-proof data-dir isolation — must load before any server/src import
-import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { readDevWebUIFile, updateProjectMeta } from "../server/src/projects/file-store";
 
+// Every scratch root this file creates is registered here and reaped by the file-wide
+// afterAll below, so a failing (or crashing) test cannot leave one behind.
+const scratchDirs: string[] = [];
+
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), prefix));
+  scratchDirs.push(dir);
+  return dir;
+}
+
+afterAll(() => {
+  for (const dir of scratchDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 function makeTempProjectFile(over: Record<string, unknown> = {}): string {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "devwebui-project-meta-"));
+  const dir = tempDir("devwebui-project-meta-");
   const file = path.join(dir, ".devwebui");
   writeFileSync(
     file,

@@ -7,8 +7,8 @@
 // validation-failure path each. Routes outside that list (scan/browse/clone/take-over/shortcut/
 // connections/diagnose) are not this file's job.
 import "./isolate"; // CWD-proof data-dir isolation — must load before any server/src import
-import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createApp } from "../server/src/http";
@@ -16,6 +16,14 @@ import { Manager } from "../server/src/manager";
 import { readDevWebUIFile } from "../server/src/projects";
 import { ROUTES } from "../shared/routes";
 import type { LoadedProject, ProcessDef } from "../server/src/types";
+
+// Every scratch root this file creates is registered here and reaped by the file-wide
+// afterAll below, so a failing (or crashing) test cannot leave one behind.
+const scratchDirs: string[] = [];
+
+afterAll(() => {
+  for (const dir of scratchDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -48,6 +56,7 @@ function newManager(): Manager {
  */
 function realProject(id: string, processesJson: Record<string, unknown>[]): LoadedProject {
   const dir = mkdtempSync(path.join(os.tmpdir(), "devwebui-http-test-"));
+  scratchDirs.push(dir);
   const file = path.join(dir, ".devwebui");
   writeFileSync(file, JSON.stringify({ name: id, processes: processesJson }));
   return readDevWebUIFile(file);

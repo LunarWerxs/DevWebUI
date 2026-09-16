@@ -7,8 +7,8 @@
 //
 // No isolate.ts import: this module touches only the temp fixture paths it's given, never
 // dataDir()/DEVWEBUI_HOME, so it isn't one of the writer modules docs/TESTING.md requires it for.
-import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { detectAutostartTriggers, takeOverAutostart } from "../server/src/takeover";
@@ -49,9 +49,18 @@ const CLEAN_TASKS_JSON = `{
   ]
 }`;
 
+// Every scratch root this file creates is registered here and reaped by the file-wide
+// afterAll below, so a failing (or crashing) test cannot leave one behind.
+const scratchDirs: string[] = [];
+
+afterAll(() => {
+  for (const dir of scratchDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 /** A temp folder with a .vscode/tasks.json + settings.json, JSONC content as given. */
 function makeFixtureDir(tasksJson: string | null, settingsJson: string | null): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), "devwebui-takeover-test-"));
+  scratchDirs.push(dir);
   const vscode = path.join(dir, ".vscode");
   mkdirSync(vscode, { recursive: true });
   if (tasksJson !== null) writeFileSync(path.join(vscode, "tasks.json"), tasksJson);

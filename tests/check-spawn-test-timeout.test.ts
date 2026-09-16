@@ -7,8 +7,8 @@
 // So the rule is asserted from both ends here: it must FIRE on the shapes it claims to catch, and
 // STAY QUIET on the ones it must not.
 
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -131,9 +131,18 @@ describe("stays quiet where it must", () => {
   });
 });
 
+// Every scratch root this file creates is registered here and reaped by the file-wide
+// afterAll below, so a failing (or crashing) test cannot leave one behind.
+const scratchDirs: string[] = [];
+
+afterAll(() => {
+  for (const dir of scratchDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 describe("a repo-wide timeout stands the whole check down", () => {
   const withRoot = (files: Record<string, string>): string => {
     const dir = mkdtempSync(join(tmpdir(), "devwebui-guardrail-"));
+    scratchDirs.push(dir);
     for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body);
     return dir;
   };

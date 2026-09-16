@@ -12,16 +12,27 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { formatWindowSizeHint, parseWindowSizeHint } from "../shared/constants";
 import { rememberedPlacement, windowSizeHintFor } from "../server/src/window-size";
 
 const DASH = "http://localhost:4000/";
 const INITIAL = { width: 840, height: 760 };
 
+// Every scratch profile this file creates is registered here and reaped by the file-wide
+// afterAll below, so a failing (or crashing) test cannot leave one behind. Cleaning up in
+// the CALLER's finally, as this file used to, only tidies up when the test passes; the
+// per-test rmSync calls are harmless no-ops on top of this (force: true).
+const scratchDirs: string[] = [];
+
+afterAll(() => {
+  for (const dir of scratchDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 /** A scratch profile whose Preferences hold the given app_window_placement dict. */
 function profileWith(placements: unknown): string {
   const dir = mkdtempSync(join(tmpdir(), "lw-winsize-"));
+  scratchDirs.push(dir);
   mkdirSync(join(dir, "Default"), { recursive: true });
   writeFileSync(
     join(dir, "Default", "Preferences"),
