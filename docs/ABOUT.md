@@ -33,11 +33,11 @@ edit the dossier, not this block. Everything ABOVE the marker is yours.
 ### At a glance
 
 - **Ships as:** tray app (Windows) + self-hosted web app (daemon + browser GUI, any OS) - prebuilt .exe/tray zip from GitHub Releases, or `bun install && bun run dev` from source; also ships a `devwebui` CLI and a stdio MCP server (server/src/cli.ts, server/src/mcp.ts)
-- **Written in:** TypeScript (181 files), Vue (113 files), JavaScript (14 files), PowerShell (7 files)
+- **Written in:** TypeScript (183 files), Vue (113 files), JavaScript (15 files), PowerShell (7 files)
 - **Built with:** Hono, Tailwind, TypeScript, Vite, Vitest, Vue
-- **Package:** `devwebui` 0.8.7
+- **Package:** `devwebui` 0.8.8
 - **Entry points:** `bin`, `scripts`, `workspaces`
-- **Tests:** 53 test file(s)
+- **Tests:** 54 test file(s)
 - **CI:** `ci.yml`, `release.yml`
 - **Domain:** local-dev-servers, process-supervision, dev-tooling, ai-agent-tooling
 - **Remote:** https://github.com/LunarWerxs/DevWebUI.git
@@ -57,7 +57,7 @@ edit the dossier, not this block. Everything ABOVE the marker is yours.
 
 ### Features
 
-25 recorded - 24 shipped, 0 partial, 1 planned. Each `path:line` is where the feature is DEFINED, checked by `odin codex check`.
+26 recorded - 25 shipped, 0 partial, 1 planned. Each `path:line` is where the feature is DEFINED, checked by `odin codex check`.
 
 **Shipped**
 
@@ -73,18 +73,19 @@ edit the dossier, not this block. Everything ABOVE the marker is yours.
 - **Live per-process log streaming** _(free)_ - Tail any running process's stdout/stderr live in the GUI without leaving the dashboard, pushed over an SSE connection shared by every client. - `server/src/http/core.ts:86`, `server/src/log-buffer.ts:17`
 - **Notifications inbox** _(free)_ - An in-app drawer surfaces scan results and other alerts as read/unread notifications the user can dismiss individually or clear. - `web/src/store.ts:179`, `web/src/store.ts:201`
 - **Desktop shortcuts (Windows)** _(free)_ - Send a single process or an entire repo's linked processes to the Desktop; double-clicking the shortcut starts them in a small window with a Stop button. - `server/src/shortcuts.ts:250`, `server/src/shortcuts.ts:266`
-- **Windows tray host** _(free)_ - A native Rust tray icon runs the daemon hidden, with Open / Rebuild & Restart / Restart / Stop all processes / Quit, health-polls the daemon, and revives it after a crash. - `misc/tray-host-native/src/main.rs:802`, `misc/tray-host-native/src/main.rs:177`, `misc/tray-host-native/src/daemon.rs:126`
+- **Windows tray host** _(free)_ - A native Rust tray icon runs the daemon hidden, with Open / Rebuild & Restart / Restart / Stop all processes / Quit, health-polls the daemon, and revives it after a crash. The compiled single-file exe now also materializes its embedded tray host and starts it on launch if nothing else has, closing the earlier gap where only the extracted-zip distribution ever showed a tray icon. - `misc/tray-host-native/src/main.rs:802`, `misc/tray-host-native/src/daemon.rs:126`, `server/src/tray-bootstrap.mjs:272`
 - **Portable focus window** _(free)_ - Opens a chromeless single-process browser window (used by desktop shortcuts and the tray's Open action) that remembers its last size and position per process. - `server/src/portable-window.mjs:202`, `server/src/window-size.ts:37`, `misc/tray-host-native/src/browser.rs:121`
-- **MCP server for AI agents** _(free)_ - A stdio MCP server exposes 36 tools (projects, process start/stop/restart/enable/disable/all, logs, error log, threshold alerts) as a thin client over the same running daemon the GUI uses. - `server/src/mcp.ts:122`, `server/src/mcp.ts:17`
+- **MCP server for AI agents** _(free)_ - A stdio MCP server exposes 36 tools (projects, process start/stop/restart/enable/disable/all, logs, error log, threshold alerts) as a thin client over the same running daemon the GUI uses, on the shared kit-synced MCP engine that now dispatches requests concurrently (bounded by maxInFlight, default 8) so a slow tool call no longer blocks a fast ping or tools/list queued behind it on the same connection. - `server/src/mcp.ts:122`, `server/src/mcp.ts:17`, `server/src/mcp-stdio.mjs:191`
 - **CLI** _(free)_ - `devwebui start|stop|status|list|open|start-process|stop-process|restart-process|start-all|stop-all|alerts|mcp` - a thin client over the same REST API the GUI and MCP server use. - `server/src/cli.ts:761`, `server/src/cli.ts:797`
 - **Shared REST + SSE API contract** _(free)_ - One typed route table (shared/routes.ts) and DTO set drive the Hono server, the Vue GUI, the CLI and the MCP server, so all four surfaces stay in sync by construction. - `shared/routes.ts:30`, `server/src/http/index.ts:38`
 - **Auto-update (compiled distribution)** _(free)_ - The prebuilt binary checks GitHub Releases on an interval, downloads and SHA-256-verifies the matching asset, and applies it in place with an optional relaunch. - `server/src/github-updater.ts:231`, `server/src/github-updater.ts:330`, `server/src/github-updater.ts:396`
-- **Self-update (source checkout)** _(free)_ - A source checkout instead checks and applies updates via git fetch/pull plus a rebuild, using a separate updater engine from the compiled-binary path. - `server/src/updater-engine.mjs:25`, `server/src/updater.ts:31`
+- **Self-update (source checkout)** _(free)_ - A source checkout instead checks and applies updates via git fetch/pull plus a rebuild, using a shared LunarWerx updater engine (kit-synced, now split for a complexity-gate lint) instead of the compiled-binary path; a failed self-update no longer erases edits made to the checkout while it ran. - `server/src/updater-engine.mjs:25`, `server/src/updater.ts:31`
 - **Autostart takeover from other launchers** _(free)_ - Detects a project's existing autostart triggers (a VS Code task, a Vite extension) and offers to disable them (with a backup) so DevWebUI becomes the single launcher, restorable later. - `server/src/takeover.ts:45`, `server/src/takeover.ts:103`, `server/src/takeover.ts:168`
 - **Settings sync via LunarWerx Connections** _(free)_ - Opt-in sign-in with a Connections account syncs a small allowlist of portable prefs and theme across machines; the refresh token is sealed at rest with Windows DPAPI. - `server/src/connections.ts:259`, `server/src/connections.ts:370`, `server/src/dpapi-seal.mjs:96`
 - **Localization and theming** _(free)_ - Full i18n with an English base and community-addable locales (flagged if machine-drafted), plus a light/dark theme with a crossfade transition. - `web/src/i18n/locales/index.ts:32`, `web/src/lib/theme.ts:83`
 - **Dashboard search, sort & filter toolbar** _(free)_ - Search projects/processes by name, filter the dashboard by status bucket, sort by column, and switch between card and table view - sort/filter/view choices persist across reloads (search text deliberately does not). - `web/src/store.ts:214`, `web/src/store.ts:230`, `web/src/components/ProjectPanel.vue:75`
-- **Threshold alerts on process CPU/memory** _(free)_ - Set a CPU or memory threshold per process that must stay breached for a continuous, user-set duration before it fires, so one sustained incident is one fired event rather than one per tick; rules and fired-event history persist across restarts. Parity across GUI (Settings -> Alerts tab), CLI (`devwebui alerts list|add|remove|events|clear`) and 5 matching MCP tools, adapted from PostHog's Alerts product onto the CPU/memory stream every managed process already reports. - `server/src/alerts.ts:69`, `server/src/http/alert-routes.ts:72`, `server/src/cli.ts:363`, `web/src/components/settings/AlertsSection.vue:31`
+- **Threshold alerts on process CPU/memory** _(free)_ - Set a CPU or memory threshold per process that must stay breached for a continuous, user-set duration before it fires, so one sustained incident is one fired event rather than one per tick; rules and fired-event history persist across restarts. Parity across GUI (Settings -> Alerts tab), CLI (`devwebui alerts list|add|remove|events|clear`) and 5 matching MCP tools, adapted from PostHog's Alerts product onto the CPU/memory stream every managed process already reports. Debounced event saves resolve their destination file at scheduling time rather than when the timer fires, so a write can no longer land in the wrong data directory. - `server/src/alerts.ts:69`, `server/src/http/alert-routes.ts:72`, `server/src/cli.ts:363`, `server/src/alerts.ts:238`
+- **CSRF-hardened local API** _(free)_ - The daemon's unauthenticated localhost REST API rejects cross-site requests carrying browser-supplied provenance markers (Sec-Fetch-Site, Origin, Host), closing a drive-by-RCE class where any web page the user visits could otherwise POST to the local API with the owner's own credentials; non-browser clients (curl, the tray, MCP) are unaffected. - `server/src/loopback-guard.mjs:136`, `server/src/http/index.ts:51`
 
 **Planned - written down, not built**
 
@@ -107,5 +108,5 @@ _Read it with `python odin.py codex brief devwebui` in the Odin clone._
 
 ---
 
-_Generated by `odin codex about --publish devwebui` on 2026-09-09 from a Codex dossier stamped 2026-09-05. Regenerate after the product moves; `odin codex about` reports drift._
-<!-- odin:about GENERATED END sha=7fa474c863c6 -->
+_Generated by `odin codex about --publish devwebui` on 2026-09-16 from a Codex dossier stamped 2026-09-14. Regenerate after the product moves; `odin codex about` reports drift._
+<!-- odin:about GENERATED END sha=5e56dc494c24 -->
