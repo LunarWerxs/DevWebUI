@@ -96,47 +96,68 @@ function consumeBackslashRun(command: string, i: number): { i: number; text: str
   return { i, text: "\\".repeat(n) }; // not before a quote → every backslash is literal (path separators)
 }
 
+/** Unquoted whitespace separates tokens. */
+const isSeparator = (ch: string): boolean =>
+  ch === " " || ch === "\t" || ch === "\r" || ch === "\n";
+
+/** What one character means to the scanner. */
+type CharClass = "backslash" | "quote" | "separator" | "operator" | "content";
+
+/** Classify one character. `escapes` is the Windows backslash rule; `quoted` suppresses the
+ *  separator/operator meanings. The order of the tests is the branch order tokenize used to
+ *  carry inline: a backslash lead wins over everything, a `"` always toggles grouping, and
+ *  only an UNQUOTED separator or meta char has its special meaning. */
+function classifyChar(ch: string, quoted: boolean, meta: Set<string>, escapes: boolean): CharClass {
+  if (ch === "\\" && escapes) return "backslash";
+  if (ch === '"') return "quote";
+  if (quoted) return "content";
+  if (isSeparator(ch)) return "separator";
+  return meta.has(ch) ? "operator" : "content";
+}
+
 export function tokenize(command: string, meta: Set<string>): string[] | null {
   const tokens: string[] = [];
   const escapes = !meta.has("\\"); // Windows: backslash is a path sep / quote-escape lead, not a shell op
-  let cur = "";
-  let has = false; // did this token accumulate any char (incl. "")? distinguishes "" from a gap
+  // The token being accumulated, or null when none has started. Null-vs-"" is the whole
+  // distinction an empty quoted "" needs from the gap between two tokens.
+  let cur: string | null = null;
   let quoted = false;
   let i = 0;
   while (i < command.length) {
     const ch = command[i]!;
 
-    // Backslash run (Windows rules only) — resolved against a following quote, in any quote state.
-    if (ch === "\\" && escapes) {
-      const consumed = consumeBackslashRun(command, i);
-      cur += consumed.text;
-      i = consumed.i;
-      has = true;
-      continue;
-    }
-
-    if (ch === '"') {
-      quoted = !quoted;
-      has = true;
-      i++;
-      continue;
-    }
-    if (!quoted && (ch === " " || ch === "\t" || ch === "\r" || ch === "\n")) {
-      if (has) {
-        tokens.push(cur);
-        cur = "";
-        has = false;
+    switch (classifyChar(ch, quoted, meta, escapes)) {
+      // Backslash run (Windows rules only) — resolved against a following quote, in any quote state.
+      case "backslash": {
+        const consumed = consumeBackslashRun(command, i);
+        cur = (cur ?? "") + consumed.text;
+        i = consumed.i;
+        break;
       }
-      i++;
-      continue;
+      case "quote":
+        quoted = !quoted;
+        cur ??= "";
+        i++;
+        break;
+      // Unquoted whitespace closes the token.
+      case "separator":
+        if (cur !== null) {
+          tokens.push(cur);
+          cur = null;
+        }
+        i++;
+        break;
+      // Any other unquoted `meta` char is an operator/expansion we cannot emulate: bail.
+      case "operator":
+        return null;
+      case "content":
+        cur = (cur ?? "") + ch;
+        i++;
+        break;
     }
-    if (!quoted && meta.has(ch)) return null; // unquoted operator / expansion → needs a shell
-    cur += ch;
-    has = true;
-    i++;
   }
   if (quoted) return null; // unterminated quote — don't guess, use the shell
-  if (has) tokens.push(cur);
+  if (cur !== null) tokens.push(cur);
   return tokens.length ? tokens : null;
 }
 
@@ -169,29 +190,47 @@ function searchDirs(env: NodeJS.ProcessEnv, delimiter: string): string[] {
   return [path.dirname(process.execPath), ...envPath(env).split(delimiter)].filter(Boolean);
 }
 
-function resolveWindows(file: string, cwd: string, env: NodeJS.ProcessEnv): string | null {
+/** Does `file` already end in an extension Windows can CreateProcess directly? (If so we
+ *  never append WIN_DIRECT_EXTS — the name as written is the one to test.) */
+function hasDirectExt(file: string): boolean {
   const lower = file.toLowerCase();
-  const alreadyDirect = WIN_DIRECT_EXTS.some((e) => lower.endsWith(e));
-  const hasSep = file.includes("\\") || file.includes("/");
+  return WIN_DIRECT_EXTS.some((e) => lower.endsWith(e));
+}
 
-  if (hasSep) {
-    const base = path.resolve(cwd, file);
-    if (alreadyDirect) return isFile(base) ? base : null;
-    for (const e of WIN_DIRECT_EXTS) if (isFile(base + e)) return base + e;
-    return null; // a path to a .cmd/.bat/extensionless — leave it to the shell
-  }
+/** `file` names a path (it contains a separator): resolve it against `cwd` and test just that. */
+function resolveWindowsPath(file: string, cwd: string, alreadyDirect: boolean): string | null {
+  const base = path.resolve(cwd, file);
+  if (alreadyDirect) return isFile(base) ? base : null;
+  for (const e of WIN_DIRECT_EXTS) if (isFile(base + e)) return base + e;
+  return null; // a path to a .cmd/.bat/extensionless — leave it to the shell
+}
+
+/** `file` is a bare command name: walk the search dirs, appending WIN_DIRECT_EXTS to each
+ *  unless the name already carries a directly-executable extension. */
+function resolveWindowsInPath(
+  file: string,
+  env: NodeJS.ProcessEnv,
+  alreadyDirect: boolean,
+): string | null {
   for (const dir of searchDirs(env, ";")) {
     if (alreadyDirect) {
       const p = path.join(dir, file);
       if (isFile(p)) return p;
-    } else {
-      for (const e of WIN_DIRECT_EXTS) {
-        const p = path.join(dir, file + e);
-        if (isFile(p)) return p;
-      }
+      continue; // no extension to append — this dir is a dead end
+    }
+    for (const e of WIN_DIRECT_EXTS) {
+      const p = path.join(dir, file + e);
+      if (isFile(p)) return p;
     }
   }
   return null;
+}
+
+function resolveWindows(file: string, cwd: string, env: NodeJS.ProcessEnv): string | null {
+  const alreadyDirect = hasDirectExt(file);
+  if (file.includes("\\") || file.includes("/"))
+    return resolveWindowsPath(file, cwd, alreadyDirect);
+  return resolveWindowsInPath(file, env, alreadyDirect);
 }
 
 function resolvePosix(file: string, cwd: string, env: NodeJS.ProcessEnv): string | null {

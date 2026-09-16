@@ -34,6 +34,34 @@ const PROCESSES = [
   },
 ];
 
+/** 200 + a JSON body, the shape every stubbed route answers with. */
+const json = (value: unknown): Response => new Response(JSON.stringify(value), { status: 200 });
+
+/** One stubbed route: an optional HTTP method (omitted = any method), a URL predicate, and the
+ *  reply. Listed in the order they must be tested — the first match wins. */
+interface StubRoute {
+  method?: string;
+  matches: (url: string) => boolean;
+  reply: (body: unknown) => Response;
+}
+
+const STUB_ROUTES: StubRoute[] = [
+  {
+    matches: (u) => u.endsWith("/api/health"),
+    reply: () => json({ ok: true, service: "devwebui" }),
+  },
+  { matches: (u) => u.endsWith("/api/processes"), reply: () => json(PROCESSES) },
+  {
+    method: "POST",
+    matches: (u) => u.endsWith("/api/alerts/rules"),
+    reply: (body) => json({ id: "rule1", ...(body as object), createdAt: 1 }),
+  },
+  { method: "GET", matches: (u) => u.endsWith("/api/alerts/rules"), reply: () => json([]) },
+  { method: "DELETE", matches: (u) => u.includes("/api/alerts/rules/"), reply: () => json({}) },
+  { method: "GET", matches: (u) => u.endsWith("/api/alerts/events"), reply: () => json([]) },
+  { method: "POST", matches: (u) => u.includes("/api/alerts/events/clear"), reply: () => json({}) },
+];
+
 function stubFetch() {
   calls = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -42,30 +70,9 @@ function stubFetch() {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     calls.push({ url, method, body });
 
-    if (url.endsWith("/api/health")) {
-      return new Response(JSON.stringify({ ok: true, service: "devwebui" }), { status: 200 });
-    }
-    if (url.endsWith("/api/processes")) {
-      return new Response(JSON.stringify(PROCESSES), { status: 200 });
-    }
-    if (method === "POST" && url.endsWith("/api/alerts/rules")) {
-      return new Response(JSON.stringify({ id: "rule1", ...(body as object), createdAt: 1 }), {
-        status: 200,
-      });
-    }
-    if (method === "GET" && url.endsWith("/api/alerts/rules")) {
-      return new Response(JSON.stringify([]), { status: 200 });
-    }
-    if (method === "DELETE" && url.includes("/api/alerts/rules/")) {
-      return new Response("{}", { status: 200 });
-    }
-    if (method === "GET" && url.endsWith("/api/alerts/events")) {
-      return new Response(JSON.stringify([]), { status: 200 });
-    }
-    if (method === "POST" && url.includes("/api/alerts/events/clear")) {
-      return new Response("{}", { status: 200 });
-    }
-    throw new Error(`unstubbed request: ${method} ${url}`);
+    const route = STUB_ROUTES.find((r) => (!r.method || r.method === method) && r.matches(url));
+    if (!route) throw new Error(`unstubbed request: ${method} ${url}`);
+    return route.reply(body);
   }) as typeof fetch;
 }
 

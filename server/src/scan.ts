@@ -217,11 +217,18 @@ export function scanForDevWebUI(opts: ScanOptions = {}): Promise<ScanResult> {
   return tracked;
 }
 
-async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
-  const signal = opts.signal;
-  const start = Date.now();
-  const roots = (opts.roots?.length ? opts.roots : defaultScanRoots()).map((r) => path.resolve(r));
+/** The walk's normalized bounds + split exclude sets, resolved once per scan. */
+type ScanBounds = {
+  roots: string[];
+  excludeNames: Set<string>;
+  excludePaths: string[];
+  maxDepth: number;
+  limit: number;
+  budgetMs: number;
+  concurrency: number;
+};
 
+function parseScanOptions(opts: ScanOptions): ScanBounds {
   // Split user excludes into bare names (match any folder) vs absolute paths (prefix match).
   const excludeNames = new Set<string>();
   const excludePaths: string[] = [];
@@ -231,14 +238,26 @@ async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
     if (/^([a-z]:[\\/]|[\\/])/.test(t)) excludePaths.push(path.resolve(t).toLowerCase());
     else excludeNames.add(t);
   }
-  const maxDepth = Math.min(Math.max(opts.maxDepth ?? 12, 1), 16);
-  const limit = Math.min(Math.max(opts.limit ?? 1000, 1), 5000);
-  // Completeness over speed: default 30s ceiling (was 5s) so a deep scan won't miss
-  // vital projects. The watchdog below guarantees we still return by then.
-  const budgetMs = Math.min(Math.max(opts.budgetMs ?? 30000, 500), 60000);
-  // Directory scanning is I/O-latency bound, so many concurrent readdir()s — not OS
-  // threads — are the lever. Bun parallelises async readdir well past 24 (≈3× from 24→64).
-  const concurrency = Math.min(Math.max(opts.concurrency ?? 64, 1), 512);
+  return {
+    roots: (opts.roots?.length ? opts.roots : defaultScanRoots()).map((r) => path.resolve(r)),
+    excludeNames,
+    excludePaths,
+    maxDepth: Math.min(Math.max(opts.maxDepth ?? 12, 1), 16),
+    limit: Math.min(Math.max(opts.limit ?? 1000, 1), 5000),
+    // Completeness over speed: default 30s ceiling (was 5s) so a deep scan won't miss
+    // vital projects. The watchdog below guarantees we still return by then.
+    budgetMs: Math.min(Math.max(opts.budgetMs ?? 30000, 500), 60000),
+    // Directory scanning is I/O-latency bound, so many concurrent readdir()s — not OS
+    // threads — are the lever. Bun parallelises async readdir well past 24 (≈3× from 24→64).
+    concurrency: Math.min(Math.max(opts.concurrency ?? 64, 1), 512),
+  };
+}
+
+async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
+  const signal = opts.signal;
+  const start = Date.now();
+  const { roots, excludeNames, excludePaths, maxDepth, limit, budgetMs, concurrency } =
+    parseScanOptions(opts);
 
   const files: FoundFile[] = [];
   const detected: DetectedProject[] = [];
@@ -247,6 +266,12 @@ async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
   let truncated = false;
   let timedOut = false;
   let settled = false;
+
+  // The three flags above mean "stop walking" to every part of the walk; named once so the
+  // per-entry and per-directory guards read as one condition each instead of three.
+  const stopped = (): boolean => settled || timedOut || truncated;
+  /** Results so far, against `limit` — the cap counts files and detected projects together. */
+  const collected = (): number => files.length + detected.length;
 
   // Full path to descend into, or null if `e` is pruned/excluded/already seen/too deep.
   // Marks the path seen as a side effect of accepting it, same as the original inline check.
@@ -270,7 +295,7 @@ async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
     const fileJobs: Promise<FoundFile>[] = [];
     let packageJson = false;
     for (const e of entries) {
-      if (settled || timedOut || truncated) break;
+      if (stopped()) break;
       if (e.isSymbolicLink()) continue; // don't follow links — avoids cycles + escapes
       if (e.isDirectory()) {
         const full = resolveSubdir(dir, e, depth);
@@ -284,39 +309,44 @@ async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
     return { subdirs, fileJobs, packageJson };
   }
 
-  // Read one directory: collect its .devwebui files, return its descendable subdirs.
-  async function scanDir(dir: string, depth: number): Promise<{ dir: string; depth: number }[]> {
-    if (settled || timedOut || truncated) return [];
-    scannedDirs++;
-    const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
-    if (!entries) return []; // unreadable (permissions, gone) — skip
-    if (settled || timedOut || truncated) return [];
-    const { subdirs, fileJobs, packageJson } = partitionEntries(dir, depth, entries);
+  // Drain one directory's .devwebui jobs into `files`, honouring the shared result cap.
+  async function collectFiles(fileJobs: Promise<FoundFile>[]): Promise<void> {
     for (const f of await Promise.all(fileJobs)) {
-      if (settled || timedOut || truncated) break;
-      if (files.length + detected.length >= limit) {
+      if (stopped()) break;
+      if (collected() >= limit) {
         truncated = true;
         break;
       }
       files.push(f);
     }
-    if (
-      opts.detectPackages &&
-      packageJson &&
-      fileJobs.length === 0 &&
-      !settled &&
-      !timedOut &&
-      !truncated &&
-      files.length + detected.length < limit
-    ) {
-      const found = await describeDetected(dir);
-      // Other concurrent directories may have filled the shared result cap while package.json
-      // was being inspected.
-      if (found && !settled && !timedOut) {
-        if (files.length + detected.length < limit) detected.push(found);
-        else truncated = true;
-      }
-    }
+  }
+
+  // A package root with no .devwebui of its own: nothing to add here, but its scripts
+  // could scaffold one. Does nothing unless detection is on and this dir was a bare package root.
+  async function detectPackageRoot(
+    dir: string,
+    sawPackageJson: boolean,
+    hadOwnFiles: boolean,
+  ): Promise<void> {
+    if (!opts.detectPackages || !sawPackageJson || hadOwnFiles) return;
+    if (stopped() || collected() >= limit) return;
+    const found = await describeDetected(dir);
+    // Other concurrent directories may have filled the shared result cap while package.json
+    // was being inspected.
+    if (!found || settled || timedOut) return;
+    if (collected() < limit) detected.push(found);
+    else truncated = true;
+  }
+
+  // Read one directory: collect its .devwebui files, return its descendable subdirs.
+  async function scanDir(dir: string, depth: number): Promise<{ dir: string; depth: number }[]> {
+    if (stopped()) return [];
+    scannedDirs++;
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
+    if (!entries || stopped()) return []; // unreadable (permissions, gone), or we just gave up
+    const { subdirs, fileJobs, packageJson } = partitionEntries(dir, depth, entries);
+    await collectFiles(fileJobs);
+    await detectPackageRoot(dir, packageJson, fileJobs.length > 0);
     return subdirs;
   }
 
@@ -358,7 +388,7 @@ async function runScan(opts: ScanOptions = {}): Promise<ScanResult> {
     const pump = () => {
       if (settled) return;
       if (Date.now() - start > budgetMs) timedOut = true;
-      else if (files.length + detected.length >= limit) truncated = true;
+      else if (collected() >= limit) truncated = true;
       if (timedOut || truncated) {
         settle();
         return;
