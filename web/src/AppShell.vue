@@ -220,7 +220,7 @@ onMounted(async () => {
 <template>
   <div
     class="safe-bottom flex min-h-dvh flex-col transition-[padding] duration-300 ease-in-out"
-    :style="{ paddingRight: panelShiftPx ? `${panelShiftPx}px` : undefined }"
+    :style="{ paddingInlineEnd: panelShiftPx ? `${panelShiftPx}px` : undefined }"
   >
     <TopBar
       :connected="connected"

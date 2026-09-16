@@ -86,7 +86,7 @@ const detectedFramework = computed(() => {
         <code class="truncate text-xs text-muted-foreground">
           <span v-if="p.cwd" class="opacity-70">{{ p.cwd }} › </span>{{ p.command }}
         </code>
-        <span v-if="p.port" class="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+        <span v-if="p.port" class="ms-auto shrink-0 text-xs tabular-nums text-muted-foreground">
           :{{ p.port }}
         </span>
       </li>

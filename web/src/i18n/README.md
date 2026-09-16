@@ -11,7 +11,7 @@ src/i18n/
 ├── index.ts            # the i18n instance + setLocale() helper
 ├── locales/
 │   ├── index.ts        # LOCALES registry (codes + translation status)
-│   ├── en.ts           # English — the base catalog (source of truth)
+│   ├── en.ts           # English - the base catalog (source of truth)
 │   └── <code>.ts       # one file per added language
 └── README.md           # this file
 ```
@@ -26,7 +26,7 @@ t("header.notificationsCount", { count }); // "Notifications (3)"
 ```
 
 For phrases that wrap markup (e.g. an emphasized number or a link), use the
-`<i18n-t>` component with named slots instead of splitting the sentence — this
+`<i18n-t>` component with named slots instead of splitting the sentence - this
 keeps word order translatable:
 
 ```vue
@@ -51,7 +51,7 @@ keeps word order translatable:
 
 Auto-translated files are committed as ordinary `<code>.ts` catalogs with their
 registry `status` set to `"machine-draft"`. That flag is the single switch the UI
-reads to decide whether to warn that copy is unverified — there's no separate
+reads to decide whether to warn that copy is unverified - there's no separate
 "draft" file format to maintain. A reviewer translates nothing by hand; they read,
 fix, and flip the status to `"reviewed"`.
 

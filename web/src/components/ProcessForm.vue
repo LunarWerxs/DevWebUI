@@ -345,7 +345,7 @@ async function remove() {
         <div class="border-t border-border pt-3.5">
           <button
             type="button"
-            class="flex w-full items-center gap-2 py-1.5 text-left text-sm font-medium text-muted-foreground outline-none transition hover:text-foreground focus-visible:text-foreground"
+            class="flex w-full items-center gap-2 py-1.5 text-start text-sm font-medium text-muted-foreground outline-none transition hover:text-foreground focus-visible:text-foreground"
             :aria-expanded="advancedOpen"
             @click="advancedOpen = !advancedOpen"
           >
@@ -489,7 +489,7 @@ async function remove() {
           >
             {{ t("processForm.delete") }}
           </Button>
-          <div class="ml-auto flex items-center gap-2">
+          <div class="ms-auto flex items-center gap-2">
             <Button type="button" variant="ghost" :disabled="saving" @click="open = false">
               {{ t("processForm.cancel") }}
             </Button>

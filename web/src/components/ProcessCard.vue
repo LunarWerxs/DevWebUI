@@ -327,7 +327,7 @@ function onStop() {
         <IconButton v-if="!compact" :tooltip="t('processCard.tooltipEdit')" variant="ghost" @click="emit('edit')">
           <Pencil class="size-4" />
         </IconButton>
-        <Button variant="outline" :size="d.btn" class="ml-auto" @click="emit('logs')">
+        <Button variant="outline" :size="d.btn" class="ms-auto" @click="emit('logs')">
           <ScrollText :class="d.svg" /> {{ t("processCard.logs") }}
         </Button>
         <!-- Overflow for actions that don't earn a permanent button. The card's other

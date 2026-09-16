@@ -142,7 +142,7 @@ function onStop(p: ProcessView) {
             <Button
               variant="ghost"
               size="sm"
-              class="-ml-1 h-auto gap-1 px-1 py-0.5 font-medium text-muted-foreground hover:text-foreground"
+              class="-ms-1 h-auto gap-1 px-1 py-0.5 font-medium text-muted-foreground hover:text-foreground"
               :class="sortKey === 'name' ? 'text-foreground' : ''"
               @click="store.toggleSort('name')"
             >
@@ -155,7 +155,7 @@ function onStop(p: ProcessView) {
             <Button
               variant="ghost"
               size="sm"
-              class="-ml-1 h-auto gap-1 px-1 py-0.5 font-medium text-muted-foreground hover:text-foreground"
+              class="-ms-1 h-auto gap-1 px-1 py-0.5 font-medium text-muted-foreground hover:text-foreground"
               :class="sortKey === 'status' ? 'text-foreground' : ''"
               @click="store.toggleSort('status')"
             >
@@ -211,7 +211,7 @@ function onStop(p: ProcessView) {
               <component :is="sortIcon('memory')" class="size-3" :class="sortKey === 'memory' ? '' : 'opacity-40'" />
             </Button>
           </TableHead>
-          <TableHead class="w-px text-right">{{ t("processTable.colActions") }}</TableHead>
+          <TableHead class="w-px text-end">{{ t("processTable.colActions") }}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -314,7 +314,7 @@ function onStop(p: ProcessView) {
           </TableCell>
 
           <!-- Port. On conflict: amber number + a warning icon that toasts/frees the holder. -->
-          <TableCell class="text-right tabular-nums">
+          <TableCell class="text-end tabular-nums">
             <span v-if="p.port == null" class="text-muted-foreground">—</span>
             <span v-else class="inline-flex items-center justify-end gap-1">
               <Hint v-if="p.conflict" :label="t('processTable.freePortAriaLabel', { port: p.port })">
@@ -331,11 +331,11 @@ function onStop(p: ProcessView) {
           </TableCell>
 
           <!-- Uptime / CPU / Mem -->
-          <TableCell class="text-right tabular-nums">
+          <TableCell class="text-end tabular-nums">
             {{ formatUptime(now, p.startedAt, p.status === "running") }}
           </TableCell>
-          <TableCell v-if="monitorResources" class="hidden text-right tabular-nums md:table-cell">{{ p.cpu != null ? `${p.cpu}%` : "—" }}</TableCell>
-          <TableCell v-if="monitorResources" class="hidden text-right tabular-nums md:table-cell">{{ formatBytes(p.memory) }}</TableCell>
+          <TableCell v-if="monitorResources" class="hidden text-end tabular-nums md:table-cell">{{ p.cpu != null ? `${p.cpu}%` : "—" }}</TableCell>
+          <TableCell v-if="monitorResources" class="hidden text-end tabular-nums md:table-cell">{{ formatBytes(p.memory) }}</TableCell>
 
           <!-- Actions. Star + enable/disable live in the ⋮ menu so the row stays narrow (no
                horizontal scroll); the enabled state still reads at a glance from the row's opacity,

@@ -279,7 +279,7 @@ function notifTitle(n: AppNotification) {
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
               <span class="truncate text-sm font-medium">{{ notifTitle(n) }}</span>
-              <span class="ml-auto shrink-0 text-xs text-muted-foreground">{{ formatAgoCoarse(now, n.ts) }}</span>
+              <span class="ms-auto shrink-0 text-xs text-muted-foreground">{{ formatAgoCoarse(now, n.ts) }}</span>
               <IconButton :tooltip="t('notifications.dismiss')" @click="store.dismissNotification(n.id)">
                 <X class="size-3.5" />
               </IconButton>
@@ -355,7 +355,7 @@ function notifTitle(n: AppNotification) {
           <div class="flex items-center gap-2 px-0.5">
             <span class="shrink-0 text-sm font-medium text-foreground">{{ g.processName }}</span>
             <span class="min-w-0 truncate text-xs text-muted-foreground">· {{ g.projectName }}</span>
-            <Badge variant="destructive" class="ml-auto shrink-0">{{ g.items.length }}</Badge>
+            <Badge variant="destructive" class="ms-auto shrink-0">{{ g.items.length }}</Badge>
           </div>
           <div
             v-for="e in g.items"
@@ -364,7 +364,7 @@ function notifTitle(n: AppNotification) {
           >
             <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <Badge variant="outline" class="capitalize" :class="sourcePill(e.source)">{{ e.source }}</Badge>
-              <span class="ml-auto flex items-center gap-2">
+              <span class="ms-auto flex items-center gap-2">
                 <span class="rounded bg-muted px-1.5 py-0.5 font-semibold tabular-nums text-foreground">
                   ×{{ e.count }}
                 </span>

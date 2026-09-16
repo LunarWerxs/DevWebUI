@@ -49,7 +49,7 @@ const total = computed(() => props.result.files.length + detected.value.length);
       <li v-for="f in result.files" :key="f.path" class="min-w-0">
         <Button
           variant="ghost"
-          class="h-auto w-full min-w-0 justify-start gap-2 rounded-lg px-2 py-1.5 text-left font-normal focus-visible:ring-inset"
+          class="h-auto w-full min-w-0 justify-start gap-2 rounded-lg px-2 py-1.5 text-start font-normal focus-visible:ring-inset"
           :disabled="busy"
           @click="emit('select', f.path)"
         >
@@ -69,7 +69,7 @@ const total = computed(() => props.result.files.length + detected.value.length);
       >
         <Button
           variant="ghost"
-          class="h-auto min-w-0 flex-1 justify-start gap-2 rounded-lg px-2 py-1.5 text-left font-normal focus-visible:ring-inset"
+          class="h-auto min-w-0 flex-1 justify-start gap-2 rounded-lg px-2 py-1.5 text-start font-normal focus-visible:ring-inset"
           :class="isIgnored(p.path) ? 'opacity-45' : ''"
           :disabled="busy"
           @click="emit('select', p.path)"

@@ -219,7 +219,7 @@ async function save() {
       <span class="text-xs font-semibold">{{ t("settings.title") }}</span>
       <button
         type="button"
-        class="ml-auto grid size-7 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        class="ms-auto grid size-7 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         :aria-label="t('settings.theme')"
         :title="tooltipsEnabled ? t('settings.theme') : undefined"
         @click="theme = theme === 'dark' ? 'light' : 'dark'"

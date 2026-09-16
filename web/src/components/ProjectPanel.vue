@@ -218,7 +218,7 @@ async function checkAutostart() {
   >
     <div class="flex items-center gap-2 px-2.5 py-3 sm:px-4">
       <CollapsibleTrigger
-        class="group -mx-1 flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-0.5 text-left outline-none transition hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring active:opacity-60"
+        class="group -mx-1 flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-0.5 text-start outline-none transition hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring active:opacity-60"
         :aria-label="t('projectPanel.triggerAriaLabel', { name: project.name, running, total, action: open ? t('projectPanel.collapse') : t('projectPanel.expand') })"
       >
         <ChevronDown
@@ -245,7 +245,7 @@ async function checkAutostart() {
       <div v-auto-animate class="flex shrink-0 items-center gap-1">
         <Switch
           :model-value="project.enabled"
-          class="mr-1"
+          class="me-1"
           :aria-label="project.enabled ? t('projectPanel.disableStack', { name: project.name }) : t('projectPanel.enableStack', { name: project.name })"
           :title="tooltipsEnabled ? (project.enabled ? t('projectPanel.stackOnTitle') : t('projectPanel.stackOffTitle')) : undefined"
           @update:model-value="onToggleStack"

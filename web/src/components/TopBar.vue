@@ -185,8 +185,8 @@ async function updateApp() {
         <Input
           v-model="searchQuery"
           type="search"
-          class="h-8 pl-7"
-          :class="searchQuery ? 'pr-7' : 'pr-2'"
+          class="h-8 ps-7"
+          :class="searchQuery ? 'pe-7' : 'pe-2'"
           :placeholder="t('header.searchPlaceholder')"
           :aria-label="t('header.searchAriaLabel')"
         />
@@ -201,7 +201,7 @@ async function updateApp() {
         </button>
       </div>
 
-      <div class="ml-auto flex items-center gap-2">
+      <div class="ms-auto flex items-center gap-2">
         <Button
           size="sm"
           class="group/add h-8 gap-0 overflow-hidden transition-all"
@@ -211,7 +211,7 @@ async function updateApp() {
         >
           <FolderPlus class="size-4 shrink-0" />
           <span
-            class="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-200 ease-out group-hover/add:ml-1.5 group-hover/add:max-w-[7rem] group-hover/add:opacity-100 group-focus-visible/add:ml-1.5 group-focus-visible/add:max-w-[7rem] group-focus-visible/add:opacity-100"
+            class="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-200 ease-out group-hover/add:ms-1.5 group-hover/add:max-w-[7rem] group-hover/add:opacity-100 group-focus-visible/add:ms-1.5 group-focus-visible/add:max-w-[7rem] group-focus-visible/add:opacity-100"
           >{{ t("header.addProject") }}</span>
         </Button>
 

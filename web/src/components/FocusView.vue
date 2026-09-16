@@ -139,7 +139,7 @@ onMounted(async () => {
       <Button
         variant="ghost"
         size="icon-xs"
-        class="ml-auto"
+        class="ms-auto"
         :disabled="opening"
         :title="tooltipsEnabled ? t('focus.openDashboard') : undefined"
         :aria-label="t('focus.openDashboard')"
