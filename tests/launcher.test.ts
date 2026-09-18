@@ -174,7 +174,10 @@ test("DevWebUI-Tray.ps1 is a thin adapter that dot-sources the shared engine and
     /\[switch\]\$SelfTest/.test(tray),
     "DevWebUI-Tray.ps1 is missing the [switch]$SelfTest param",
   );
-  assert(/\[int\]\$Port\s*=\s*4000/.test(tray), "DevWebUI-Tray.ps1's default port drifted from 4000");
+  assert(
+    /\[int\]\$Port\s*=\s*4000/.test(tray),
+    "DevWebUI-Tray.ps1's default port drifted from 4000",
+  );
 });
 
 test("Create-Shortcut.ps1 is a thin adapter: it dot-sources New-TrayShortcut.ps1 rather than reimplementing it", () => {
@@ -455,7 +458,10 @@ test("adapter: single-instance mutex name is the exact literal DevWebUITrayHost"
 test("adapter: declares its icon, display name, self-test marker, and menu label", () => {
   const tray = read(join(MISC, "DevWebUI-Tray.ps1"));
   assert(/IconFile\s*=\s*"DevWebUI\.ico"/.test(tray), "DevWebUI-Tray.ps1 doesn't declare IconFile");
-  assert(/DisplayName\s*=\s*"DevWebUI"/.test(tray), "DevWebUI-Tray.ps1 doesn't declare DisplayName");
+  assert(
+    /DisplayName\s*=\s*"DevWebUI"/.test(tray),
+    "DevWebUI-Tray.ps1 doesn't declare DisplayName",
+  );
   assert(
     /SelfTestMarker\s*=\s*"DEVWEBUI_TRAY_SELFTEST"/.test(tray),
     "DevWebUI-Tray.ps1 doesn't declare the DEVWEBUI_TRAY_SELFTEST marker",
@@ -576,7 +582,10 @@ test.skipIf(!isWin)(
     assert(gen.exitCode === 0, `Create-Shortcut.ps1 failed:\n${gen.stderr?.toString()?.trim()}`);
 
     const lnk = join(ROOT, "DevWebUI.lnk");
-    assert(existsSync(lnk), "no DevWebUI.lnk in the project root after running Create-Shortcut.ps1");
+    assert(
+      existsSync(lnk),
+      "no DevWebUI.lnk in the project root after running Create-Shortcut.ps1",
+    );
 
     const resolve = [
       `$ws = New-Object -ComObject WScript.Shell;`,
