@@ -363,9 +363,12 @@ test("a project loaded AFTER start() is picked up and watched", async () => {
         ],
       }),
     );
-    await settle();
-    const second = h.manager.listProjects().find((p) => p.name === "Second");
-    expect(second?.processes.map((x) => x.localId)).toEqual(["s1", "s2"]);
+    // Wait for the reload rather than a fixed settle: this watcher's directory watch was
+    // created a moment before the write, and macOS delivers that first event late enough
+    // that 700ms went red on CI once (2026-09-18) and green on the rerun.
+    const second = () => h.manager.listProjects().find((p) => p.name === "Second");
+    await waitFor(() => second()?.processes.length === 2);
+    expect(second()?.processes.map((x) => x.localId)).toEqual(["s1", "s2"]);
   } finally {
     h.dispose();
   }
