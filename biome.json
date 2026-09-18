@@ -17,6 +17,7 @@
       "!web/src/lib/i18n-core.ts",
       "!web/src/lib/relativeTime.ts",
       "!web/src/lib/useSelfUpdate.ts",
+      "!web/src/lib/ime-composition-guard.ts",
       "!server/src/*.mjs",
       "!server/src/*.d.mts",
       "!server/tests/server-lib"

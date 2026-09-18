@@ -26,36 +26,36 @@
  * composition keystrokes opts out with `data-ime-passthrough` on itself or an ancestor.
  */
 
-export const IME_PASSTHROUGH_SELECTOR = ".ProseMirror, [data-ime-passthrough]";
+export const IME_PASSTHROUGH_SELECTOR = '.ProseMirror, [data-ime-passthrough]'
 
 export interface ImeCompositionGuardOptions {
   /** Elements (or ancestors) whose composition keystrokes must keep flowing to their own handlers. */
-  passthroughSelector?: string;
+  passthroughSelector?: string
   /** The document to guard; defaults to the global one. */
-  target?: Document;
+  target?: Document
 }
 
-const INSTALLED_KEY = "__lunarwerxImeCompositionGuard";
+const INSTALLED_KEY = '__lunarwerxImeCompositionGuard'
 
-type GuardedDocument = Document & { [INSTALLED_KEY]?: () => void };
+type GuardedDocument = Document & { [INSTALLED_KEY]?: () => void }
 
 /** The legacy `keyCode`, read without naming the deprecated property on the typed event. */
 function legacyKeyCode(event: KeyboardEvent): number | undefined {
-  return (event as { keyCode?: number }).keyCode;
+  return (event as { keyCode?: number }).keyCode
 }
 
 /** True when this keydown belongs to an input-method composition rather than to the application. */
 export function isImeCompositionKey(event: KeyboardEvent): boolean {
-  return event.isComposing === true || legacyKeyCode(event) === 229;
+  return event.isComposing === true || legacyKeyCode(event) === 229
 }
 
 /** The physical key when the browser reports it, else the logical one - stable across a keydown/keyup pair. */
 function keystrokeId(event: KeyboardEvent): string {
-  return event.code || event.key;
+  return event.code || event.key
 }
 
 function isPassthroughTarget(target: EventTarget | null, selector: string): boolean {
-  return target instanceof Element && target.closest(selector) !== null;
+  return target instanceof Element && target.closest(selector) !== null
 }
 
 /**
@@ -63,40 +63,40 @@ function isPassthroughTarget(target: EventTarget | null, selector: string): bool
  * uninstaller instead of stacking listeners. A no-op (returning a no-op) outside a browser.
  */
 export function installImeCompositionGuard(options: ImeCompositionGuardOptions = {}): () => void {
-  if (!options.target && typeof document === "undefined") return () => undefined;
-  const target = (options.target ?? document) as GuardedDocument;
-  const existing = target[INSTALLED_KEY];
-  if (existing) return existing;
+  if (!options.target && typeof document === 'undefined') return () => undefined
+  const target = (options.target ?? document) as GuardedDocument
+  const existing = target[INSTALLED_KEY]
+  if (existing) return existing
 
-  const passthrough = options.passthroughSelector ?? IME_PASSTHROUGH_SELECTOR;
-  const swallowedKeystrokes = new Set<string>();
+  const passthrough = options.passthroughSelector ?? IME_PASSTHROUGH_SELECTOR
+  const swallowedKeystrokes = new Set<string>()
 
   const onKeydown = (event: KeyboardEvent) => {
-    const id = keystrokeId(event);
+    const id = keystrokeId(event)
     if (!isImeCompositionKey(event)) {
-      swallowedKeystrokes.delete(id);
-      return;
+      swallowedKeystrokes.delete(id)
+      return
     }
-    if (isPassthroughTarget(event.target, passthrough)) return;
-    swallowedKeystrokes.add(id);
-    event.stopImmediatePropagation();
-  };
+    if (isPassthroughTarget(event.target, passthrough)) return
+    swallowedKeystrokes.add(id)
+    event.stopImmediatePropagation()
+  }
 
   const onKeyup = (event: KeyboardEvent) => {
-    if (!swallowedKeystrokes.delete(keystrokeId(event))) return;
-    if (isPassthroughTarget(event.target, passthrough)) return;
-    event.stopImmediatePropagation();
-  };
+    if (!swallowedKeystrokes.delete(keystrokeId(event))) return
+    if (isPassthroughTarget(event.target, passthrough)) return
+    event.stopImmediatePropagation()
+  }
 
-  target.addEventListener("keydown", onKeydown, true);
-  target.addEventListener("keyup", onKeyup, true);
+  target.addEventListener('keydown', onKeydown, true)
+  target.addEventListener('keyup', onKeyup, true)
 
   const uninstall = () => {
-    target.removeEventListener("keydown", onKeydown, true);
-    target.removeEventListener("keyup", onKeyup, true);
-    swallowedKeystrokes.clear();
-    delete target[INSTALLED_KEY];
-  };
-  target[INSTALLED_KEY] = uninstall;
-  return uninstall;
+    target.removeEventListener('keydown', onKeydown, true)
+    target.removeEventListener('keyup', onKeyup, true)
+    swallowedKeystrokes.clear()
+    delete target[INSTALLED_KEY]
+  }
+  target[INSTALLED_KEY] = uninstall
+  return uninstall
 }
