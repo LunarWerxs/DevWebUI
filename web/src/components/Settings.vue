@@ -22,7 +22,7 @@ import {
   Sun,
   Unplug,
 } from "@lucide/vue";
-import SettingsPanel from "@/shell/SettingsPanel.vue";
+import Sidebar from "@/shell/Sidebar.vue";
 import SettingsTabs from "@/shell/SettingsTabs.vue";
 import SettingsGroup from "@/shell/SettingsGroup.vue";
 import SettingsRow from "@/shell/SettingsRow.vue";
@@ -206,7 +206,7 @@ async function save() {
 </script>
 
 <template>
-  <SettingsPanel
+  <Sidebar
     :open="open"
     :side="props.side"
     :right-offset-px="props.rightOffsetPx"
@@ -380,5 +380,5 @@ async function save() {
         <Button :disabled="saving" @click="save">{{ t("settings.save") }}</Button>
       </div>
     </template>
-  </SettingsPanel>
+  </Sidebar>
 </template>
