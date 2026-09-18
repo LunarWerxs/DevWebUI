@@ -10,6 +10,7 @@ import { daemonUrl } from "./constants";
 import { readInstanceInfo } from "./instance";
 import { ROUTES } from "../../shared/routes";
 import { runMcpStdio } from "./mcp-stdio.mjs";
+import pkg from "../../package.json";
 import type { McpEngineTool } from "./mcp-stdio.mjs";
 
 // Resolve the base URL per call: an explicit DEVWEBUI_URL/DEVWEBUI_PORT always wins, else follow
@@ -543,4 +544,6 @@ const TOOLS: McpEngineTool[] = [
   },
 ];
 
-await runMcpStdio({ serverInfo: { name: "devwebui", version: "0.1.0" }, tools: TOOLS });
+// The app's own version (the one index.ts reports), not a literal that drifts: this said
+// "0.1.0" through 0.8.8.
+await runMcpStdio({ serverInfo: { name: "devwebui", version: pkg.version }, tools: TOOLS });

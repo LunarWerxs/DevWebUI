@@ -35,7 +35,7 @@ edit the dossier, not this block. Everything ABOVE the marker is yours.
 - **Ships as:** tray app (Windows) + self-hosted web app (daemon + browser GUI, any OS) - prebuilt .exe/tray zip from GitHub Releases, or `bun install && bun run dev` from source; also ships a `devwebui` CLI and a stdio MCP server (server/src/cli.ts, server/src/mcp.ts)
 - **Written in:** TypeScript (183 files), Vue (113 files), JavaScript (15 files), PowerShell (7 files)
 - **Built with:** Hono, Tailwind, TypeScript, Vite, Vitest, Vue
-- **Package:** `devwebui` 0.8.8
+- **Package:** `devwebui` 1.0.0
 - **Entry points:** `bin`, `scripts`, `workspaces`
 - **Tests:** 54 test file(s)
 - **CI:** `ci.yml`, `release.yml`

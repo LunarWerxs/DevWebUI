@@ -4,6 +4,12 @@ All notable changes to DevWebUI are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project aims to
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **The version line moves to 1.x.** The package now declares 1.0.0 (was 0.8.8), so the next release is 1.0.0 rather than another 0.x (owner directive, 2026-09-18: no public project stays on a zero major).
+
 ## [0.8.8] - 2026-09-12
 
 ### Fixed
