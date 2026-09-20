@@ -34,6 +34,40 @@ async function waitFor(fn: () => boolean, timeoutMs = 5000, stepMs = 25): Promis
   }
 }
 
+/**
+ * Wait until the watcher has actually reached the state under test, then let the
+ * caller's own `expect` produce the diff.
+ *
+ * A fixed `settle()` is the RIGHT tool for asserting a NON-event ("nothing was
+ * torn down", "no emission") - you cannot wait for something that must not
+ * happen. It is the wrong tool for asserting a CHANGE, because it races the OS
+ * rather than the debounce: macOS coalesces directory events under
+ * /var/folders and a loaded runner delivers one well past 700 ms. That is
+ * exactly how "a plain in-place edit reloads" went red on macos-latest and
+ * nowhere else, three runs running, on 2026-09-20 - and it read as a product
+ * regression every time.
+ *
+ * Waiting for the condition is bounded at 5 s but normally returns in tens of
+ * milliseconds, so this is FASTER than the sleep it replaces as well as being
+ * deterministic. The timeout is swallowed on purpose: the caller's `expect` is
+ * what should report, with its readable diff, not "waitFor timed out".
+ */
+async function reloaded(predicate: () => boolean): Promise<void> {
+  try {
+    await waitFor(predicate);
+  } catch {
+    /* fall through to the caller's expect */
+  }
+}
+
+/** `h.processIds()` equals `expected`, in order - the predicate most cases want. */
+const idsAre =
+  (h: { processIds: () => string[] }, expected: string[]) =>
+  (): boolean => {
+    const got = h.processIds();
+    return got.length === expected.length && got.every((id, i) => id === expected[i]);
+  };
+
 const quote = (s: string): string => `"${s.replace(/"/g, '\\"')}"`;
 /** A process that stays up until we stop it — so "still running" is a real observation. */
 const keepAliveCommand = () =>
@@ -87,7 +121,7 @@ test("a plain in-place edit reloads: added processes appear without a restart", 
   try {
     expect(h.processIds()).toEqual(["web"]);
     writeFileSync(h.file, projectJson(["web", "api", "worker"]));
-    await settle();
+    await reloaded(idsAre(h, ["web", "api", "worker"]));
     expect(h.processIds()).toEqual(["web", "api", "worker"]);
   } finally {
     h.dispose();
@@ -102,7 +136,7 @@ test("an ATOMIC save (write temp + rename) reloads — the case a file-level wat
     const tmp = path.join(h.dir, ".devwebui.tmp");
     writeFileSync(tmp, projectJson(["web", "api"]));
     renameSync(tmp, h.file); // atomic replace
-    await settle();
+    await reloaded(idsAre(h, ["web", "api"]));
     expect(h.processIds()).toEqual(["web", "api"]);
   } finally {
     h.dispose();
@@ -119,7 +153,7 @@ test("two atomic saves in a row both land (the watcher does not go deaf after th
       const tmp = path.join(h.dir, ".devwebui.tmp");
       writeFileSync(tmp, projectJson(ids));
       renameSync(tmp, h.file);
-      await settle();
+      await reloaded(idsAre(h, ids));
     }
     expect(h.processIds()).toEqual(["web", "api", "worker"]);
   } finally {
@@ -131,7 +165,7 @@ test("removing a process from the file removes it from the project", async () =>
   const h = harness(["web", "api"]);
   try {
     writeFileSync(h.file, projectJson(["web"]));
-    await settle();
+    await reloaded(idsAre(h, ["web"]));
     expect(h.processIds()).toEqual(["web"]);
   } finally {
     h.dispose();
@@ -142,7 +176,7 @@ test("a project-level rename reloads", async () => {
   const h = harness(["web"]);
   try {
     writeFileSync(h.file, projectJson(["web"], "Renamed"));
-    await settle();
+    await reloaded(() => h.manager.listProjects()[0]?.name === "Renamed");
     expect(h.manager.listProjects()[0]?.name).toBe("Renamed");
   } finally {
     h.dispose();
@@ -168,7 +202,7 @@ test("a good write AFTER a bad one still reloads (the retry is not wedged)", asy
     await settle();
     expect(h.processIds()).toEqual(["web"]); // unchanged, as above
     writeFileSync(h.file, projectJson(["web", "api"]));
-    await settle();
+    await reloaded(idsAre(h, ["web", "api"]));
     expect(h.processIds()).toEqual(["web", "api"]);
   } finally {
     h.dispose();
@@ -183,7 +217,7 @@ test("a transiently MISSING file does not drop the project (the atomic-rename wi
     expect(h.processIds()).toEqual(["web", "api"]);
     // …and when it comes back, the edit lands.
     writeFileSync(h.file, projectJson(["web", "api", "worker"]));
-    await settle();
+    await reloaded(idsAre(h, ["web", "api", "worker"]));
     expect(h.processIds()).toEqual(["web", "api", "worker"]);
   } finally {
     h.dispose();
@@ -227,7 +261,7 @@ test("adding a process to the file leaves a RUNNING sibling untouched (same pid)
 
     // Add a sibling — exactly the ".devwebui gained new servers" edit.
     writeFileSync(file, projectJson(["web", "api"], "Live", keepAliveCommand()));
-    await settle();
+    await reloaded(() => !!viewOf("api"));
 
     expect(viewOf("api")).toBeDefined();
     expect(viewOf("web")?.status).toBe("running");
