@@ -370,14 +370,12 @@ function recordEngineStatus(status: SettingsSyncStatus): void {
 async function syncEngine(): Promise<SettingsSync> {
   if (settingsSync) return settingsSync;
   let createSettingsSync: typeof import("@cnct/connect").createSettingsSync;
-;
   try {
     ({ createSettingsSync } = await import("@cnct/connect"));
   } catch (e) {
     throw new SdkUnavailableError("@cnct/connect", e);
   }
   const client = await connect();
-;
   settingsSync = createSettingsSync(client.locker(), {
     // Existing users already have { prefs, appearance }; both stay top-level.
     keys: ["prefs", "appearance"],
