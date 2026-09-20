@@ -61,12 +61,10 @@ async function reloaded(predicate: () => boolean): Promise<void> {
 }
 
 /** `h.processIds()` equals `expected`, in order - the predicate most cases want. */
-const idsAre =
-  (h: { processIds: () => string[] }, expected: string[]) =>
-  (): boolean => {
-    const got = h.processIds();
-    return got.length === expected.length && got.every((id, i) => id === expected[i]);
-  };
+const idsAre = (h: { processIds: () => string[] }, expected: string[]) => (): boolean => {
+  const got = h.processIds();
+  return got.length === expected.length && got.every((id, i) => id === expected[i]);
+};
 
 const quote = (s: string): string => `"${s.replace(/"/g, '\\"')}"`;
 /** A process that stays up until we stop it — so "still running" is a real observation. */
