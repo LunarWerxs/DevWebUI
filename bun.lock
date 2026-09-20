@@ -12,7 +12,7 @@
         "typescript": "^6.0.3",
       },
       "optionalDependencies": {
-        "@cnct/connect": "^1.5.1",
+        "@cnct/connect": "^1.5.2",
       },
     },
     "server": {
@@ -37,7 +37,7 @@
       "name": "@devwebui/web",
       "version": "1.0.0",
       "dependencies": {
-        "@cnct/connect": "^1.5.1",
+        "@cnct/connect": "^1.5.2",
         "@fontsource-variable/inter": "^5.3.0",
         "@formkit/auto-animate": "^0.10.0",
         "@lucide/vue": "^1.46.0",
@@ -99,7 +99,7 @@
 
     "@bramus/specificity": ["@bramus/specificity@2.4.2", "", { "dependencies": { "css-tree": "^3.0.0" }, "bin": { "specificity": "bin/cli.js" } }, "sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw=="],
 
-    "@cnct/connect": ["@cnct/connect@1.5.1", "", { "peerDependencies": { "react": ">=17", "vue": ">=3" }, "optionalPeers": ["react", "vue"], "bin": { "cnct-connect": "dist/cli.js", "connect": "dist/cli.js" } }, "sha512-6j4in+T0MjCt2xaNrHgMXOiRATKoSj7N8cItdGHQNJz8xuXO/c4uwihFEUn7nj0EZc6RgjFbXfHJMDHCYnkYhA=="],
+    "@cnct/connect": ["@cnct/connect@1.5.2", "", { "peerDependencies": { "react": ">=17", "vue": ">=3" }, "optionalPeers": ["react", "vue"], "bin": { "connect": "dist/cli.js", "cnct-connect": "dist/cli.js" } }, "sha512-RT0iZRZEqF/BAR64gZCXa33P9qt3bwU43H5bht3ol9zigobpWjeXI0w5yd47idH437yjtkjYngDGo95FPO890Q=="],
 
     "@csstools/color-helpers": ["@csstools/color-helpers@6.1.0", "", {}, "sha512-064IFJdjTfUqnjpCVpMOdbr8FLQBhinbZj6yRv2An2E41O/pLEXqfFRWqGq/SxlE5PEUYTlvWsG2r8MswAVvkg=="],
 
