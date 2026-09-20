@@ -50,12 +50,12 @@ import {
 } from "../server/src/connections";
 import { readSettings, writeSettings } from "../server/src/runtime";
 
-const ISSUER = "https://accounts.connections.icu";
+const ISSUER = "https://accounts.connectionsapi.com";
 const CLIENT_ID = "622a12e32d0b39c68f56c63316f351e5";
 const TOKEN_ENDPOINT = `${ISSUER}/oauth/token`;
 const USERINFO_ENDPOINT = `${ISSUER}/oauth/userinfo`;
 const REVOKE_ENDPOINT = `${ISSUER}/oauth/revoke`;
-const STORE_BASE = "https://studio.connections.icu";
+const STORE_BASE = "https://studio.connectionsapi.com";
 const DOC_URL = `${STORE_BASE}/v1/app-data/${encodeURIComponent(CLIENT_ID)}`;
 const ORIGIN = "http://127.0.0.1:5178";
 

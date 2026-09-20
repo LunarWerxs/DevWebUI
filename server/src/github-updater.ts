@@ -21,7 +21,7 @@ const RELEASES_PAGE = `https://github.com/${REPO}/releases`;
 // Studio's install-ping endpoint returns the SAME GitHub releases/latest JSON verbatim (it's a
 // passthrough proxy), so hitting it here doubles as both the update check AND the one anonymous
 // "an install exists" signal — no separate network call for the ping. See latestRelease() below.
-const LATEST_API = "https://studio.connections.icu/v1/app/devwebui/latest";
+const LATEST_API = "https://studio.connectionsapi.com/v1/app/devwebui/latest";
 /**
  * Resilience fallback, used only when the Studio proxy above fails (see latestRelease).
  * GitHub's own releases/latest is the right backstop precisely because it is the one URL here

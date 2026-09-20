@@ -4,7 +4,7 @@
 // DevWebUI is a single-user local daemon, so the daemon IS the BFF: it runs the
 // OIDC login (Authorization Code + PKCE, public client — no secret), holds the
 // owner's refresh token server-side, mints access tokens, and calls the Connections
-// settings-sync store (studio.connections.icu/v1/app-data/{clientId}). The browser
+// settings-sync store (studio.connectionsapi.com/v1/app-data/{clientId}). The browser
 // never holds a token.
 //
 // Since 2026-07-08 the OAuth/refresh/identity machinery is the OFFICIAL SDK — @cnct/connect
@@ -46,9 +46,21 @@ import { seal, sealingActive, unseal, wrapTokenStore } from "./dpapi-seal.mjs";
 /** DevWebUI's own public "Sign in with Connections" OAuth client (PKCE — no secret). Its client_id
  *  doubles as the settings-sync store `appId`, so DevWebUI's synced data is namespaced to itself. */
 const OAUTH = {
-  issuer: "https://accounts.connections.icu",
+  issuer: "https://accounts.connectionsapi.com",
   clientId: "622a12e32d0b39c68f56c63316f351e5",
   scopes: ["openid", "profile", "email", "photo"],
+  /**
+   * Where the locker lives, passed explicitly rather than left to the SDK.
+   *
+   * `@cnct/connect@1.5.1` hardcodes `https://studio.connections.icu` as its
+   * locker default, and that zone was suspended by its registry on 2026-09-18
+   * (NXDOMAIN, whole zone). 1.5.1 is still the newest version on npm, so there
+   * is no SDK release to upgrade to: every consumer has to name the host
+   * itself until one ships. Setting `issuer` above is not enough - the issuer
+   * covers sign-in, the locker is a separate base URL, which is how settings
+   * sync kept failing with sign-in apparently fine.
+   */
+  storeBaseUrl: "https://studio.connectionsapi.com",
 };
 
 /**
@@ -370,13 +382,17 @@ function recordEngineStatus(status: SettingsSyncStatus): void {
 async function syncEngine(): Promise<SettingsSync> {
   if (settingsSync) return settingsSync;
   let createSettingsSync: typeof import("@cnct/connect").createSettingsSync;
+  let createLocker: typeof import("@cnct/connect").createLocker;
   try {
-    ({ createSettingsSync } = await import("@cnct/connect"));
+    ({ createSettingsSync, createLocker } = await import("@cnct/connect"));
   } catch (e) {
     throw new SdkUnavailableError("@cnct/connect", e);
   }
   const client = await connect();
-  settingsSync = createSettingsSync(client.locker(), {
+  // The locker's base URL is named here rather than left to the SDK - see
+  // OAUTH.storeBaseUrl for why that default cannot be trusted.
+  const locker = client.locker((o) => createLocker({ ...o, baseUrl: OAUTH.storeBaseUrl }));
+  settingsSync = createSettingsSync(locker, {
     // Existing users already have { prefs, appearance }; both stay top-level.
     keys: ["prefs", "appearance"],
     read: () => ({

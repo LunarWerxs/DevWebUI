@@ -170,7 +170,7 @@ test("a failing Studio proxy falls back to GitHub instead of stranding the insta
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input instanceof Request ? input.url : input);
     seen.push(url);
-    if (url.includes("studio.connections.icu")) return new Response("gone", { status: 503 });
+    if (url.includes("studio.connectionsapi.com")) return new Response("gone", { status: 503 });
     return new Response(JSON.stringify({ tag_name: "v999.0.0", assets: [] }), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -178,7 +178,7 @@ test("a failing Studio proxy falls back to GitHub instead of stranding the insta
   }) as unknown as typeof fetch;
   try {
     const status = await checkForUpdate({ fresh: true });
-    expect(seen.some((u) => u.includes("studio.connections.icu"))).toBe(true);
+    expect(seen.some((u) => u.includes("studio.connectionsapi.com"))).toBe(true);
     expect(seen.some((u) => u.includes("api.github.com"))).toBe(true);
     expect(status.updateAvailable).toBe(true);
   } finally {
