@@ -101,9 +101,41 @@ export interface AutoUpdateRunResult {
  * working tree is never touched. On a successful apply that needs a restart, it fires the injected
  * relaunch. Exported + returns a result so the timer AND the test can drive it identically.
  */
+type UpdateCheck = Awaited<ReturnType<AutoUpdateHooks["check"]>>;
+
+/** Tell the web UI an update is waiting, so its banner can offer it. Announces the check's own
+ *  `canApply` either way — when it is false the banner shows `reason` (usually a dirty tree). */
+function announceUpdate(status: UpdateCheck): void {
+  broadcast("update_available", {
+    from: status.currentCommit,
+    to: status.remoteCommit,
+    canApply: status.canApply,
+    reason: status.reason ?? null,
+  });
+}
+
+/** Install the pending update, self-relaunching if the new code calls for it. */
+async function applyAndRelaunch(status: UpdateCheck): Promise<AutoUpdateRunResult> {
+  applying = true;
+  try {
+    broadcast("auto_update_applying", { from: status.currentCommit, to: status.remoteCommit });
+    const res = await hooks.apply();
+    if (!res.ok)
+      return { checked: true, applied: false, relaunched: false, reason: "apply-failed" };
+    if (!res.restartRequired) return { checked: true, applied: true, relaunched: false };
+    broadcast("auto_update_restarting", { message: res.message });
+    hooks.relaunch();
+    return { checked: true, applied: true, relaunched: true };
+  } catch {
+    return { checked: true, applied: false, relaunched: false, reason: "apply-threw" };
+  } finally {
+    applying = false;
+  }
+}
+
 export async function runAutoUpdateOnce(): Promise<AutoUpdateRunResult> {
   if (applying) return { checked: false, applied: false, relaunched: false, reason: "busy" };
-  let status: Awaited<ReturnType<typeof checkForUpdate>>;
+  let status: UpdateCheck;
   try {
     status = await hooks.check();
   } catch {
@@ -120,34 +152,19 @@ export async function runAutoUpdateOnce(): Promise<AutoUpdateRunResult> {
     return { checked: true, applied: false, relaunched: false, reason: "up-to-date" };
 
   // An update exists. Unless the owner opted into silent installs, this is where it stops: say so
-  // and let them choose (the web UI's banner). Announced even when `canApply` is false (dirty
-  // tree) — "an update is waiting, commit your work to take it" is exactly the useful thing to
-  // know at that moment, and the banner shows the reason.
+  // and let them choose (the web UI's banner).
   if (!enabled) {
-    if (notifyEnabled) {
-      broadcast("update_available", {
-        from: status.currentCommit,
-        to: status.remoteCommit,
-        canApply: status.canApply,
-        reason: status.reason ?? null,
-      });
-      return { checked: true, applied: false, relaunched: false, reason: "notified" };
-    }
-    return { checked: true, applied: false, relaunched: false, reason: "notify-off" };
+    if (!notifyEnabled)
+      return { checked: true, applied: false, relaunched: false, reason: "notify-off" };
+    announceUpdate(status);
+    return { checked: true, applied: false, relaunched: false, reason: "notified" };
   }
 
   // Hard gate: canApply is false on a dirty tree / detached HEAD / no update remote — never update then.
   if (!status.canApply) {
     // Still worth announcing: an update is waiting and something (usually a dirty tree) is in
     // the way, which is a thing the owner can resolve.
-    if (notifyEnabled) {
-      broadcast("update_available", {
-        from: status.currentCommit,
-        to: status.remoteCommit,
-        canApply: false,
-        reason: status.reason ?? null,
-      });
-    }
+    if (notifyEnabled) announceUpdate(status);
     return {
       checked: true,
       applied: false,
@@ -156,23 +173,7 @@ export async function runAutoUpdateOnce(): Promise<AutoUpdateRunResult> {
     };
   }
 
-  applying = true;
-  try {
-    broadcast("auto_update_applying", { from: status.currentCommit, to: status.remoteCommit });
-    const res = await hooks.apply();
-    if (!res.ok)
-      return { checked: true, applied: false, relaunched: false, reason: "apply-failed" };
-    if (res.restartRequired) {
-      broadcast("auto_update_restarting", { message: res.message });
-      hooks.relaunch();
-      return { checked: true, applied: true, relaunched: true };
-    }
-    return { checked: true, applied: true, relaunched: false };
-  } catch {
-    return { checked: true, applied: false, relaunched: false, reason: "apply-threw" };
-  } finally {
-    applying = false;
-  }
+  return applyAndRelaunch(status);
 }
 
 // ── timer plumbing ────────────────────────────────────────────────────────────────────────────

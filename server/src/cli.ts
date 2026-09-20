@@ -360,73 +360,81 @@ const ALERTS_USAGE = `Usage:
   devwebui alerts events [--json]
   devwebui alerts clear [--process <id|name>]`;
 
+async function alertsList(args: Args): Promise<void> {
+  const rules = await api<AlertRule[]>(ROUTES.alertRules);
+  if (args.json) console.log(JSON.stringify(rules, null, 2));
+  else printAlertRules(rules);
+}
+
+async function alertsAdd(rest: string[], args: Args): Promise<void> {
+  const [ref, metricRaw, thresholdRaw] = rest;
+  if (!ref || !metricRaw || thresholdRaw === undefined) throw new UsageError(ALERTS_USAGE);
+  const metric = parseMetric(metricRaw);
+  const threshold = Number(thresholdRaw);
+  if (!Number.isFinite(threshold)) {
+    throw new UsageError(`threshold must be a number, got "${thresholdRaw}"`);
+  }
+  const forSecs = typeof args["for-secs"] === "string" ? Number(args["for-secs"]) : 0;
+  if (!Number.isFinite(forSecs) || forSecs < 0) {
+    throw new UsageError(`--for-secs must be a non-negative number, got "${args["for-secs"]}"`);
+  }
+  const processId = await resolveProcessId(ref);
+  const rule = await api<AlertRule>(
+    ROUTES.alertRules,
+    jsonPost({
+      processId,
+      metric,
+      threshold,
+      forMs: Math.round(forSecs * 1000),
+      enabled: args.disabled ? false : undefined,
+    }),
+  );
+  console.log(
+    `Added alert rule ${rule.id}: ${processId} ${metric} > ${fmtThreshold(metric, threshold)} for ${forSecs}s.`,
+  );
+}
+
+async function alertsRemove(rest: string[]): Promise<void> {
+  const [id] = rest;
+  if (!id) throw new UsageError(ALERTS_USAGE);
+  await api(ROUTES.alertRule.build(id), { method: "DELETE" });
+  console.log(`Removed alert rule ${id}.`);
+}
+
+async function alertsEvents(args: Args): Promise<void> {
+  const events = await api<AlertEvent[]>(ROUTES.alertEvents);
+  if (args.json) console.log(JSON.stringify(events, null, 2));
+  else printAlertEvents(events);
+}
+
+async function alertsClear(args: Args): Promise<void> {
+  const processId =
+    typeof args.process === "string" ? await resolveProcessId(args.process) : undefined;
+  await api(
+    `${ROUTES.alertEventsClear}${processId ? `?processId=${encodeURIComponent(processId)}` : ""}`,
+    { method: "POST" },
+  );
+  console.log(processId ? `Cleared alert events for ${processId}.` : "Cleared all alert events.");
+}
+
 async function alertsCmd(args: Args): Promise<void> {
-  await requireLive();
+  await requireLive(); // every subcommand needs a daemon, including the usage error below
   const [sub, ...rest] = args._;
 
-  if (sub === "list") {
-    const rules = await api<AlertRule[]>(ROUTES.alertRules);
-    if (args.json) console.log(JSON.stringify(rules, null, 2));
-    else printAlertRules(rules);
-    return;
+  switch (sub) {
+    case "list":
+      return alertsList(args);
+    case "add":
+      return alertsAdd(rest, args);
+    case "remove":
+      return alertsRemove(rest);
+    case "events":
+      return alertsEvents(args);
+    case "clear":
+      return alertsClear(args);
+    default:
+      throw new UsageError(ALERTS_USAGE);
   }
-
-  if (sub === "add") {
-    const [ref, metricRaw, thresholdRaw] = rest;
-    if (!ref || !metricRaw || thresholdRaw === undefined) throw new UsageError(ALERTS_USAGE);
-    const metric = parseMetric(metricRaw);
-    const threshold = Number(thresholdRaw);
-    if (!Number.isFinite(threshold)) {
-      throw new UsageError(`threshold must be a number, got "${thresholdRaw}"`);
-    }
-    const forSecs = typeof args["for-secs"] === "string" ? Number(args["for-secs"]) : 0;
-    if (!Number.isFinite(forSecs) || forSecs < 0) {
-      throw new UsageError(`--for-secs must be a non-negative number, got "${args["for-secs"]}"`);
-    }
-    const processId = await resolveProcessId(ref);
-    const rule = await api<AlertRule>(
-      ROUTES.alertRules,
-      jsonPost({
-        processId,
-        metric,
-        threshold,
-        forMs: Math.round(forSecs * 1000),
-        enabled: args.disabled ? false : undefined,
-      }),
-    );
-    console.log(
-      `Added alert rule ${rule.id}: ${processId} ${metric} > ${fmtThreshold(metric, threshold)} for ${forSecs}s.`,
-    );
-    return;
-  }
-
-  if (sub === "remove") {
-    const [id] = rest;
-    if (!id) throw new UsageError(ALERTS_USAGE);
-    await api(ROUTES.alertRule.build(id), { method: "DELETE" });
-    console.log(`Removed alert rule ${id}.`);
-    return;
-  }
-
-  if (sub === "events") {
-    const events = await api<AlertEvent[]>(ROUTES.alertEvents);
-    if (args.json) console.log(JSON.stringify(events, null, 2));
-    else printAlertEvents(events);
-    return;
-  }
-
-  if (sub === "clear") {
-    const processId =
-      typeof args.process === "string" ? await resolveProcessId(args.process) : undefined;
-    await api(
-      `${ROUTES.alertEventsClear}${processId ? `?processId=${encodeURIComponent(processId)}` : ""}`,
-      { method: "POST" },
-    );
-    console.log(processId ? `Cleared alert events for ${processId}.` : "Cleared all alert events.");
-    return;
-  }
-
-  throw new UsageError(ALERTS_USAGE);
 }
 
 // ── verbs ──────────────────────────────────────────────────────────────────────────────────────

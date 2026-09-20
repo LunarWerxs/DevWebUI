@@ -1,7 +1,22 @@
-import type { LoadedProject } from "../types";
+import type { LoadedProject, ProcessDef } from "../types";
 import { deleteLogs } from "../log-vault";
 import { clearEnabledOverrides, clearProjectOverride } from "../state";
 import { ManagerWithLifecycle } from "./lifecycle";
+import type { Entry, Project } from "./types";
+
+/**
+ * The four definition fields that decide what actually GETS EXECUTED. A reload that changes
+ * any of them is the security-relevant case `reconcileProject` treats specially; cosmetic
+ * edits (name, port, colour) are never "exec changes".
+ */
+function execDefinitionChanged(prev: ProcessDef, next: ProcessDef): boolean {
+  return (
+    prev.command !== next.command ||
+    prev.cwd !== next.cwd ||
+    prev.runtime !== next.runtime ||
+    JSON.stringify(prev.env ?? null) !== JSON.stringify(next.env ?? null)
+  );
+}
 
 /**
  * Project registration/reload/removal — the "write" half of project
@@ -60,53 +75,64 @@ export class ManagerWithProjects extends ManagerWithLifecycle {
     }
 
     const incoming = new Map(lp.processes.map((p) => [p.id, p]));
-    for (const pid of [...existing.processIds]) {
-      if (!incoming.has(pid)) {
-        const e = this.entries.get(pid);
-        if (e) this.discardEntry(e);
-        this.entries.delete(pid);
-        this.errors.clear(pid);
-        this.alerts.removeRulesForProcess(pid); // process removed from the file: its rules can never match again
-        clearEnabledOverrides([pid]); // process removed from the file — forget its toggle
-      }
-    }
+    this.dropRemovedProcesses(existing, incoming);
+    this.startMany(this.applyProcessDefs(lp, fromWatch));
 
+    existing.name = lp.name;
+    existing.color = lp.color;
+    existing.processIds = lp.processes.map((p) => p.id);
+    this.emitProjects();
+  }
+
+  /** Processes that vanished from the file: tear down the entry and forget everything keyed to its id. */
+  private dropRemovedProcesses(existing: Project, incoming: Map<string, ProcessDef>): void {
+    for (const pid of [...existing.processIds]) {
+      if (incoming.has(pid)) continue;
+      const e = this.entries.get(pid);
+      if (e) this.discardEntry(e);
+      this.entries.delete(pid);
+      this.errors.clear(pid);
+      this.alerts.removeRulesForProcess(pid); // process removed from the file: its rules can never match again
+      clearEnabledOverrides([pid]); // process removed from the file — forget its toggle
+    }
+  }
+
+  /**
+   * Register every process in `lp`, updating existing entries in place. Returns the ids that
+   * should now be auto-started — newly-appeared processes only, and never on a watch reload.
+   */
+  private applyProcessDefs(lp: LoadedProject, fromWatch: boolean): string[] {
     const newAutostartIds: string[] = [];
     for (const def of lp.processes) {
       const e = this.entries.get(def.id);
       if (!e) {
         this.entries.set(def.id, this.newEntry(def));
         if (this.willAutostart(def) && !fromWatch) newAutostartIds.push(def.id);
-      } else {
-        const execChanged =
-          e.def.command !== def.command ||
-          e.def.cwd !== def.cwd ||
-          e.def.runtime !== def.runtime ||
-          JSON.stringify(e.def.env ?? null) !== JSON.stringify(def.env ?? null);
-        e.def = def;
-        if (execChanged && e.child) {
-          if (fromWatch) {
-            // Registered, not applied — the running child keeps the definition it started
-            // with until the user restarts it. `configChanged` drives the GUI's badge.
-            e.configChanged = true;
-            this.addLog(
-              e,
-              "stderr",
-              "[devwebui] this process's .devwebui entry changed on disk; restart it to apply the new command.",
-            );
-            this.emitStatus(e);
-          } else {
-            void this.restart(def.id);
-          }
-        } else this.emitStatus(e);
+        continue;
       }
+      const execChanged = execDefinitionChanged(e.def, def);
+      e.def = def;
+      if (execChanged && e.child) this.applyChangedExec(e, def.id, fromWatch);
+      else this.emitStatus(e);
     }
-    this.startMany(newAutostartIds);
+    return newAutostartIds;
+  }
 
-    existing.name = lp.name;
-    existing.color = lp.color;
-    existing.processIds = lp.processes.map((p) => p.id);
-    this.emitProjects();
+  /** A running process whose definition changed: apply it now, or (watch reload) hold it. */
+  private applyChangedExec(e: Entry, id: string, fromWatch: boolean): void {
+    if (!fromWatch) {
+      void this.restart(id);
+      return;
+    }
+    // Registered, not applied — the running child keeps the definition it started
+    // with until the user restarts it. `configChanged` drives the GUI's badge.
+    e.configChanged = true;
+    this.addLog(
+      e,
+      "stderr",
+      "[devwebui] this process's .devwebui entry changed on disk; restart it to apply the new command.",
+    );
+    this.emitStatus(e);
   }
 
   async removeProject(id: string): Promise<void> {

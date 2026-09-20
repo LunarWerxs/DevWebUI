@@ -44,37 +44,51 @@ export function rememberedPlacement(
     const prefs = JSON.parse(readFileSync(path.join(profileDir, "Default", "Preferences"), "utf8"));
     const placements = prefs?.browser?.app_window_placement;
     if (!placements || typeof placements !== "object") return null;
-    let node: unknown = placements[key];
-    if (node === undefined) {
-      node = key
-        .split(".")
-        .reduce<unknown>(
-          (n, seg) =>
-            n && typeof n === "object" ? (n as Record<string, unknown>)[seg] : undefined,
-          placements,
-        );
-    }
-    const b = node as {
-      left?: unknown;
-      top?: unknown;
-      right?: unknown;
-      bottom?: unknown;
-      maximized?: unknown;
-    };
-    if (
-      typeof b?.left !== "number" ||
-      typeof b.top !== "number" ||
-      typeof b.right !== "number" ||
-      typeof b.bottom !== "number"
-    )
-      return null;
-    const width = b.right - b.left;
-    const height = b.bottom - b.top;
-    if (width < MIN_REMEMBERED_PX || height < MIN_REMEMBERED_PX) return null;
-    return { width, height, maximized: b.maximized === true };
+    return placementBounds(placementNode(placements, key));
   } catch {
     return null; // no profile yet / corrupt Preferences: same as "nothing remembered"
   }
+}
+
+/**
+ * The placement entry for `key`. A dotted process id ("web.dev") is stored NESTED, one
+ * object per segment; an id without dots sits at the top level as a flat key. Try the
+ * flat key first and only then walk the dotted path.
+ */
+function placementNode(placements: Record<string, unknown>, key: string): unknown {
+  const direct = placements[key];
+  if (direct !== undefined) return direct;
+  return key
+    .split(".")
+    .reduce<unknown>(
+      (n, seg) => (n && typeof n === "object" ? (n as Record<string, unknown>)[seg] : undefined),
+      placements,
+    );
+}
+
+/** A usable rect from a placement node, or null when the fields are missing, non-numeric,
+ *  or degenerate (Chromium can leave a 0×0 entry behind). */
+function placementBounds(
+  node: unknown,
+): { width: number; height: number; maximized: boolean } | null {
+  const b = node as {
+    left?: unknown;
+    top?: unknown;
+    right?: unknown;
+    bottom?: unknown;
+    maximized?: unknown;
+  };
+  if (
+    typeof b?.left !== "number" ||
+    typeof b.top !== "number" ||
+    typeof b.right !== "number" ||
+    typeof b.bottom !== "number"
+  )
+    return null;
+  const width = b.right - b.left;
+  const height = b.bottom - b.top;
+  if (width < MIN_REMEMBERED_PX || height < MIN_REMEMBERED_PX) return null;
+  return { width, height, maximized: b.maximized === true };
 }
 
 /**

@@ -38,25 +38,38 @@ async function handleAddRule(c: Context, manager: Manager) {
   return guard(c, () => c.json(manager.addAlertRule(input)));
 }
 
+/** Validate an update patch's OPTIONAL fields: the error message, or null when they're fine.
+ *  An absent field is always valid — a caller may just flip `enabled`. */
+function rulePatchError(b: Record<string, unknown>): string | null {
+  if (b.metric !== undefined && !METRICS.includes(b.metric as AlertMetric))
+    return "metric must be one of: cpu, memory";
+  if (b.threshold !== undefined && !isNonNegativeNumber(b.threshold))
+    return "threshold must be a non-negative number";
+  if (b.forMs !== undefined && !isNonNegativeNumber(b.forMs))
+    return "forMs must be a non-negative number";
+  return null;
+}
+
+/** The subset of a patch body the caller actually sent, coerced to the manager's input shape. */
+function rulePatchFrom(b: Record<string, unknown>): Partial<AlertRuleInput> {
+  return {
+    processId: typeof b.processId === "string" ? b.processId : undefined,
+    metric: b.metric as AlertMetric | undefined,
+    threshold: b.threshold !== undefined ? Number(b.threshold) : undefined,
+    forMs: b.forMs !== undefined ? Number(b.forMs) : undefined,
+    enabled: typeof b.enabled === "boolean" ? b.enabled : undefined,
+  };
+}
+
 async function handleUpdateRule(c: Context, manager: Manager) {
   const { id } = c.req.param();
   const body = await readBody(c);
   // Every field is optional here (unlike create) - a caller may just flip `enabled`.
   const b = (body ?? {}) as Record<string, unknown>;
-  if (b.metric !== undefined && !METRICS.includes(b.metric as AlertMetric))
-    return fail(c, "metric must be one of: cpu, memory");
-  if (b.threshold !== undefined && !isNonNegativeNumber(b.threshold))
-    return fail(c, "threshold must be a non-negative number");
-  if (b.forMs !== undefined && !isNonNegativeNumber(b.forMs))
-    return fail(c, "forMs must be a non-negative number");
+  const invalid = rulePatchError(b);
+  if (invalid) return fail(c, invalid);
   return guard(c, () => {
-    const updated = manager.updateAlertRule(id, {
-      processId: typeof b.processId === "string" ? b.processId : undefined,
-      metric: b.metric as AlertMetric | undefined,
-      threshold: b.threshold !== undefined ? Number(b.threshold) : undefined,
-      forMs: b.forMs !== undefined ? Number(b.forMs) : undefined,
-      enabled: typeof b.enabled === "boolean" ? b.enabled : undefined,
-    });
+    const updated = manager.updateAlertRule(id, rulePatchFrom(b));
     if (!updated) return fail(c, "unknown alert rule", 404);
     return c.json(updated);
   });

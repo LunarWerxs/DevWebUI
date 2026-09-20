@@ -393,46 +393,50 @@ async function downloadAndStageUpdate(
   return { ok: true, candidate, output };
 }
 
-export async function applyUpdate(): Promise<UpdateApplyResult> {
-  const status = await checkForUpdate({ fresh: true });
-  if (!status.ok) return failure(status.reason ?? "update check failed");
-  if (!status.updateAvailable) return failure("already up to date");
-  const remoteVersion = (status.remoteCommit ?? "").replace(/^v/, "");
-
-  let asset: ReleaseAsset | null = null;
-  let checksumAsset: ReleaseAsset | null = null;
+/** Pick the platform archive + its checksum manifest out of the latest release, refusing
+ *  up front when either is missing (see the manifest note below). */
+async function resolveUpdateAssets(
+  remoteVersion: string,
+): Promise<
+  | { ok: true; asset: ReleaseAsset; checksumAsset: ReleaseAsset }
+  | { ok: false; result: UpdateApplyResult }
+> {
+  let assets: ReleaseAsset[] = [];
   try {
-    const assets = (await latestRelease()).assets ?? [];
-    asset = assetForPlatform(assets);
-    checksumAsset = assets.find((a) => a.name === CHECKSUM_ASSET) ?? null;
+    assets = (await latestRelease()).assets ?? [];
   } catch {}
-  if (!asset) return failure(`no ${releaseTarget()} archive is attached to v${remoteVersion}`);
+  const asset = assetForPlatform(assets);
+  const checksumAsset = assets.find((a) => a.name === CHECKSUM_ASSET) ?? null;
+  if (!asset)
+    return {
+      ok: false,
+      result: failure(`no ${releaseTarget()} archive is attached to v${remoteVersion}`),
+    };
   // The manifest is REQUIRED, not best-effort: without it there is nothing to check the
   // download against, and the alternative "verification" below (running the binary and
   // reading its --version) proves only that the payload can print a string. Every release
   // this updater can target publishes one (release.yml builds it with fail_on_unmatched_files),
   // so a missing manifest means something is wrong with the release, and refusing is correct.
   if (!checksumAsset)
-    return failure(`v${remoteVersion} has no ${CHECKSUM_ASSET} to verify the download against`);
+    return {
+      ok: false,
+      result: failure(`v${remoteVersion} has no ${CHECKSUM_ASSET} to verify the download against`),
+    };
+  return { ok: true, asset, checksumAsset };
+}
 
-  const executable = process.execPath;
-  const installDir = dirname(executable);
-  const staging = join(installDir, ".update-staging");
-  const oldExecutable = join(installDir, `${basename(executable)}.old-${status.checkedAt}`);
-  const bundledName = process.platform === "win32" ? "devwebui.exe" : "devwebui";
+/** Swap the verified candidate over the running executable, rolling the old binary back if
+ *  anything after the rename fails. The candidate must already be staged + verified. */
+async function installStagedUpdate(
+  staged: { candidate: string; output: string[] },
+  paths: { executable: string; oldExecutable: string; staging: string },
+  remoteVersion: string,
+): Promise<UpdateApplyResult> {
+  const { candidate, output } = staged;
+  const { executable, oldExecutable, staging } = paths;
   let movedAside = false;
 
   try {
-    const staged = await downloadAndStageUpdate(
-      asset,
-      checksumAsset,
-      remoteVersion,
-      staging,
-      bundledName,
-    );
-    if (!staged.ok) return staged.result;
-    const { candidate, output } = staged;
-
     renameSync(executable, oldExecutable);
     movedAside = true;
     moveInto(candidate, executable);
@@ -460,6 +464,40 @@ export async function applyUpdate(): Promise<UpdateApplyResult> {
     }
     return failure(`update failed: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+export async function applyUpdate(): Promise<UpdateApplyResult> {
+  const status = await checkForUpdate({ fresh: true });
+  if (!status.ok) return failure(status.reason ?? "update check failed");
+  if (!status.updateAvailable) return failure("already up to date");
+  const remoteVersion = (status.remoteCommit ?? "").replace(/^v/, "");
+
+  const resolved = await resolveUpdateAssets(remoteVersion);
+  if (!resolved.ok) return resolved.result;
+
+  const executable = process.execPath;
+  const installDir = dirname(executable);
+  const staging = join(installDir, ".update-staging");
+  const oldExecutable = join(installDir, `${basename(executable)}.old-${status.checkedAt}`);
+  const bundledName = process.platform === "win32" ? "devwebui.exe" : "devwebui";
+
+  // Outside the install try: a throw from downloadAndStageUpdate has moved nothing aside,
+  // so there is nothing to roll back — it needs the message only.
+  let staged: Awaited<ReturnType<typeof downloadAndStageUpdate>>;
+  try {
+    staged = await downloadAndStageUpdate(
+      resolved.asset,
+      resolved.checksumAsset,
+      remoteVersion,
+      staging,
+      bundledName,
+    );
+  } catch (error) {
+    return failure(`update failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!staged.ok) return staged.result;
+
+  return installStagedUpdate(staged, { executable, oldExecutable, staging }, remoteVersion);
 }
 
 export function cleanupStaleUpdateArtifacts(): void {

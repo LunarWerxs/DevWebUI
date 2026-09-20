@@ -149,6 +149,67 @@ async function readPkg(dir: string): Promise<Pkg | null> {
   }
 }
 
+/** Everything one script's id/name/port decision needs, threaded from the caller. */
+type ScriptCtx = {
+  runner: string;
+  cfgPort: number | undefined;
+  seen: Set<string>;
+  runtimePin: "node" | "bun" | undefined;
+  cwdRel?: string;
+  label?: string;
+};
+
+/** Namespace a script key into a process id and claim it. For workspace packages the
+ *  label prefixes the id; duplicates bump a suffix (strictly increasing → always terminates). */
+function uniqueProcessId(key: string, label: string | undefined, seen: Set<string>): string {
+  const idBase = label ? (key === "dev" ? label : `${label}-${key}`) : key;
+  let id = sanitizeId(idBase);
+  for (let n = 2; seen.has(id); n++) id = sanitizeId(`${idBase}-${n}`);
+  seen.add(id);
+  return id;
+}
+
+/** Display name: the workspace label + key for a workspace package, else just the pretty key. */
+function scriptProcessName(key: string, label: string | undefined): string {
+  if (!label) return prettyName(key);
+  return titleCase(label) + (key === "dev" ? "" : ` ${prettyName(key)}`);
+}
+
+/** Port for one script: an explicit flag wins, then Vite's config file, then the framework default. */
+function scriptPort(
+  key: string,
+  cmd: string,
+  cfgPort: number | undefined,
+  fw: { name: string; port: number } | undefined,
+): number | undefined {
+  const viteish = fw?.name === "Vite" || /\bvite\b/i.test(cmd) || key === "dev" || key === "start";
+  return explicitPort(cmd) ?? (viteish ? cfgPort : undefined) ?? fw?.port;
+}
+
+/** One `scripts` entry → one proposed process, or null when it isn't a dev server. */
+function processFromScript(
+  key: string,
+  rawCmd: unknown,
+  ctx: ScriptCtx,
+): { process: DetectedProcess; framework?: string } | null {
+  const cmd = String(rawCmd);
+  if (!DEV_KEY_RE.test(key) && !SERVER_CMD_RE.test(cmd)) return null;
+  if (NOT_SERVER_RE.test(cmd)) return null;
+
+  const fw = frameworkOf(cmd);
+  return {
+    process: {
+      id: uniqueProcessId(key, ctx.label, ctx.seen),
+      name: scriptProcessName(key, ctx.label),
+      command: `${ctx.runner} ${key}`,
+      ...(ctx.cwdRel ? { cwd: ctx.cwdRel } : {}),
+      port: scriptPort(key, cmd, ctx.cfgPort, fw),
+      ...(ctx.runtimePin ? { runtime: ctx.runtimePin } : {}),
+    },
+    framework: fw?.name,
+  };
+}
+
 /** Pull dev-server processes out of one package's scripts. `cwdRel`/`label` namespace workspace packages. */
 async function processesFromPackage(
   pkg: Pkg,
@@ -160,39 +221,22 @@ async function processesFromPackage(
   label?: string,
 ): Promise<{ processes: DetectedProcess[]; framework?: string }> {
   const scripts = pkg.scripts && typeof pkg.scripts === "object" ? pkg.scripts : {};
-  const cfgPort = await viteConfigPort(pkgDir);
+  const ctx: ScriptCtx = {
+    runner,
+    cfgPort: await viteConfigPort(pkgDir),
+    seen,
+    runtimePin,
+    cwdRel,
+    label,
+  };
   const out: DetectedProcess[] = [];
   let framework: string | undefined;
 
   for (const [key, rawCmd] of Object.entries(scripts)) {
-    const cmd = String(rawCmd);
-    if (!DEV_KEY_RE.test(key) && !SERVER_CMD_RE.test(cmd)) continue;
-    if (NOT_SERVER_RE.test(cmd)) continue;
-
-    // Unique id; for workspace packages prefix with the package label.
-    const idBase = label ? (key === "dev" ? label : `${label}-${key}`) : key;
-    let id = sanitizeId(idBase);
-    for (let n = 2; seen.has(id); n++) id = sanitizeId(`${idBase}-${n}`); // strictly increasing → always terminates
-    seen.add(id);
-
-    const fw = frameworkOf(cmd);
-    if (fw && !framework) framework = fw.name;
-    const viteish =
-      fw?.name === "Vite" || /\bvite\b/i.test(cmd) || key === "dev" || key === "start";
-    const port = explicitPort(cmd) ?? (viteish ? cfgPort : undefined) ?? fw?.port;
-
-    const name = label
-      ? titleCase(label) + (key === "dev" ? "" : ` ${prettyName(key)}`)
-      : prettyName(key);
-
-    out.push({
-      id,
-      name,
-      command: `${runner} ${key}`,
-      ...(cwdRel ? { cwd: cwdRel } : {}),
-      port,
-      ...(runtimePin ? { runtime: runtimePin } : {}),
-    });
+    const found = processFromScript(key, rawCmd, ctx);
+    if (!found) continue;
+    if (found.framework && !framework) framework = found.framework; // first framework seen wins
+    out.push(found.process);
   }
   return { processes: out, framework };
 }

@@ -23,31 +23,47 @@ export type { RuntimePref, Settings } from "../../shared/dto";
 
 export type Runtime = "node" | "bun";
 
-export function withRuntime(command: string, runtime?: Runtime): string {
-  if (!runtime) return command;
+/** The leading invocation of a command line: indentation, program, optional second word. */
+type CommandHead = { ws: string; first: string; second: string | undefined; afterFirst: string };
+
+function splitCommandHead(command: string): CommandHead | null {
   const m = command.match(/^(\s*)(\S+)(?:\s+(\S+))?/);
-  if (!m) return command;
+  if (!m) return null;
   const ws = m[1];
   const first = m[2];
-  const second = m[3];
-  const afterFirst = command.slice(ws.length + first.length); // includes leading space
+  return {
+    ws,
+    first,
+    second: m[3],
+    afterFirst: command.slice(ws.length + first.length), // includes leading space
+  };
+}
 
-  if (runtime === "bun") {
-    if (first === "node" || first === "node.exe") return `${ws}bun${afterFirst}`;
-    if (first === "bun" && second === "run")
-      return command.replace(/^(\s*)bun(\s+)run\b/, "$1bun$2--bun run");
-    return command;
-  }
-  // runtime === "node"
-  if (first === "bun" || first === "bun.exe") {
-    if (second === "--bun") return command.replace(/^(\s*)bun(\s+)--bun\b/, "$1bun"); // drop --bun
-    if (second === "run") return command; // `bun run x` already uses Node-shebang bins
-    // Only rewrite a direct FILE invocation; leave bare shorthands like `bun dev` alone
-    // (Node can't run a bare script name).
-    if (second && /\.(?:js|cjs|mjs|ts|cts|mts)$/i.test(second)) return `${ws}node${afterFirst}`;
-    return command;
-  }
+/** Point a `node` invocation at Bun — anything we don't recognise is left untouched. */
+function commandOnBun(command: string, head: CommandHead): string {
+  if (head.first === "node" || head.first === "node.exe") return `${head.ws}bun${head.afterFirst}`;
+  if (head.first === "bun" && head.second === "run")
+    return command.replace(/^(\s*)bun(\s+)run\b/, "$1bun$2--bun run");
   return command;
+}
+
+/** Point a `bun` invocation at Node — only a direct FILE invocation; bare shorthands stay. */
+function commandOnNode(command: string, head: CommandHead): string {
+  if (head.first !== "bun" && head.first !== "bun.exe") return command;
+  if (head.second === "--bun") return command.replace(/^(\s*)bun(\s+)--bun\b/, "$1bun"); // drop --bun
+  if (head.second === "run") return command; // `bun run x` already uses Node-shebang bins
+  // Only rewrite a direct FILE invocation; leave bare shorthands like `bun dev` alone
+  // (Node can't run a bare script name).
+  if (head.second && /\.(?:js|cjs|mjs|ts|cts|mts)$/i.test(head.second))
+    return `${head.ws}node${head.afterFirst}`;
+  return command;
+}
+
+export function withRuntime(command: string, runtime?: Runtime): string {
+  if (!runtime) return command;
+  const head = splitCommandHead(command);
+  if (!head) return command;
+  return runtime === "bun" ? commandOnBun(command, head) : commandOnNode(command, head);
 }
 
 // ---------------------------------------------------------------------------

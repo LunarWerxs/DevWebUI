@@ -66,7 +66,7 @@ function detectVsCodeTaskTriggers(tasksFile: string): AutostartTrigger[] {
 function detectViteExtensionTrigger(settingsFile: string): AutostartTrigger[] {
   if (!existsSync(settingsFile)) return [];
   const j = readJsonc<Record<string, unknown>>(settingsFile);
-  if (!j || j["vite.autoStart"] !== true) return [];
+  if (j?.["vite.autoStart"] !== true) return [];
   const cmd = typeof j["vite.devCommand"] === "string" ? (j["vite.devCommand"] as string) : "";
   return [
     {
@@ -99,6 +99,49 @@ function backupOnce(file: string): string | null {
   }
 }
 
+/** What retiring one file's triggers produced — merged by the caller into its three lists. */
+interface RetireOutcome {
+  disabled: AutostartTrigger[];
+  backups: string[];
+  skipped: { file: string; reason: string }[];
+}
+
+/** Retire every trigger that lives in ONE file: rewrite it (backing it up first) so it no
+ *  longer auto-starts. A file that can't be read, needs no change, or won't write lands in
+ *  `skipped` with the reason rather than throwing. */
+function retireTriggersInFile(file: string, ts: AutostartTrigger[]): RetireOutcome {
+  const out: RetireOutcome = { disabled: [], backups: [], skipped: [] };
+
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (e) {
+    out.skipped.push({ file, reason: (e as Error).message });
+    return out;
+  }
+
+  let next = text;
+  if (ts.some((t) => t.kind === "vscode-task"))
+    next = next.replace(/("runOn"\s*:\s*")folderOpen(")/g, "$1default$2");
+  if (ts.some((t) => t.kind === "vite-extension"))
+    next = next.replace(/("vite\.autoStart"\s*:\s*)true\b/g, "$1false");
+
+  if (next === text) {
+    out.skipped.push({ file, reason: "nothing to change (already retired?)" });
+    return out;
+  }
+
+  const bak = backupOnce(file);
+  if (bak) out.backups.push(bak);
+  try {
+    writeFileSync(file, next);
+    out.disabled.push(...ts);
+  } catch (e) {
+    out.skipped.push({ file, reason: (e as Error).message });
+  }
+  return out;
+}
+
 /** Retire every detected external auto-start trigger under `dir`. Backs up first. */
 export function takeOverAutostart(dir: string): TakeOverResult {
   const disabled: AutostartTrigger[] = [];
@@ -114,33 +157,10 @@ export function takeOverAutostart(dir: string): TakeOverResult {
   }
 
   for (const [file, ts] of byFile) {
-    let text: string;
-    try {
-      text = readFileSync(file, "utf8");
-    } catch (e) {
-      skipped.push({ file, reason: (e as Error).message });
-      continue;
-    }
-
-    let next = text;
-    if (ts.some((t) => t.kind === "vscode-task"))
-      next = next.replace(/("runOn"\s*:\s*")folderOpen(")/g, "$1default$2");
-    if (ts.some((t) => t.kind === "vite-extension"))
-      next = next.replace(/("vite\.autoStart"\s*:\s*)true\b/g, "$1false");
-
-    if (next === text) {
-      skipped.push({ file, reason: "nothing to change (already retired?)" });
-      continue;
-    }
-
-    const bak = backupOnce(file);
-    if (bak) backups.push(bak);
-    try {
-      writeFileSync(file, next);
-      disabled.push(...ts);
-    } catch (e) {
-      skipped.push({ file, reason: (e as Error).message });
-    }
+    const outcome = retireTriggersInFile(file, ts);
+    disabled.push(...outcome.disabled);
+    backups.push(...outcome.backups);
+    skipped.push(...outcome.skipped);
   }
 
   return { disabled, backups, skipped };

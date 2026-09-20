@@ -184,83 +184,110 @@ function checkScriptExists(def: ProcessDef): ScriptCheck {
  * match wins): (1) port-in-use, (2) known exit/error signature, (3)
  * missing/invalid script. Falls back to `rootCause: "unknown"` honestly.
  */
+/** Heuristic 1: something else is holding the port this process is configured to use. */
+async function diagnosePortInUse(
+  input: DiagnoseInput,
+  evidence: string[],
+): Promise<Diagnosis | null> {
+  const { def, status } = input;
+  if (!def.port) return null;
+  const owners = await portOwners(def.port);
+  const others = owners.filter((o) => o.pid !== null);
+  if (others.length === 0 || (status !== "crashed" && status !== "stopped")) return null;
+
+  const squatter = others[0];
+  evidence.push(
+    `port ${def.port} is currently held by ${squatter.name} (pid ${squatter.pid})${
+      squatter.cmdline ? `: ${squatter.cmdline}` : ""
+    }`,
+  );
+  return {
+    rootCause: `port ${def.port} is already in use by ${squatter.name} (pid ${squatter.pid})`,
+    confidence: "high",
+    evidence,
+    remediation: {
+      description: `free port ${def.port}, then start ${def.name}`,
+      suggestedTool: "start_process",
+      params: { id: def.id, freePortFirst: true, port: def.port, blockingPid: squatter.pid },
+    },
+  };
+}
+
+/** The text heuristic 2 searches: this process's recent error samples, else the raw log tail.
+ *  Pushes whichever it used onto `evidence`. */
+function diagnosticSearchText(input: DiagnoseInput, evidence: string[]): string {
+  const { errors, logTail } = input;
+  const searchText = [errors[0]?.sample, ...errors.slice(0, 5).map((e) => e.sample)]
+    .filter((v): v is string => !!v)
+    .join("\n");
+  if (searchText) {
+    evidence.push(`recent error sample: ${searchText.slice(0, 300)}`);
+    return searchText;
+  }
+  // No de-duped error record (e.g. its stderr never tripped ErrorRecorder's own
+  // filters) — fall back to the raw log-vault tail, if the caller supplied one.
+  if (!logTail?.length) return "";
+  const tailText = logTail.slice(-20).join("\n");
+  evidence.push(`recent log tail: ${tailText.slice(0, 300)}`);
+  return tailText;
+}
+
+/** Heuristic 2: the error text matches a known exit-code / error-pattern signature. */
+function diagnoseKnownError(
+  input: DiagnoseInput,
+  evidence: string[],
+  searchText: string,
+): Diagnosis | null {
+  const { def, exitCode } = input;
+  const known = searchText ? matchKnownError(searchText) : null;
+  if (!known || exitCode === 0) return null;
+  evidence.push(`matched known error signature`);
+  return {
+    rootCause: known.rootCause,
+    confidence: "high",
+    evidence,
+    remediation: {
+      description: `${known.hint} for ${def.name}`,
+      suggestedTool: "restart_process",
+      params: { id: def.id },
+    },
+  };
+}
+
+/** Heuristic 3: the configured command's script doesn't resolve on disk. */
+function diagnoseMissingScript(input: DiagnoseInput, evidence: string[]): Diagnosis | null {
+  const { def, status, exitCode } = input;
+  if (status !== "crashed" && exitCode === null) return null;
+  const scriptCheck = checkScriptExists(def);
+  if (scriptCheck.ok) return null;
+  evidence.push(`script check failed: ${scriptCheck.reason}`);
+  return {
+    rootCause: `the configured command for ${def.name} doesn't resolve: ${scriptCheck.reason}`,
+    confidence: "medium",
+    evidence,
+    remediation: {
+      description: `fix the command/script for ${def.name} in its .devwebui file, then restart`,
+      suggestedTool: "restart_process",
+      params: { id: def.id },
+    },
+  };
+}
+
 export async function diagnose(input: DiagnoseInput): Promise<Diagnosis> {
-  const { def, status, exitCode, errors, logTail } = input;
+  const { status, exitCode } = input;
   const evidence: string[] = [];
   evidence.push(`status: ${status}`, `exit code: ${exitCode ?? "n/a"}`);
 
-  // ---- heuristic 1: port-in-use --------------------------------------------
-  if (def.port) {
-    const owners = await portOwners(def.port);
-    const others = owners.filter((o) => o.pid !== null);
-    if (others.length > 0 && (status === "crashed" || status === "stopped")) {
-      const squatter = others[0];
-      evidence.push(
-        `port ${def.port} is currently held by ${squatter.name} (pid ${squatter.pid})${
-          squatter.cmdline ? `: ${squatter.cmdline}` : ""
-        }`,
-      );
-      return {
-        rootCause: `port ${def.port} is already in use by ${squatter.name} (pid ${squatter.pid})`,
-        confidence: "high",
-        evidence,
-        remediation: {
-          description: `free port ${def.port}, then start ${def.name}`,
-          suggestedTool: "start_process",
-          params: { id: def.id, freePortFirst: true, port: def.port, blockingPid: squatter.pid },
-        },
-      };
-    }
-  }
+  // Checked in order (first match wins); falls through to `rootCause: "unknown"` honestly.
+  const portInUse = await diagnosePortInUse(input, evidence);
+  if (portInUse) return portInUse;
 
-  // ---- heuristic 2: known exit-code / error-pattern table ------------------
-  const recent = errors[0];
-  let searchText = [recent?.sample, ...errors.slice(0, 5).map((e) => e.sample)]
-    .filter((v): v is string => !!v)
-    .join("\n");
-  if (searchText) evidence.push(`recent error sample: ${searchText.slice(0, 300)}`);
+  const known = diagnoseKnownError(input, evidence, diagnosticSearchText(input, evidence));
+  if (known) return known;
 
-  // No de-duped error record (e.g. its stderr never tripped ErrorRecorder's own
-  // filters) — fall back to the raw log-vault tail, if the caller supplied one.
-  if (!searchText && logTail?.length) {
-    searchText = logTail.slice(-20).join("\n");
-    evidence.push(`recent log tail: ${searchText.slice(0, 300)}`);
-  }
+  const missingScript = diagnoseMissingScript(input, evidence);
+  if (missingScript) return missingScript;
 
-  const known = searchText ? matchKnownError(searchText) : null;
-  if (known && exitCode !== 0) {
-    evidence.push(`matched known error signature`);
-    return {
-      rootCause: known.rootCause,
-      confidence: "high",
-      evidence,
-      remediation: {
-        description: `${known.hint} for ${def.name}`,
-        suggestedTool: "restart_process",
-        params: { id: def.id },
-      },
-    };
-  }
-
-  // ---- heuristic 3: missing/invalid script ---------------------------------
-  if (status === "crashed" || exitCode !== null) {
-    const scriptCheck = checkScriptExists(def);
-    if (!scriptCheck.ok) {
-      evidence.push(`script check failed: ${scriptCheck.reason}`);
-      return {
-        rootCause: `the configured command for ${def.name} doesn't resolve: ${scriptCheck.reason}`,
-        confidence: "medium",
-        evidence,
-        remediation: {
-          description: `fix the command/script for ${def.name} in its .devwebui file, then restart`,
-          suggestedTool: "restart_process",
-          params: { id: def.id },
-        },
-      };
-    }
-  }
-
-  // ---- fallback: honest "unknown" ------------------------------------------
   return {
     rootCause: "unknown",
     confidence: "low",

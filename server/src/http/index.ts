@@ -56,9 +56,15 @@ export function createApp(manager: Manager, options: CreateAppOptions = {}) {
   registerProcessRoutes(app, manager);
   registerConnectionsRoutes(app, manager);
   registerAlertRoutes(app, manager);
+  registerWebAssetRoutes(app);
+  return app;
+}
 
-  // Serve the built GUI from the daemon. Resolve web/dist in BOTH shapes: dev (relative to this
-  // source) and compiled (a `web/dist` shipped next to the single-file binary — see scripts/build.ts).
+/** Serve the built GUI from the daemon. Resolve web/dist in BOTH shapes: dev (relative to this
+ *  source) and compiled (a `web/dist` shipped next to the single-file binary — see scripts/build.ts).
+ *  An embedded bundle wins: the single-file binary ships the GUI inside itself, so a stray web/dist
+ *  on disk must not shadow it. */
+function registerWebAssetRoutes(app: Hono): void {
   const embedded = (
     globalThis as {
       __DEVWEBUI_EMBEDDED_WEB__?: Readonly<Record<string, string>>;
@@ -69,6 +75,7 @@ export function createApp(manager: Manager, options: CreateAppOptions = {}) {
     path.resolve(path.dirname(process.execPath), "web", "dist"),
   ];
   const dist = distCandidates.find((c) => existsSync(c));
+
   if (embedded) {
     app.get("/*", async (c) => {
       let pathname = decodeURIComponent(new URL(c.req.url).pathname);
@@ -91,23 +98,23 @@ export function createApp(manager: Manager, options: CreateAppOptions = {}) {
         headers: { "cache-control": "no-cache", "content-type": "text/html; charset=utf-8" },
       });
     });
-  } else if (dist) {
-    const root = path.relative(process.cwd(), dist);
-    app.use("/assets/*", serveStatic({ root }));
-    // A MISSING hashed chunk under /assets/ (a stale browser tab requesting an old chunk after a
-    // rebuild/auto-update) must return a real 404 — NOT fall through to the index.html SPA fallback,
-    // which hands the browser text/html for a module script ("Failed to load module script … MIME
-    // type text/html"). The client recovers from the 404 via a vite:preloadError reload (see
-    // web/src/lib/chunk-reload-recovery.ts). Navigation routes (no /assets/ prefix) still fall
-    // through to the SPA below.
-    app.get("/assets/*", (c) => c.text("not found", 404, { "cache-control": "no-store" }));
-    // Root-level public files (icon.svg / icon-light.svg / favicon.ico / logo-*.svg) must resolve
-    // as real files first — without this the SPA fallback below answers the browser's favicon
-    // request with index.html and the daemon-served app never shows a tab icon (the Vite dev
-    // server masks the bug by serving web/public itself).
-    app.use("/*", serveStatic({ root }));
-    app.get("/*", serveStatic({ path: path.join(root, "index.html") }));
+    return;
   }
+  if (!dist) return;
 
-  return app;
+  const root = path.relative(process.cwd(), dist);
+  app.use("/assets/*", serveStatic({ root }));
+  // A MISSING hashed chunk under /assets/ (a stale browser tab requesting an old chunk after a
+  // rebuild/auto-update) must return a real 404 — NOT fall through to the index.html SPA fallback,
+  // which hands the browser text/html for a module script ("Failed to load module script … MIME
+  // type text/html"). The client recovers from the 404 via a vite:preloadError reload (see
+  // web/src/lib/chunk-reload-recovery.ts). Navigation routes (no /assets/ prefix) still fall
+  // through to the SPA below.
+  app.get("/assets/*", (c) => c.text("not found", 404, { "cache-control": "no-store" }));
+  // Root-level public files (icon.svg / icon-light.svg / favicon.ico / logo-*.svg) must resolve
+  // as real files first — without this the SPA fallback below answers the browser's favicon
+  // request with index.html and the daemon-served app never shows a tab icon (the Vite dev
+  // server masks the bug by serving web/public itself).
+  app.use("/*", serveStatic({ root }));
+  app.get("/*", serveStatic({ path: path.join(root, "index.html") }));
 }

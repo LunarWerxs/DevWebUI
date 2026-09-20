@@ -170,46 +170,59 @@ export class AlertStore {
     const byProcess = new Map(samples.map((s) => [s.processId, s]));
     const fired: AlertEvent[] = [];
     for (const rule of this.rules.values()) {
-      if (!rule.enabled) {
-        this.breach.delete(rule.id);
-        continue;
-      }
-      const sample = byProcess.get(rule.processId);
-      const value = sample ? (rule.metric === "cpu" ? sample.cpu : sample.memory) : null;
-      const over = value != null && value > rule.threshold;
-      if (!over || !sample) {
-        this.breach.delete(rule.id); // stopped, missing, or dropped back under - breach resets
-        continue;
-      }
-      let state = this.breach.get(rule.id);
-      if (!state) {
-        state = { since: now, fired: false };
-        this.breach.set(rule.id, state);
-      }
-      if (!state.fired && now - state.since >= rule.forMs) {
-        state.fired = true;
-        const event: AlertEvent = {
-          id: randomUUID(),
-          ruleId: rule.id,
-          processId: sample.processId,
-          processName: sample.processName,
-          projectId: sample.projectId,
-          projectName: sample.projectName,
-          metric: rule.metric,
-          threshold: rule.threshold,
-          value,
-          firedAt: now,
-        };
-        this.events.unshift(event);
-        if (this.events.length > MAX_ALERT_EVENTS) this.events.length = MAX_ALERT_EVENTS;
-        fired.push(event);
-      }
+      const event = this.evaluateRule(rule, byProcess, now);
+      if (event) fired.push(event);
     }
     if (fired.length) {
       this.scheduleSaveEvents();
       this.onChange();
     }
     return fired;
+  }
+
+  /**
+   * One rule against this tick's samples: the event it just fired, or null. Keeps `this.breach`
+   * in step on the way — the breach window is cleared whenever the rule is not currently over,
+   * and opened on the first over-threshold tick.
+   */
+  private evaluateRule(
+    rule: AlertRule,
+    byProcess: Map<string, AlertSample>,
+    now: number,
+  ): AlertEvent | null {
+    if (!rule.enabled) {
+      this.breach.delete(rule.id);
+      return null;
+    }
+    const sample = byProcess.get(rule.processId);
+    const value = sample ? (rule.metric === "cpu" ? sample.cpu : sample.memory) : null;
+    const over = value != null && value > rule.threshold;
+    if (!over || !sample) {
+      this.breach.delete(rule.id); // stopped, missing, or dropped back under - breach resets
+      return null;
+    }
+    let state = this.breach.get(rule.id);
+    if (!state) {
+      state = { since: now, fired: false };
+      this.breach.set(rule.id, state);
+    }
+    if (state.fired || now - state.since < rule.forMs) return null;
+    state.fired = true;
+    const event: AlertEvent = {
+      id: randomUUID(),
+      ruleId: rule.id,
+      processId: sample.processId,
+      processName: sample.processName,
+      projectId: sample.projectId,
+      projectName: sample.projectName,
+      metric: rule.metric,
+      threshold: rule.threshold,
+      value,
+      firedAt: now,
+    };
+    this.events.unshift(event);
+    if (this.events.length > MAX_ALERT_EVENTS) this.events.length = MAX_ALERT_EVENTS;
+    return event;
   }
 
   // ---- persistence: rules (plain JSON, small + infrequent) -------------------------
