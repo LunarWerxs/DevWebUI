@@ -51,15 +51,6 @@ function sweepStaleHomes(): void {
   }
 }
 
-// Best-effort, never-throwing reap of one throwaway home.
-function reapHome(dir: string): void {
-  try {
-    rmSync(dir, { recursive: true, force: true });
-  } catch {
-    /* best-effort — the OS temp cleaner reclaims anything left behind */
-  }
-}
-
 function ensureIsolatedHome(): string | null {
   if (process.env.DEVWEBUI_HOME?.trim()) return null; // already isolated (preload, or a prior import)
   const dir = mkdtempSync(path.join(os.tmpdir(), HOME_PREFIX));
@@ -72,7 +63,13 @@ function ensureIsolatedHome(): string | null {
   // `bun test` launched from a dir where bunfig.toml (hence tests/setup.ts's reaping preload
   // afterAll) is never discovered. That preload reaps the same path via `createdHome`; hard kills
   // are still reclaimed by sweepStaleHomes() above.
-  process.on("exit", () => reapHome(dir));
+  process.on("exit", () => {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* best-effort — the OS temp cleaner reclaims anything left behind */
+    }
+  });
   return dir;
 }
 
