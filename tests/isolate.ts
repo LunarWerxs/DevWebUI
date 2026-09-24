@@ -51,16 +51,28 @@ function sweepStaleHomes(): void {
   }
 }
 
+// Best-effort, never-throwing reap of one throwaway home.
+function reapHome(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+    /* best-effort — the OS temp cleaner reclaims anything left behind */
+  }
+}
+
 function ensureIsolatedHome(): string | null {
   if (process.env.DEVWEBUI_HOME?.trim()) return null; // already isolated (preload, or a prior import)
-  // arkitect-allow: scratch-dir-reaped - this throwaway home must OUTLIVE every test file in the
-  // run, so the only outcome-independent hook that may delete it is the preload's global afterAll
-  // (tests/setup.ts), which reaps this exact path through the `createdHome` export below. An
-  // afterAll registered here would instead fire BETWEEN test files and delete the dir the later
-  // files still write into (writeFileAtomic creates no parent dirs), and Bun's test runner emits
-  // neither 'exit' nor 'beforeExit' (both verified). sweepStaleHomes() above reclaims leftovers.
   const dir = mkdtempSync(path.join(os.tmpdir(), HOME_PREFIX));
   process.env.DEVWEBUI_HOME = dir;
+  // Outcome-independent reap, keyed to PROCESS end rather than to a test file's end. The dir must
+  // OUTLIVE every test file in the run, so a file-scoped afterAll here is unusable: imported by a
+  // test file it fires BETWEEN files and deletes the dir the later ones still write into
+  // (writeFileAtomic creates no parent dirs). An `exit` handler is tied to process end instead, and
+  // is the reaper whenever this module is loaded as a plain module — `bun run <script>`, Node, or a
+  // `bun test` launched from a dir where bunfig.toml (hence tests/setup.ts's reaping preload
+  // afterAll) is never discovered. That preload reaps the same path via `createdHome`; hard kills
+  // are still reclaimed by sweepStaleHomes() above.
+  process.on("exit", () => reapHome(dir));
   return dir;
 }
 
