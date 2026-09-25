@@ -15,6 +15,7 @@ import type {
   AddResult,
   DetectedProcess,
   FreePortResult,
+  OpenInEditorResult,
   ScanPreset,
   SafeModeExitResult,
   SafeModeStatus,
@@ -102,6 +103,13 @@ export const clearErrors = (processId?: string) =>
   post(`${ROUTES.errorsClear}${processId ? `?processId=${encodeURIComponent(processId)}` : ""}`);
 export const dismissError = (fingerprint: string) =>
   req(ROUTES.errorsDismiss, jsonInit("POST", { fingerprint }));
+/** Open a logged source frame in the developer's running editor; `processId` resolves a relative path. */
+export const openInEditor = (frame: {
+  file: string;
+  line: number;
+  column?: number;
+  processId?: string;
+}) => reqJson<OpenInEditorResult>(ROUTES.openInEditor, jsonInit("POST", frame));
 
 // ---- alert rules (threshold alerting on process CPU/memory) ----
 export const addAlertRule = (input: AlertRuleInput) =>

@@ -87,7 +87,7 @@ taken, the daemon hops to the next free one and opens the URL it actually bound.
 - **Runtime-aware launches**: automatic mode follows each project's lockfile, and compatible Bun/Node commands launch without a permanent shell wrapper.
 - **Port-conflict rescue**: detects a taken port, tells you which process is holding it, and frees it on request.
 - **One origin for every server**: open any managed process through DevWebUI's own port at `http://<target>.localhost:4000` (or `/proxy/<target>/`), where `<target>` is a process id like `p1a2b3c4.web`, a project name like `my-app`, or a declared port; HTTP and WebSocket (HMR) are relayed, only to ports a registered process declares, behind the same cross-site guard as the API.
-- **Persistent error log**: de-duplicated stderr / crashes / error-looking stdout that survives restarts.
+- **Persistent error log**: de-duplicated stderr / crashes / error-looking stdout that survives restarts. Every `file:line:col` in it is a link that opens that line in the editor you already have running (VS Code and its forks, JetBrains IDEs, Zed, Sublime Text, Notepad++); set `DEVWEBUI_EDITOR` to the editor's executable to pick one explicitly.
 - **Desktop shortcuts (Windows)**: send any server (or a whole repo) to your Desktop from the ⋮ menu; double-click starts it, linked servers and all, in a small window with a Stop button.
 - **Built for agents**: a full set of MCP tools drives the same daemon you click, off one shared state.
 - **Localized & themed**: full i18n (English base; [add a language](web/src/i18n/README.md)), light/dark.
@@ -155,8 +155,8 @@ state. Start the daemon, then register:
 }
 ```
 
-42 tools cover projects, processes (start/stop/restart, enable/disable, all), logs, the error
-log, threshold alerts, and the live browser tabs of your dev apps: an opt-in `<script>` snippet lets
+43 tools cover projects, processes (start/stop/restart, enable/disable, all), logs, the error
+log (with jump-to-source via `open_in_editor`), threshold alerts, and the live browser tabs of your dev apps: an opt-in `<script>` snippet lets
 an agent read a page's client-side errors and call inspection tools the app registers on the page. **Full list →** [`AI_GUIDE.md`](AI_GUIDE.md#for-an-ai-driving-devwebui-over-mcp)
 
 ## CLI
@@ -228,11 +228,11 @@ daemon on port 4000 and the GUI on port 4010. macOS and Linux tray support is on
 **How is DevWebUI different from PM2's web UI, hotel, or exo?**
 Hotel and exo are local dev-server GUIs that haven't shipped a release in a while, and PM2's web
 dashboard (PM2 Plus / PM2.io) is a paid product beyond its free tier. DevWebUI is actively
-maintained, free, and local-first, and pairs its GUI with a 42-tool MCP server so AI agents can
+maintained, free, and local-first, and pairs its GUI with a 43-tool MCP server so AI agents can
 drive the same daemon you click.
 
 **Can AI agents control DevWebUI directly?**
-Yes. DevWebUI ships a stdio MCP server (`devwebui mcp`, or `server/src/mcp.ts`) with 42 tools
+Yes. DevWebUI ships a stdio MCP server (`devwebui mcp`, or `server/src/mcp.ts`) with 43 tools
 covering projects, starting/stopping/restarting processes, enabling/disabling them, logs, the
 error log, and threshold alerts. It's a thin client over the same running daemon the GUI uses, so
 an agent and a human see and change the same state.

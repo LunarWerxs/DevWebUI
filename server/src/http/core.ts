@@ -27,6 +27,7 @@ import {
 import { openPortableWindow } from "../portable-window.mjs";
 import { exitSafeMode, getSafeMode } from "../crash-sentinel";
 import type { SafeModeExitResult } from "../../../shared/dto";
+import { openInEditor } from "../open-in-editor";
 
 export interface Client {
   send: (event: string, data: unknown) => Promise<void>;
@@ -286,6 +287,16 @@ function handleSafeModeExit(c: Context, manager: Manager) {
   return c.json(reply);
 }
 
+// A frame logged by a process is usually relative to that process's cwd (Vite, tsc, eslint), so
+// the caller names the process and the daemon resolves against the cwd only it knows.
+async function handleOpenInEditor(c: Context, manager: Manager) {
+  const body = await readBody(c);
+  const processId = typeof body.processId === "string" ? body.processId : "";
+  const cwd = processId ? manager.view(processId)?.cwd : undefined;
+  const result = await openInEditor(body, cwd);
+  return c.json(result, !result.ok && result.reason === "bad-input" ? 400 : 200);
+}
+
 /** Register health/update/shutdown/settings/error-log routes. */
 export function registerSystemRoutes(app: Hono, manager: Manager, options: CreateAppOptions) {
   // `service` is the identity the launchers match on. Without it a responder is indistinguishable
@@ -315,4 +326,5 @@ export function registerSystemRoutes(app: Hono, manager: Manager, options: Creat
   // ---- safe mode (crash sentinel, see server/src/crash-sentinel.ts) ----
   app.get(ROUTES.safeMode, (c) => c.json(getSafeMode()));
   app.post(ROUTES.safeModeExit, (c) => handleSafeModeExit(c, manager));
+  app.post(ROUTES.openInEditor, (c) => handleOpenInEditor(c, manager));
 }

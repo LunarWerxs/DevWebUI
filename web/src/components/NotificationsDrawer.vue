@@ -23,6 +23,9 @@ import { useAppStore } from "@/store";
 import { formatAgo, formatAgoCoarse } from "@/lib/format";
 import { sourcePill } from "@/lib/severity";
 import type { AppNotification, ErrorEvent } from "@/types";
+import { openInEditor } from "@/api";
+import { findSourceFrames, type SourceFrame } from "../../../shared/source-frames";
+import type { OpenInEditorFailure } from "../../../shared/dto";
 import { useI18n } from "vue-i18n";
 
 const { t } = useI18n({ useScope: "global" });
@@ -158,6 +161,47 @@ async function copyErr() {
     toast.success(t("notifications.copyErrorsSuccess", { count: items.length }, items.length));
   } catch {
     toast.error(t("notifications.copyErrorsFailed"));
+  }
+}
+
+// A stack trace is only useful if you can get to the line it names: split each sample into
+// plain text and file:line:col frames so every frame renders as a jump into the editor.
+type SampleSegment = { text: string; frame?: SourceFrame };
+
+function sampleSegments(sample: string): SampleSegment[] {
+  const out: SampleSegment[] = [];
+  let at = 0;
+  for (const f of findSourceFrames(sample)) {
+    if (f.index > at) out.push({ text: sample.slice(at, f.index) });
+    out.push({ text: sample.slice(f.index, f.index + f.length), frame: f });
+    at = f.index + f.length;
+  }
+  if (at < sample.length) out.push({ text: sample.slice(at) });
+  return out;
+}
+
+const OPEN_FAILURE_KEY: Record<OpenInEditorFailure, string> = {
+  "bad-input": "notifications.openFailedBadInput",
+  "not-found": "notifications.openFailedNotFound",
+  "no-editor": "notifications.openFailedNoEditor",
+  "unsupported-editor": "notifications.openFailedUnsupportedEditor",
+  "launch-failed": "notifications.openFailedLaunch",
+};
+
+// `f` is optional only because the template's v-if narrowing does not reach into @click.
+async function openFrame(e: ErrorEvent, f?: SourceFrame) {
+  if (!f) return;
+  try {
+    const r = await openInEditor({
+      file: f.file,
+      line: f.line,
+      column: f.column,
+      processId: e.processId,
+    });
+    if (r.ok) toast.success(t("notifications.openedInEditor", { editor: r.editor }));
+    else toast.error(t(OPEN_FAILURE_KEY[r.reason]), { description: r.detail });
+  } catch {
+    toast.error(t(OPEN_FAILURE_KEY["launch-failed"]));
   }
 }
 
@@ -376,7 +420,7 @@ function notifTitle(n: AppNotification) {
             </div>
             <pre
               class="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded border border-border bg-muted p-2.5 font-mono text-xs text-destructive"
-              >{{ e.sample }}</pre
+              ><template v-for="(s, i) in sampleSegments(e.sample)" :key="i"><button v-if="s.frame" type="button" class="inline cursor-pointer text-start underline decoration-dotted underline-offset-2 hover:decoration-solid" :title="t('notifications.openInEditor')" @click="openFrame(e, s.frame)">{{ s.text }}</button><template v-else>{{ s.text }}</template></template></pre
             >
           </div>
         </div>

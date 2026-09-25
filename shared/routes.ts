@@ -40,6 +40,8 @@ export const ROUTES = {
   errorsDismiss: "/api/errors/dismiss",
   safeMode: "/api/safe-mode",
   safeModeExit: "/api/safe-mode/exit",
+  /** POST `{ file, line, column?, processId? }`: open a logged source frame in the running editor. */
+  openInEditor: "/api/open-in-editor",
 
   // ---- alert rules (threshold alerting on process CPU/memory) ----
   alertRules: "/api/alerts/rules",

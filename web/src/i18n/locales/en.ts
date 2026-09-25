@@ -159,6 +159,13 @@ export default {
     noErrors: "No errors recorded.",
     noErrorsForProcess: "No errors recorded for this process.",
     processNameFallback: "process",
+    openInEditor: "Open this line in your editor",
+    openedInEditor: "Opened in {editor}",
+    openFailedBadInput: "That location can't be opened",
+    openFailedNotFound: "That file no longer exists",
+    openFailedNoEditor: "No running editor found. Open your editor, or set DEVWEBUI_EDITOR.",
+    openFailedUnsupportedEditor: "DEVWEBUI_EDITOR must point at the editor's .exe",
+    openFailedLaunch: "Couldn't start the editor",
   },
   processCard: {
     actionFailed: "Action failed",

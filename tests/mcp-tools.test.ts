@@ -69,8 +69,8 @@ function toolNamed(name: string): McpEngineTool {
   return t;
 }
 
-test("all 42 tools are loaded", () => {
-  expect(TOOLS.length).toBe(42);
+test("all 43 tools are loaded", () => {
+  expect(TOOLS.length).toBe(43);
 });
 
 // One row per tool: the args it's invoked with, and the request it MUST produce. `body` is
@@ -205,6 +205,13 @@ const cases: Case[] = [
   },
   { name: "list_errors", args: {}, method: "GET", url: "/api/errors" },
   {
+    name: "open_in_editor",
+    args: { file: "src/app.ts", line: 12, column: 5, processId: "p1.api" },
+    method: "POST",
+    url: "/api/open-in-editor",
+    body: { file: "src/app.ts", line: 12, column: 5, processId: "p1.api" },
+  },
+  {
     name: "clear_errors",
     args: { processId: "p1.api" },
     method: "POST",
@@ -309,3 +316,19 @@ for (const c of cases) {
     }
   });
 }
+
+// list_errors is the one tool that reshapes its response: it adds `frames` so an agent can go
+// straight from an error to open_in_editor without re-parsing the sample itself.
+test("list_errors: attaches the file:line:col frames found in each sample", async () => {
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify([
+        { fingerprint: "f1", sample: "TypeError: x is undefined\n    at run (/srv/app/src/main.ts:12:5)" },
+        { fingerprint: "f2", sample: "plain failure, no location" },
+      ]),
+      { status: 200 },
+    )) as typeof fetch;
+  const out = (await toolNamed("list_errors").run({})) as { frames: unknown[] }[];
+  expect(out[0]?.frames).toEqual([{ file: "/srv/app/src/main.ts", line: 12, column: 5 }]);
+  expect(out[1]?.frames).toEqual([]);
+});
