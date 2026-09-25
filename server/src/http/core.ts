@@ -198,6 +198,10 @@ async function handlePutSettings(c: Context, manager: Manager) {
         ? body.autoUpdateIntervalSecs
         : undefined,
     updateNotify: optBool(body.updateNotify),
+    updateCooldownDays:
+      typeof body.updateCooldownDays === "number" && Number.isFinite(body.updateCooldownDays)
+        ? body.updateCooldownDays
+        : undefined,
     portableMode: optBool(body.portableMode),
     hideTrayIcon: optBool(body.hideTrayIcon),
   });

@@ -84,6 +84,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   revoked with `devwebui pairing clients|revoke`. The cookie file is written on every boot, so
   turning enforcement on later needs no other setup.
 
+- **Update cooldown for the prebuilt app.** Settings -> App updates -> *Update cooldown (days)*
+  (`updateCooldownDays`, 0-90, default 0 = off) makes the release updater offer and install only
+  a GitHub Release published at least that many days ago. When the latest release is too young it
+  falls back to the newest release that is old enough, and if the release list cannot be read it
+  offers nothing rather than the release it is holding back. A bad or compromised release then has
+  that long to be caught before this install runs it. The idea comes from oh-my-zsh's update
+  cooldown. The setting syncs with settings sync; source checkouts (git updates) are unaffected.
+
 ## [1.0.0] - 2026-09-20
 
 ### Fixed

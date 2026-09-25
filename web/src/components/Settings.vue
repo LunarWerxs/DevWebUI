@@ -12,6 +12,7 @@ import {
   ExternalLink,
   FilterX,
   FolderX,
+  Hourglass,
   Languages,
   MessageCircleQuestion,
   Moon,
@@ -85,6 +86,7 @@ const skipLinux = ref(false);
 const restartNow = ref(true);
 const autoUpdate = ref(false);
 const updateNotify = ref(true);
+const updateCooldownDays = ref(0);
 const portableMode = ref(false);
 const hideTrayIcon = ref(false);
 // Pre-edit snapshot of portableMode as THIS panel loaded it. save() detects the
@@ -141,6 +143,7 @@ watch(open, async (v) => {
     skipLinux.value = s.skipLinux;
     autoUpdate.value = s.autoUpdate ?? false;
     updateNotify.value = s.updateNotify ?? true;
+    updateCooldownDays.value = s.updateCooldownDays ?? 0;
     portableMode.value = s.portableMode ?? false;
     loadedPortableMode.value = portableMode.value;
     hideTrayIcon.value = s.hideTrayIcon ?? false;
@@ -171,6 +174,7 @@ async function save() {
       restart: restartNow.value,
       autoUpdate: autoUpdate.value,
       updateNotify: updateNotify.value,
+      updateCooldownDays: updateCooldownDays.value,
       portableMode: portableMode.value,
       hideTrayIcon: hideTrayIcon.value,
     });
@@ -180,6 +184,7 @@ async function save() {
     store.autoUpdate = saved.autoUpdate;
     store.autoUpdateIntervalSecs = saved.autoUpdateIntervalSecs;
     store.updateNotify = saved.updateNotify;
+    updateCooldownDays.value = saved.updateCooldownDays;
     store.portableMode = saved.portableMode;
     loadedPortableMode.value = saved.portableMode;
     // Saving keeps the panel open (owner request); the store reflects the change live and the
@@ -262,6 +267,21 @@ async function save() {
         <SettingsRow :icon="RefreshCw" :label="t('settings.autoUpdate')">
           <template #info><InfoHint><span v-html="t('settings.autoUpdateHelp')" /></InfoHint></template>
           <template #control><Switch id="sd-auto-update" v-model="autoUpdate" /></template>
+        </SettingsRow>
+        <!-- Cooldown: only releases public for N days are offered or installed (0 = off). -->
+        <SettingsRow :icon="Hourglass" :label="t('settings.updateCooldown')">
+          <template #info><InfoHint><span v-html="t('settings.updateCooldownHelp')" /></InfoHint></template>
+          <template #control>
+            <Input
+              id="sd-update-cooldown"
+              type="number"
+              min="0"
+              max="90"
+              class="w-20 text-sm"
+              :model-value="updateCooldownDays"
+              @update:model-value="(v) => (updateCooldownDays = v === '' || v == null ? 0 : Number(v))"
+            />
+          </template>
         </SettingsRow>
       </SettingsGroup>
 

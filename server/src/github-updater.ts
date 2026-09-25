@@ -33,7 +33,10 @@ const LATEST_API = "https://studio.connectionsapi.com/v1/app/devwebui/latest";
  * failure waiting to happen.
  */
 const GITHUB_LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`;
+/** Recent releases, newest first: walked only when the update cooldown holds back the latest one. */
+const GITHUB_RELEASES_API = `https://api.github.com/repos/${REPO}/releases?per_page=30`;
 const VERSION = pkg.version;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface ReleaseAsset {
   name: string;
@@ -41,9 +44,12 @@ export interface ReleaseAsset {
   size: number;
 }
 
-interface Release {
+export interface Release {
   tag_name: string;
   assets: ReleaseAsset[];
+  published_at?: string | null;
+  draft?: boolean;
+  prerelease?: boolean;
 }
 
 export function releaseTarget(
@@ -225,22 +231,90 @@ async function latestRelease(): Promise<Release> {
   return release;
 }
 
+// Update cooldown, an idea from oh-my-zsh's `zstyle ':omz:update' cooldown N` (tools/upgrade.sh, MIT): adopt only
+// what has been public for N days. A bad or compromised release then has N days to be caught and
+// pulled before this install downloads it, instead of every install running it within hours.
+
+/** True when `release` was published at least `cooldownDays` before `now`. Under a cooldown a
+ *  release with no readable publish date counts as too young: unknown age must not install. */
+export function releaseAged(release: Release, cooldownDays: number, now = Date.now()): boolean {
+  if (cooldownDays <= 0) return true;
+  const published = Date.parse(release.published_at ?? "");
+  return Number.isFinite(published) && now - published >= cooldownDays * DAY_MS;
+}
+
+/** The highest-versioned stable release published at least `cooldownDays` ago, or null. */
+export function newestAgedRelease(
+  releases: Release[],
+  cooldownDays: number,
+  now = Date.now(),
+): Release | null {
+  let best: Release | null = null;
+  for (const release of releases) {
+    if (release.draft || release.prerelease || !releaseAged(release, cooldownDays, now)) continue;
+    if (!best || isNewer(release.tag_name ?? "", best.tag_name ?? "")) best = release;
+  }
+  return best;
+}
+
+interface TargetRelease {
+  /** The release this install may adopt, or null when the cooldown leaves none. */
+  release: Release | null;
+  /** The latest release when the cooldown held it back, else null. */
+  heldBack: Release | null;
+  cooldownDays: number;
+}
+
+/**
+ * The latest release, filtered through settings.updateCooldownDays. When the latest is too young,
+ * walk GitHub's recent releases for the newest one old enough (a plain anonymous read, like the
+ * fallback above). If that list is unreachable, adopt nothing: failing open would install the
+ * very release the cooldown exists to hold back.
+ */
+async function targetRelease(): Promise<TargetRelease> {
+  const latest = await latestRelease();
+  const cooldownDays = readSettings().updateCooldownDays ?? 0;
+  if (releaseAged(latest, cooldownDays)) return { release: latest, heldBack: null, cooldownDays };
+  let recent: unknown = [];
+  try {
+    const response = await fetch(GITHUB_RELEASES_API, {
+      headers: { accept: "application/vnd.github+json", "user-agent": `${SERVICE}/${VERSION}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (response.ok) recent = await response.json();
+  } catch {}
+  const release = Array.isArray(recent)
+    ? newestAgedRelease(recent as Release[], cooldownDays)
+    : null;
+  return { release, heldBack: latest, cooldownDays };
+}
+
+/** Why no update is offered while a newer release exists: the cooldown is holding it back. */
+function cooldownReason(target: TargetRelease): string | null {
+  const held = target.heldBack?.tag_name?.replace(/^v/, "") ?? "";
+  if (!held || !isNewer(held, VERSION)) return null;
+  const days = target.cooldownDays === 1 ? "1 day" : `${target.cooldownDays} days`;
+  return `v${held} was published less than ${days} ago; the update cooldown is holding it back.`;
+}
+
 let cached: { status: UpdateStatus; at: number } | null = null;
 const CACHE_MS = 5 * 60 * 1000;
 
 export async function checkForUpdate(options: { fresh?: boolean } = {}): Promise<UpdateStatus> {
   if (!options.fresh && cached && Date.now() - cached.at < CACHE_MS) return cached.status;
   try {
-    const release = await latestRelease();
-    const remoteVersion = release.tag_name?.replace(/^v/, "") ?? "";
+    const target = await targetRelease();
+    const release = target.release;
+    const remoteVersion = release?.tag_name?.replace(/^v/, "") ?? "";
     const available = !!remoteVersion && isNewer(remoteVersion, VERSION);
-    const asset = available ? assetForPlatform(release.assets ?? []) : null;
+    const asset = available ? assetForPlatform(release?.assets ?? []) : null;
     const status = baseStatus({
-      remoteCommit: release.tag_name ?? null,
+      remoteCommit: release?.tag_name ?? null,
       updateAvailable: available,
       canApply: available && !!asset,
-      reason:
-        available && !asset
+      reason: !available
+        ? cooldownReason(target)
+        : !asset
           ? `v${remoteVersion} is available, but its ${releaseTarget()} archive is missing.`
           : null,
     });
@@ -393,8 +467,9 @@ async function downloadAndStageUpdate(
   return { ok: true, candidate, output };
 }
 
-/** Pick the platform archive + its checksum manifest out of the latest release, refusing
- *  up front when either is missing (see the manifest note below). */
+/** Pick the platform archive + its checksum manifest out of the release the cooldown allows
+ *  (the same one checkForUpdate offered), refusing up front when either is missing (see the
+ *  manifest note below). */
 async function resolveUpdateAssets(
   remoteVersion: string,
 ): Promise<
@@ -403,7 +478,7 @@ async function resolveUpdateAssets(
 > {
   let assets: ReleaseAsset[] = [];
   try {
-    assets = (await latestRelease()).assets ?? [];
+    assets = (await targetRelease()).release?.assets ?? [];
   } catch {}
   const asset = assetForPlatform(assets);
   const checksumAsset = assets.find((a) => a.name === CHECKSUM_ASSET) ?? null;
