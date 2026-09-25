@@ -59,10 +59,14 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
       void this.runPrepareCompose(compose, e.def.cwd).then((res) => {
         const current =
           e.pendingStart && e.generation === generation && this.entries.get(e.def.id) === e;
-        if (res.ok) this.holdCompose(e.def, res.started, current);
+        // A readiness failure after `up` still hands back what `up` started: hold it
+        // so the release below (or a later one) stops it in start-and-stop mode.
+        const started = res.ok ? res.started : (res.started ?? []);
+        if (res.ok || started.length) this.holdCompose(e.def, started, current);
         if (!current) return;
         e.pendingStart = false;
         if (!res.ok) {
+          this.releaseCompose(e.def.id); // this process will not run, so it relies on nothing
           this.addLog(e, "stderr", `[devwebui] ${res.reason}; not starting.`);
           this.setStatus(e, "stopped");
           this.resolveExitWaiters(e);
@@ -418,6 +422,12 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
     for (const hold of this.composeHolds.values())
       for (const user of [...hold.users]) this.releaseCompose(user);
     await Promise.allSettled([...this.composeStops]);
+  }
+
+  /** A process removed from its file (or its project) lets go of its stack now, not at stopAll. */
+  protected override discardEntry(e: Entry): void {
+    super.discardEntry(e);
+    this.releaseCompose(e.def.id);
   }
 
   /** Per compose stack: the processes relying on it and the services this daemon started. */

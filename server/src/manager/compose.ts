@@ -1,6 +1,6 @@
 // Compose-managed dependencies: a process's optional `compose` block brings its
 // docker compose stack (Postgres, Redis, a mail catcher...) up BEFORE the process
-// spawns, waits until every published port accepts connections, and hands the
+// spawns, waits until its healthchecks pass and every published port serves, and hands the
 // process connection env derived from each service's image (postgres:* gives
 // DATABASE_URL). WHY: a dev server started before its database is up fails in a
 // confusing way, and hand-copying DATABASE_URL out of a compose file drifts.
@@ -13,7 +13,7 @@
 // so the orchestration is testable without a Docker daemon. The Manager wiring
 // (when to call it, who holds a started stack) lives in lifecycle.ts.
 import { type ChildProcess, spawn } from "node:child_process";
-import { isPortListening } from "../ports";
+import net from "node:net";
 import type { ProcessCompose, ProcessDef } from "../types";
 
 /** A service carrying this label (any value but "false") is left alone: not started, probed or mapped. */
@@ -24,6 +24,9 @@ const COMPOSE_QUERY_TIMEOUT_MS = 30_000;
 const COMPOSE_UP_TIMEOUT_MS = 10 * 60_000;
 const COMPOSE_STOP_TIMEOUT_MS = 60_000;
 const READINESS_POLL_MS = 500;
+const PROBE_CONNECT_MS = 300;
+// How long a connected probe listens for an EOF before calling the port ready.
+const PROBE_READ_MS = 200;
 
 export interface DockerResult {
   code: number | null;
@@ -50,6 +53,10 @@ export interface ComposeService {
   environment: Record<string, string>;
   labels: Record<string, string>;
   running: boolean;
+  /** Exited with code 0: a one-shot job (migrations, bucket setup) that finished its work. */
+  completed?: boolean;
+  /** Compose healthcheck state ("starting", "healthy", "unhealthy"); empty when none is defined. */
+  health?: string;
   ports: PublishedPort[];
 }
 
@@ -62,16 +69,26 @@ export type ComposeOutcome =
       /** Which service each injected env key came from (keys only; values carry passwords). */
       sources: Record<string, string>;
     }
-  | { ok: false; reason: string };
+  | {
+      ok: false;
+      reason: string;
+      /** Services `up` started before a later step failed, so the caller can still stop them. */
+      started?: string[];
+    };
 
 /** A compose block is active unless it is absent or explicitly `mode: "none"`. */
 export function composeActive(spec: ProcessCompose | undefined): spec is ProcessCompose {
   return !!spec && (spec.mode ?? "start-only") !== "none";
 }
 
-/** Identity of a compose stack, so processes sharing one file share one hold. */
+/**
+ * Identity of a compose stack, so processes sharing one file share one hold. A set
+ * `file` is already absolute (file-store.ts resolves it), so it alone names the stack:
+ * two processes with different cwds on one file must not hold it separately, or the
+ * first to stop in start-and-stop mode would stop the other's database.
+ */
 export function composeKey(def: ProcessDef): string {
-  return `${def.cwd}|${def.compose?.file ?? ""}`;
+  return def.compose?.file ? `file|${def.compose.file}` : `cwd|${def.cwd}`;
 }
 
 function baseArgs(spec: ProcessCompose): string[] {
@@ -147,6 +164,8 @@ export function parseComposeConfig(
 interface PsRow {
   Service?: string;
   State?: string;
+  Health?: string;
+  ExitCode?: number;
   Publishers?: Array<{
     URL?: string;
     TargetPort?: number;
@@ -186,7 +205,15 @@ export function mergeServices(
       const port = { host: reachableHost(p.URL), target: p.TargetPort, published: p.PublishedPort };
       if (!ports.some((x) => x.published === port.published)) ports.push(port);
     }
-    return { name, ...svc, running: (row?.State ?? "").toLowerCase() === "running", ports };
+    const state = (row?.State ?? "").toLowerCase();
+    return {
+      name,
+      ...svc,
+      running: state === "running",
+      completed: state === "exited" && row?.ExitCode === 0,
+      health: (row?.Health ?? "").toLowerCase(),
+      ports,
+    };
   });
 }
 
@@ -304,6 +331,45 @@ export function connectionEnv(services: ComposeService[]): {
   return { env, sources };
 }
 
+/**
+ * Readiness probe for a published compose port. A plain connect is not enough: the
+ * host end is docker-proxy (or the Docker Desktop backend), which accepts as soon as
+ * the container exists and then drops the connection while the server inside is
+ * still booting. So after connecting, listen briefly: an EOF or reset means nothing
+ * is serving yet; data, or a quiet open socket (Postgres and Redis wait for the
+ * client to speak first), means ready. Idea from Spring Boot's TCP readiness check.
+ */
+export const composePortReady: PortProbe = (port, host) =>
+  new Promise((resolve) => {
+    const sock = new net.Socket();
+    let connected = false;
+    const done = (v: boolean) => {
+      sock.removeAllListeners();
+      sock.destroy();
+      resolve(v);
+    };
+    sock.setTimeout(PROBE_CONNECT_MS);
+    sock.once("connect", () => {
+      connected = true;
+      sock.setTimeout(PROBE_READ_MS);
+    });
+    sock.once("data", () => done(true));
+    sock.once("end", () => done(false));
+    sock.once("close", () => done(false));
+    sock.once("timeout", () => done(connected));
+    sock.once("error", () => done(false));
+    try {
+      sock.connect(port, host);
+    } catch {
+      done(false);
+    }
+  });
+
+/** A defined healthcheck that has not yet passed; services without one never wait here. */
+function healthPending(svc: ComposeService): boolean {
+  return svc.health === "starting" || svc.health === "unhealthy";
+}
+
 function failure(step: string, r: DockerResult): { ok: false; reason: string } {
   const detail = r.stderr.trim().split(/\r?\n/).slice(-3).join(" ").trim();
   const hint =
@@ -314,8 +380,10 @@ function failure(step: string, r: DockerResult): { ok: false; reason: string } {
 /**
  * Bring a process's compose stack up and wait for it. Steps: read the resolved
  * config (images, env, labels), list what is running, `up -d` the wanted services
- * unless every one is already running (skipIfRunning, default on), then TCP-probe
- * each published port until it accepts or the readiness timeout passes.
+ * unless every one is already running (skipIfRunning, default on), then wait until
+ * every defined healthcheck passes and each published port serves (composePortReady),
+ * or the readiness timeout passes. A service that exited 0 (a one-shot init job) is
+ * done, not down: it neither triggers an `up` nor fails the start.
  */
 export async function prepareCompose(
   spec: ProcessCompose,
@@ -323,7 +391,9 @@ export async function prepareCompose(
   deps: { run?: DockerRunner; probe?: PortProbe; pollMs?: number } = {},
 ): Promise<ComposeOutcome> {
   const run = deps.run ?? runDocker;
-  const probe = deps.probe ?? isPortListening;
+  const probe = deps.probe ?? composePortReady;
+  const pollMs = deps.pollMs ?? READINESS_POLL_MS;
+  const pause = () => new Promise((r) => setTimeout(r, pollMs));
   const args = baseArgs(spec);
 
   const cfg = await run([...args, "config", "--format", "json"], cwd, COMPOSE_QUERY_TIMEOUT_MS);
@@ -336,7 +406,12 @@ export async function prepareCompose(
   }
 
   const listRunning = async (): Promise<ComposeService[] | string> => {
-    const ps = await run([...args, "ps", "--format", "json"], cwd, COMPOSE_QUERY_TIMEOUT_MS);
+    // --all: an exited one-shot job must show up with its exit code, not vanish.
+    const ps = await run(
+      [...args, "ps", "--all", "--format", "json"],
+      cwd,
+      COMPOSE_QUERY_TIMEOUT_MS,
+    );
     if (ps.code !== 0) return failure("ps", ps).reason;
     try {
       return mergeServices(config, parseComposePs(ps.stdout));
@@ -350,7 +425,7 @@ export async function prepareCompose(
   const wanted = before.filter(
     (s) => !isIgnored(s) && (!spec.services?.length || spec.services.includes(s.name)),
   );
-  const notRunning = wanted.filter((s) => !s.running).map((s) => s.name);
+  const notRunning = wanted.filter((s) => !s.running && !s.completed).map((s) => s.name);
   const skip = (spec.skipIfRunning ?? true) && notRunning.length === 0;
   if (!skip && wanted.length) {
     const names = wanted.map((s) => s.name);
@@ -358,34 +433,45 @@ export async function prepareCompose(
     if (up.code !== 0) return failure("up", up);
   }
 
-  const after = await listRunning();
-  if (typeof after === "string") return { ok: false, reason: after };
+  // From here on `up` has run: every failure hands back what it started, so a
+  // start-and-stop caller can still stop it.
+  const started = skip ? [] : notRunning;
+  const fail = (reason: string): ComposeOutcome => ({ ok: false, reason, started });
   const wantedNames = new Set(wanted.map((s) => s.name));
-  const live = after.filter((s) => wantedNames.has(s.name));
-  // A container that exited straight after `up` (bad config, port clash) would
-  // otherwise pass readiness vacuously: it publishes no ports to probe.
-  const down = live.filter((s) => !s.running).map((s) => s.name);
-  if (down.length)
-    return { ok: false, reason: `compose service(s) not running: ${down.join(", ")}` };
-
   const deadline = Date.now() + (spec.readinessTimeoutMs ?? COMPOSE_READINESS_TIMEOUT_MS);
+  let live: ComposeService[];
+  for (;;) {
+    const after = await listRunning();
+    if (typeof after === "string") return fail(after);
+    live = after.filter((s) => wantedNames.has(s.name));
+    // A container that exited straight after `up` (bad config, port clash) would
+    // otherwise pass readiness vacuously: it publishes no ports to probe.
+    const down = live.filter((s) => !s.running && !s.completed).map((s) => s.name);
+    if (down.length) return fail(`compose service(s) not running: ${down.join(", ")}`);
+    // A defined healthcheck is the stack's own word on readiness: wait it out first.
+    const unhealthy = live.filter(healthPending).map((s) => s.name);
+    if (!unhealthy.length) break;
+    if (Date.now() >= deadline)
+      return fail(`compose service(s) not healthy in time: ${unhealthy.join(", ")}`);
+    await pause();
+  }
+
   for (const svc of live) {
     for (const port of svc.ports) {
       for (;;) {
         if (await probe(port.published, port.host)) break;
         if (Date.now() >= deadline)
-          return {
-            ok: false,
-            reason: `compose service "${svc.name}" did not accept connections on ${port.host}:${port.published} in time`,
-          };
-        await new Promise((r) => setTimeout(r, deps.pollMs ?? READINESS_POLL_MS));
+          return fail(
+            `compose service "${svc.name}" did not accept connections on ${port.host}:${port.published} in time`,
+          );
+        await pause();
       }
     }
   }
 
   const { env, sources } =
     spec.injectEnv === false ? { env: {}, sources: {} } : connectionEnv(live);
-  return { ok: true, env, sources, started: skip ? [] : notRunning };
+  return { ok: true, env, sources, started };
 }
 
 /** Stop only the services this daemon started (never a stack the user had running already). */

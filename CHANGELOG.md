@@ -10,7 +10,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Compose-managed dependencies.** A process can carry a `compose` block: before it spawns,
   DevWebUI runs `docker compose up -d` for the repo's stack (skipped when it is already running),
-  waits until every published port accepts connections, and injects connection env derived from
+  waits until every defined healthcheck passes and every published port really serves (a port
+  Docker's proxy accepts and then drops does not count), and injects connection env derived from
   each service's image (`postgres` gives `DATABASE_URL`, `redis` gives `REDIS_URL`, and so on).
   A dev server no longer starts before its database and then fails in a way that needs
   diagnosing, and nobody hand-copies a `DATABASE_URL` out of a compose file. Services labelled

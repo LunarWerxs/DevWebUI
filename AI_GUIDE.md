@@ -92,9 +92,13 @@ that stack for it instead of relying on someone to run `docker compose up` first
 }
 ```
 
-- **Readiness:** every published TCP port of the wanted services must accept a connection before
-  the process spawns (or before its `waitForPort` wait starts). A timeout, a failed `up`, or a
-  service that exits right away stops the start with the reason in the process log.
+- **Readiness:** before the process spawns (or before its `waitForPort` wait starts), every wanted
+  service that defines a compose `healthcheck` must report healthy, and every published TCP port
+  must serve: a connection the host end drops at once (Docker's port proxy while the server inside
+  is still booting) counts as not ready. A timeout, a failed `up`, or a service that exits right
+  away stops the start with the reason in the process log.
+- **One-shot jobs:** a service that exited with code 0 (a migration or bucket-setup container) is
+  treated as done: it does not trigger an `up` or fail the start.
 - **Ignore label:** a service labelled `devwebui.ignore` (any value but `false`) is never started,
   probed or mapped.
 - **Injected env**, from the service image and its own compose `environment`, pointing at the
