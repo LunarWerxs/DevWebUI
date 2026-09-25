@@ -4,7 +4,8 @@ import { freePort, isPortListening, killPids, portOwners } from "../ports";
 import { effectiveRuntime, withRuntime } from "../runtime";
 import { planManagedSpawn } from "../spawn-plan";
 import { setEnabledOverride, setProjectOverride } from "../state";
-import type { FreePortResult, PortOwner, ProcessDef, Status } from "../types";
+import type { FreePortResult, PortOwner, ProcessCompose, ProcessDef, Status } from "../types";
+import { composeActive, composeKey, prepareCompose, stopComposeServices } from "./compose";
 import { ManagerWithMonitoring } from "./monitoring";
 import {
   KILL_GRACE_MS,
@@ -43,8 +44,47 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
     e.stopping = false;
     e.exitCode = null;
     e.configChanged = false; // this start uses the current def, so any held drift is now applied
+    e.composeEnv = undefined;
     this.clearStopTimer(e);
 
+    // Compose-managed dependencies come first: a waitForPort or the spawn itself may
+    // need the database this brings up. Same pendingStart guard as the steps below,
+    // plus a generation check so a stop-then-start during a slow `up` isn't resumed twice.
+    const compose = e.def.compose;
+    if (composeActive(compose)) {
+      const generation = e.generation;
+      e.pendingStart = true;
+      this.setStatus(e, "waiting");
+      this.addLog(e, "stdout", "[devwebui] bringing up compose dependencies...");
+      void this.runPrepareCompose(compose, e.def.cwd).then((res) => {
+        const current =
+          e.pendingStart && e.generation === generation && this.entries.get(e.def.id) === e;
+        // A readiness failure after `up` still hands back what `up` started: hold it
+        // so the release below (or a later one) stops it in start-and-stop mode.
+        const started = res.ok ? res.started : (res.started ?? []);
+        if (res.ok || started.length) this.holdCompose(e.def, started, current);
+        if (!current) return;
+        e.pendingStart = false;
+        if (!res.ok) {
+          this.releaseCompose(e.def.id); // this process will not run, so it relies on nothing
+          this.addLog(e, "stderr", `[devwebui] ${res.reason}; not starting.`);
+          this.setStatus(e, "stopped");
+          this.resolveExitWaiters(e);
+          return;
+        }
+        e.composeEnv = res.env;
+        const injected = Object.entries(res.sources).map(([k, svc]) => `${k} (${svc})`);
+        if (injected.length)
+          this.addLog(e, "stdout", `[devwebui] compose env: ${injected.join(", ")}`);
+        this.startAfterCompose(e);
+      });
+      return;
+    }
+    this.startAfterCompose(e);
+  }
+
+  /** The start steps that follow any compose step: the optional waitForPort, then continueStart. */
+  private startAfterCompose(e: Entry): void {
     // Dependency-ordered startup (S): wait for a declared port before spawning. The
     // wait is async, so flag pendingStart — same guard the free-port step below uses
     // — and bail out of every continuation if we were cancelled/replaced meanwhile.
@@ -196,7 +236,9 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
       e.def.command,
       effectiveRuntime(e.def.runtime, this.globalRuntime, e.def.detectedRuntime),
     );
-    const env = { ...process.env, ...e.def.env };
+    // Compose-derived connection env sits under the process's own `env`, so a
+    // hand-set DATABASE_URL in the .devwebui file always wins over the derived one.
+    const env = { ...process.env, ...e.composeEnv, ...e.def.env };
     // Spawn the server DIRECTLY (no cmd.exe/sh wrapper) when the command is a plain
     // executable invocation — which is what `bun …`/`node …` dev servers are — and fall back
     // to `shell: true` only for commands that need a shell (operators, `%VAR%`, `.cmd`/`.bat`
@@ -251,7 +293,17 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
     this.emitProjects(); // ProjectView.enabled changed — refresh the list
   }
 
-  stop(id: string): Promise<void> {
+  /**
+   * Stop a process, then release its hold on any compose stack it brought up.
+   * `keepCompose` is for a restart: the stack must survive the few hundred ms the
+   * process is down, or a start-and-stop stack would cycle with every restart.
+   */
+  stop(id: string, opts: { keepCompose?: boolean } = {}): Promise<void> {
+    const done = this.stopProcess(id);
+    return opts.keepCompose ? done : done.then(() => this.releaseCompose(id));
+  }
+
+  private stopProcess(id: string): Promise<void> {
     const e = this.entries.get(id);
     if (!e) return Promise.resolve();
     e.generation++; // see Entry.generation — cancels a restart still waiting out its settle delay
@@ -337,7 +389,7 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
     const e = this.entries.get(id);
     if (!e) return;
     const wasRunning = !!e.child;
-    await this.stop(id);
+    await this.stop(id, { keepCompose: true });
     // Claim the entry for THIS restart, then re-check after the settle delay. A stop()
     // that lands inside that window bumps the generation, and we abandon the re-start
     // rather than resurrecting a process the user just asked to stop.
@@ -355,7 +407,7 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
   /** Restart everything currently running — used when the global runtime changes. */
   async restartRunning(): Promise<void> {
     const running = [...this.entries.entries()].filter(([, e]) => e.child).map(([id]) => id);
-    await Promise.all(running.map((id) => this.stop(id)));
+    await Promise.all(running.map((id) => this.stop(id, { keepCompose: true })));
     for (const id of running) {
       const e = this.entries.get(id);
       if (e && (e.status === "stopped" || e.status === "crashed")) e.restarts += 1;
@@ -365,6 +417,82 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
 
   async stopAll(): Promise<void> {
     await Promise.all([...this.entries.keys()].map((id) => this.stop(id)));
+    // A holder removed from its file never gets a stop() of its own; on a full stop
+    // (daemon shutdown included) every stack is released, then waited for.
+    for (const hold of this.composeHolds.values())
+      for (const user of [...hold.users]) this.releaseCompose(user);
+    await Promise.allSettled([...this.composeStops]);
+  }
+
+  /** A process removed from its file (or its project) lets go of its stack now, not at stopAll. */
+  protected override discardEntry(e: Entry): void {
+    super.discardEntry(e);
+    this.releaseCompose(e.def.id);
+  }
+
+  /** Per compose stack: the processes relying on it and the services this daemon started. */
+  private composeHolds = new Map<
+    string,
+    {
+      spec: ProcessCompose;
+      cwd: string;
+      users: Set<string>;
+      started: Set<string>;
+      stopOnRelease: boolean;
+    }
+  >();
+  /** In-flight `docker compose stop` calls: a new `up` waits for them, and stopAll awaits them. */
+  private composeStops = new Set<Promise<void>>();
+
+  /** Wait out any in-flight compose stop, so an `up` never races a `stop` of the same stack. */
+  private async runPrepareCompose(spec: ProcessCompose, cwd: string) {
+    await Promise.allSettled([...this.composeStops]);
+    return prepareCompose(spec, cwd);
+  }
+
+  /** Record `def` as relying on its stack; a cancelled start (not re-started since) lets go at once. */
+  private holdCompose(def: ProcessDef, started: string[], current: boolean): void {
+    if (!def.compose) return;
+    const key = composeKey(def);
+    let hold = this.composeHolds.get(key);
+    if (!hold) {
+      hold = {
+        spec: def.compose,
+        cwd: def.cwd,
+        users: new Set(),
+        started: new Set(),
+        stopOnRelease: false,
+      };
+      this.composeHolds.set(key, hold);
+    }
+    for (const s of started) hold.started.add(s);
+    if (def.compose.mode === "start-and-stop") hold.stopOnRelease = true;
+    hold.users.add(def.id);
+    const e = this.entries.get(def.id);
+    if (!current && (!e || (!e.pendingStart && !e.child))) this.releaseCompose(def.id);
+  }
+
+  /**
+   * Drop `id`'s hold on every stack. The last holder out stops the services this
+   * daemon started (never ones that were already running) when any holder asked for
+   * start-and-stop; start-only stacks are left up for the next run.
+   */
+  private releaseCompose(id: string): void {
+    for (const [key, hold] of this.composeHolds) {
+      if (!hold.users.delete(id) || hold.users.size) continue;
+      this.composeHolds.delete(key);
+      if (!hold.stopOnRelease || !hold.started.size) continue;
+      const services = [...hold.started];
+      const e = this.entries.get(id);
+      const pending = stopComposeServices(hold.spec, hold.cwd, services).then((err) => {
+        this.composeStops.delete(pending);
+        if (!e) return;
+        if (err) this.addLog(e, "stderr", `[devwebui] ${err}`);
+        else
+          this.addLog(e, "stdout", `[devwebui] stopped compose services: ${services.join(", ")}`);
+      });
+      this.composeStops.add(pending);
+    }
   }
 
   /**

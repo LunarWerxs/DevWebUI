@@ -41,6 +41,8 @@ export interface Entry {
    * that window cancels the pending re-start instead of being silently overridden.
    */
   generation: number;
+  /** Connection env the compose step derived for THIS run (see compose.ts); cleared on every start. */
+  composeEnv?: Record<string, string>;
 }
 
 export interface Project {

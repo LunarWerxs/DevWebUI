@@ -126,10 +126,12 @@ One small file per repo lists the servers to run. Drop it in the repo root and c
 ```
 
 Per-process: `id`, `name`, `command`, plus optional `cwd`, `port`, `url`, `color`, `env`,
-`autostart`, `waitForPort`, `links`, `companion`. You can also add and edit processes right in the
+`autostart`, `waitForPort`, `links`, `companion`, `compose`. You can also add and edit processes right in the
 GUI, and DevWebUI writes them back to the file. `links` groups servers that run as one unit
 (starting or stopping one starts or stops them all); `companion` marks a process, like a shared
-database, that starts alongside any other process in the project you start by hand.
+database, that starts alongside any other process in the project you start by hand. A `compose`
+block brings the repo's `docker compose` stack up first, waits for its ports, and injects
+`DATABASE_URL`/`REDIS_URL`-style env derived from each service's image.
 
 **Full field spec + a copy-paste prompt that writes the file for you →** [`AI_GUIDE.md`](AI_GUIDE.md)
 

@@ -32,7 +32,8 @@ and put it in the repo root.
       "env": { "NODE_ENV": "development" }, // optional; extra env vars for this process
       "waitForPort": "web",    // optional; wait for a literal port, or a sibling id's port, before spawning
       "links": ["web"],        // optional; sibling ids that act as one unit with this one: start and stop together (symmetric, transitive)
-      "companion": true        // optional; starts whenever any other process in the project is started individually
+      "companion": true,       // optional; starts whenever any other process in the project is started individually
+      "compose": { "mode": "start-and-stop" } // optional; bring up this repo's docker compose stack first (see below)
     }
   ]
 }
@@ -56,6 +57,7 @@ and put it in the repo root.
 | `waitForPort`| no       | Dependency-ordered startup. A number waits on that literal port; a string names a sibling process's `id` and waits on THAT process's declared `port` instead. |
 | `links`      | no       | Sibling process `id`s (same file) that act as one unit with this one. Symmetric and transitive; starting or stopping any member (single-process actions in the GUI, or MCP `start_process` / `stop_process`) starts or stops the whole group. Unknown ids are ignored at runtime. |
 | `companion`  | no       | `true` to start this process whenever any *other* process in the project is started individually. For a shared database or proxy everything needs but nobody starts by hand. |
+| `compose`    | no       | Compose-managed dependencies. Before spawning, DevWebUI runs `docker compose up -d` (skipped when every service is already running), waits until each published port accepts TCP connections, then injects connection env derived from each service's image into the process. See [Compose-managed dependencies](#compose-managed-dependencies). |
 
 ### Authoring guidance
 
@@ -73,6 +75,41 @@ and put it in the repo root.
   frontend and the API it calls); use `companion` for a shared always-needed
   service (e.g. a database) that should start alongside whatever the developer
   starts by hand.
+
+### Compose-managed dependencies
+
+A process whose database, cache or mail catcher lives in a `compose.yaml` can have DevWebUI start
+that stack for it instead of relying on someone to run `docker compose up` first:
+
+```jsonc
+"compose": {
+  "file": "compose.yaml",        // optional; relative to THIS file. Omitted: compose finds it from the process cwd
+  "mode": "start-and-stop",      // "start-only" (default), "start-and-stop", or "none" (off, block kept)
+  "skipIfRunning": true,         // default true: no `up` when every wanted service is already running
+  "readinessTimeoutMs": 60000,   // default 60000: how long to wait for published ports before giving up
+  "services": ["db", "cache"],   // optional; only these services (default: all)
+  "injectEnv": true              // default true: add image-derived connection env to the process
+}
+```
+
+- **Readiness:** before the process spawns (or before its `waitForPort` wait starts), every wanted
+  service that defines a compose `healthcheck` must report healthy, and every published TCP port
+  must serve: a connection the host end drops at once (Docker's port proxy while the server inside
+  is still booting) counts as not ready. A timeout, a failed `up`, or a service that exits right
+  away stops the start with the reason in the process log.
+- **One-shot jobs:** a service that exited with code 0 (a migration or bucket-setup container) is
+  treated as done: it does not trigger an `up` or fail the start.
+- **Ignore label:** a service labelled `devwebui.ignore` (any value but `false`) is never started,
+  probed or mapped.
+- **Injected env**, from the service image and its own compose `environment`, pointing at the
+  host-published port: `postgres`/`postgis`/`pgvector`/`timescaledb` gives `DATABASE_URL`
+  (`postgres://`), `mysql`/`mariadb` gives `DATABASE_URL` (`mysql://`), `redis`/`valkey` gives
+  `REDIS_URL`, `mongo` gives `MONGODB_URI`, `rabbitmq` gives `AMQP_URL`, and
+  `mailhog`/`mailpit`/`maildev` give `SMTP_HOST` + `SMTP_PORT`. A key set in the process's own
+  `env` always wins. The process log names each injected key and its service (never the value).
+- **Stopping:** `start-and-stop` stops the services DevWebUI itself started (never ones that were
+  already running) once the last process using that stack is stopped, including on daemon
+  shutdown. A restart keeps the stack up.
 
 ---
 

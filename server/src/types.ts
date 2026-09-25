@@ -34,8 +34,20 @@ export interface ProcessDef {
   links?: string[];
   /** Companion: starts whenever any other process in this project is started individually. */
   companion?: boolean;
+  /** Compose-managed dependencies brought up (and waited on) before this process spawns. */
+  compose?: ProcessCompose;
   projectId: string;
   projectName: string;
+}
+
+/** A process's `compose` block, with `file` already resolved to an absolute path. See manager/compose.ts. */
+export interface ProcessCompose {
+  file?: string;
+  mode?: "none" | "start-only" | "start-and-stop";
+  skipIfRunning?: boolean;
+  readinessTimeoutMs?: number;
+  services?: string[];
+  injectEnv?: boolean;
 }
 
 /** A project ready to register in the Manager (resolved from a .devwebui file). */
