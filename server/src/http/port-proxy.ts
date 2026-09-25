@@ -2,8 +2,8 @@
 // Idea from coder/code-server's domain/path proxy (src/node/routes/domainProxy.ts, MIT), written
 // fresh for DevWebUI. A request whose Host is `<target>.localhost:<daemon port>` is forwarded
 // (HTTP here, WebSocket upgrades via upgradeProxySocket in server/src/index.ts) to
-// `127.0.0.1:<port>` of the managed process `<target>` names; `/proxy/<target>/...` on the
-// daemon's own origin redirects to that subdomain form.
+// the loopback port (IPv4 or IPv6, whichever answers) of the managed process `<target>` names;
+// `/proxy/<target>/...` on the daemon's own origin redirects to that subdomain form.
 //
 // WHY a subdomain and not a path: a proxied page served under `localhost:<daemon>/proxy/...` would
 // run on the DAEMON's origin, so any script in the user's dev server (or its npm deps) could call
@@ -96,7 +96,18 @@ const HOP_BY_HOP = [
   "upgrade",
 ];
 
-const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+// WHY both loopback families: Node 17+ resolves `localhost` to ::1 first on many hosts, so a dev
+// server on its default host (Vite's is `localhost`) often listens on [::1] only, while others bind
+// 127.0.0.1 only. The family that last answered on a port is tried first next time, sockets too.
+const LOOPBACKS = ["127.0.0.1", "[::1]"];
+const answeredOn = new Map<number, string>();
+
+function loopbackOrder(port: number): string[] {
+  const first = answeredOn.get(port);
+  return first ? [first, ...LOOPBACKS.filter((h) => h !== first)] : LOOPBACKS;
+}
+
+const escapeHtml =(s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
 /** A refused request. A browser page load gets a one-click confirm page (code-server sends it to
  *  its login; DevWebUI has no login, so the user's own click is the proof of intent - the click
@@ -111,7 +122,12 @@ function refuse(c: Context, label: string, reason: string): Response {
       `<!doctype html><meta charset="utf-8"><title>DevWebUI</title>` +
       `<p>Another site linked here. Open <b>${name}</b> through DevWebUI?</p>` +
       `<p><a href="${href}">Open ${name}</a></p>`;
-    return c.html(body, 403, { "cache-control": "no-store" });
+    // Never framed: a cross-site iframe could otherwise clickjack the one proof-of-intent click.
+    return c.html(body, 403, {
+      "cache-control": "no-store",
+      "x-frame-options": "DENY",
+      "content-security-policy": "frame-ancestors 'none'",
+    });
   }
   return c.json({ error: `forbidden: ${reason}` }, 403);
 }
@@ -128,17 +144,31 @@ async function forward(c: Context, port: number): Promise<Response> {
   headers.set("host", `localhost:${port}`);
   headers.delete("accept-encoding");
   const hasBody = c.req.method !== "GET" && c.req.method !== "HEAD";
-  const init = {
-    method: c.req.method,
-    headers,
-    body: hasBody ? c.req.raw.body : undefined,
-    redirect: "manual",
-    duplex: "half", // required to stream a request body
-  } as RequestInit;
-  let upstream: Response;
-  try {
-    upstream = await fetch(`http://127.0.0.1:${port}${url.pathname}${url.search}`, init);
-  } catch {
+  // A refused connection moves on to the other loopback family; the body is teed so the retry
+  // still has it, and the spare branch is dropped once a family answers.
+  const hosts = loopbackOrder(port);
+  let body = hasBody ? c.req.raw.body : null;
+  let upstream: Response | undefined;
+  for (const [i, host] of hosts.entries()) {
+    let sent = body;
+    if (body && i < hosts.length - 1) [sent, body] = body.tee();
+    const init = {
+      method: c.req.method,
+      headers,
+      body: sent ?? undefined,
+      redirect: "manual",
+      duplex: "half", // required to stream a request body
+    } as RequestInit;
+    try {
+      upstream = await fetch(`http://${host}:${port}${url.pathname}${url.search}`, init);
+      answeredOn.set(port, host);
+      if (body && body !== sent) void body.cancel().catch(() => {});
+      break;
+    } catch {
+      // try the next family
+    }
+  }
+  if (!upstream) {
     const error = `nothing is answering on port ${port} - is the process running?`;
     return c.json({ error }, 502);
   }
@@ -149,7 +179,7 @@ async function forward(c: Context, port: number): Promise<Response> {
   // A redirect to the dev server's own absolute origin stays inside the proxy.
   const location = out.get("location");
   if (location) {
-    const ownOrigin = new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1):${port}(?=/|$)`, "i");
+    const ownOrigin = new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1|\\[::1\\]):${port}(?=/|$)`, "i");
     out.set("location", location.replace(ownOrigin, "") || "/");
   }
   return new Response(upstream.body, {
@@ -211,10 +241,13 @@ interface UpstreamSocket {
 }
 
 export interface ProxySocketData {
-  upstream: string;
+  port: number;
+  /** Path and query to open on the upstream, e.g. `/?token=abc`. */
+  path: string;
   protocols: string[];
   socket?: UpstreamSocket;
   queue: WsMessage[];
+  clientClosed?: boolean;
 }
 
 interface ClientSocket {
@@ -245,11 +278,11 @@ export function upgradeProxySocket(
   const port = resolveProxyTarget(manager, label, ownPort);
   if (port == null) return false;
   const url = new URL(req.url);
-  const upstream = `ws://127.0.0.1:${port}${url.pathname}${url.search}`;
+  const path = `${url.pathname}${url.search}`;
   const offered = req.headers.get("sec-websocket-protocol") ?? "";
   const protocols = offered.split(/\s*,\s*/).filter(Boolean);
   return server.upgrade(req, {
-    data: { upstream, protocols, queue: [] },
+    data: { port, path, protocols, queue: [] },
     headers: protocols.length ? { "sec-websocket-protocol": protocols[0]! } : undefined,
   });
 }
@@ -261,22 +294,44 @@ const SocketCtor = (
 ).WebSocket;
 const OPEN = 1;
 
+/** The upstream's close code as one a server may send on (RFC 6455 7.4): 1000 and 3000-4999 pass;
+ *  the reserved ones (1004-1006, 1015) can throw in Bun, so a no-code or going-away close becomes
+ *  1000 and anything else 1011. */
+export function relayCloseCode(code: number): number {
+  if (code === 1000 || (code >= 3000 && code <= 4999)) return code;
+  return code === 1001 || code === 1005 || code === 1006 ? 1000 : 1011;
+}
+
 /** Bun.serve `websocket` handlers that pipe a proxied client socket to its upstream. */
 export const proxySocketHandlers = {
   open(ws: ClientSocket): void {
     const d = ws.data;
-    const up = new SocketCtor(d.upstream, d.protocols);
-    up.binaryType = "arraybuffer";
-    d.socket = up;
-    up.onopen = () => {
-      for (const m of d.queue.splice(0)) up.send(m);
+    const hosts = loopbackOrder(d.port);
+    // One loopback family after the other, as for HTTP: an upstream that closes before it ever
+    // opened on one family is retried on the next; only the last failure reaches the client.
+    const connect = (i: number): void => {
+      if (d.clientClosed) return;
+      const host = hosts[i]!;
+      const up = new SocketCtor(`ws://${host}:${d.port}${d.path}`, d.protocols);
+      up.binaryType = "arraybuffer";
+      d.socket = up;
+      let opened = false;
+      up.onopen = () => {
+        opened = true;
+        answeredOn.set(d.port, host);
+        for (const m of d.queue.splice(0)) up.send(m);
+      };
+      up.onmessage = (ev) => ws.send(ev.data);
+      up.onclose = (ev) => {
+        if (opened) ws.close(relayCloseCode(ev.code), ev.reason);
+        else if (i + 1 < hosts.length) connect(i + 1);
+        else ws.close(1011, "upstream unreachable");
+      };
+      up.onerror = () => {
+        if (opened) ws.close(1011, "upstream error");
+      };
     };
-    up.onmessage = (ev) => ws.send(ev.data);
-    // 1005/1006 are reserved "no code"/"abnormal" values a peer may not send.
-    up.onclose = (ev) => {
-      ws.close(ev.code === 1005 || ev.code === 1006 ? 1000 : ev.code, ev.reason);
-    };
-    up.onerror = () => ws.close(1011, "upstream error");
+    connect(0);
   },
   message(ws: ClientSocket, message: WsMessage): void {
     const up = ws.data.socket;
@@ -284,6 +339,7 @@ export const proxySocketHandlers = {
     else ws.data.queue.push(message);
   },
   close(ws: ClientSocket): void {
+    ws.data.clientClosed = true;
     ws.data.socket?.close();
   },
 };

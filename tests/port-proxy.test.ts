@@ -23,6 +23,16 @@ const upstream = Bun.serve({
   },
 });
 
+// A second stand-in bound to [::1] only, as Vite on its default `localhost` host often is under
+// Node 17+. Null where the machine has no IPv6 loopback; its test is skipped there.
+const upstreamV6 = (() => {
+  try {
+    return Bun.serve({ hostname: "::1", port: 0, fetch: () => Response.json({ family: "v6" }) });
+  } catch {
+    return null;
+  }
+})();
+
 const manager = new Manager();
 manager.monitorResources = false;
 manager.applyMonitorResources();
@@ -43,6 +53,17 @@ const project: LoadedProject = {
       projectId: "proxyproj",
       port: upstream.port,
     },
+    {
+      id: "proxyproj.v6",
+      localId: "v6",
+      name: "v6",
+      command: "echo never-started",
+      cwd: import.meta.dir,
+      autostart: false,
+      projectName: "Proxy Proj",
+      projectId: "proxyproj",
+      port: upstreamV6?.port,
+    },
   ],
 };
 manager.addProject(project, { autostart: false });
@@ -50,6 +71,7 @@ const app = createApp(manager, { port: 4000 });
 
 afterAll(() => {
   upstream.stop(true);
+  upstreamV6?.stop(true);
   manager.dispose();
 });
 
@@ -77,6 +99,7 @@ test("cross-site requests are refused: a confirm page for a browser load, 403 JS
   });
   expect(page.status).toBe(403);
   expect(await page.text()).toContain('href="/"');
+  expect(page.headers.get("content-security-policy")).toBe("frame-ancestors 'none'");
 
   const post = await app.request("http://proxyproj.web.localhost:4000/api/delete", {
     method: "POST",
@@ -88,6 +111,14 @@ test("cross-site requests are refused: a confirm page for a browser load, 403 JS
 test("a port no managed process declares is not relayed", async () => {
   const res = await app.request("http://4000.localhost:4000/");
   expect(res.status).toBe(404);
+  // The proxy's own refusal, not a web-asset 404 that would pass with the proxy gone.
+  expect(((await res.json()) as { error: string }).error).toContain("no managed process");
+});
+
+test.skipIf(!upstreamV6)("a dev server listening on [::1] only is still reached", async () => {
+  const res = await app.request("http://proxyproj.v6.localhost:4000/");
+  expect(res.status).toBe(200);
+  expect(((await res.json()) as { family: string }).family).toBe("v6");
 });
 
 test("/proxy/<target>/... redirects to the subdomain form, keeping path and query", async () => {

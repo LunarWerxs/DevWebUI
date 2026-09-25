@@ -15,7 +15,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server gets its own `*.localhost` origin rather than the daemon's, so its scripts cannot reach
   the local API; only ports a registered process declares are relayed, and the same cross-site
   guard as the API applies (a browser arriving from another site gets a one-click confirm page).
-  Idea from code-server's domain proxy (MIT).
+  A dev server listening on IPv6 loopback only (Vite's default `localhost` under Node 17+) is
+  reached too. For now the URL is typed by hand: no process card or MCP tool links to it yet, and
+  it serves this machine only, since a phone, another PC or a tunnel cannot resolve
+  `*.localhost` names. Idea from code-server's domain proxy (MIT).
 
 ## [1.0.0] - 2026-09-20
 
