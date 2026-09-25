@@ -52,7 +52,10 @@ automate, and everyone works off a single source of truth.
 **Prebuilt Windows app**: download `devwebui-windows-x64.exe` from
 [Releases](https://github.com/LunarWerxs/DevWebUI/releases) and run it directly. It is an
 icon-bearing GUI executable with the dashboard embedded and no console window or sidecar folders.
-The plain ZIP beside it is reserved for automatic updates.
+The plain ZIP beside it is reserved for automatic updates. To adopt only releases that have been
+public for a while, set **Settings -> App updates -> Update cooldown** to a number of days: a
+release younger than that is neither offered nor installed, so a bad release has time to be caught
+and pulled first (0, the default, offers the newest release at once).
 
 The tray icon comes with both downloads. It comes from a small separate launcher
 (`misc\lunarwerx-tray.exe`); the zip ships it beside the exe, and since 0.8.8 the single-file

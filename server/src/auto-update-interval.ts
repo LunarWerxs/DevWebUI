@@ -20,3 +20,12 @@ export function clampAutoUpdateInterval(secs: number): number {
     Math.max(AUTO_UPDATE_INTERVAL_MIN_S, Math.round(secs)),
   );
 }
+
+/** Update cooldown bounds (whole days): 0 = off, 90 ceiling so a typo cannot freeze updates for years. */
+export const UPDATE_COOLDOWN_MAX_DAYS = 90;
+
+/** Clamp a requested cooldown into [0, MAX] whole days; a non-finite value means off. */
+export function clampUpdateCooldownDays(days: number): number {
+  if (!Number.isFinite(days)) return 0;
+  return Math.min(UPDATE_COOLDOWN_MAX_DAYS, Math.max(0, Math.round(days)));
+}

@@ -328,6 +328,7 @@ describe("pushNow / pullNow", () => {
       scanExclude: ["node_modules", "D:/Archive"],
       updateNotify: false,
       autoUpdateIntervalSecs: 43_200,
+      updateCooldownDays: 7,
       portableMode: true,
       hideTrayIcon: true,
     } as const;

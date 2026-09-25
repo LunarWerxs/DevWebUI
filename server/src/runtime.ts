@@ -16,7 +16,11 @@ import path from "node:path";
 import { writeJsonAtomic } from "./atomic-write";
 import { dataDir } from "./data-dir";
 import { OS_SKIP, type SkipOs } from "./scan";
-import { AUTO_UPDATE_INTERVAL_DEFAULT_S, clampAutoUpdateInterval } from "./auto-update-interval.ts";
+import {
+  AUTO_UPDATE_INTERVAL_DEFAULT_S,
+  clampAutoUpdateInterval,
+  clampUpdateCooldownDays,
+} from "./auto-update-interval.ts";
 import type { RuntimePref, Settings } from "../../shared/dto";
 
 export type { RuntimePref, Settings } from "../../shared/dto";
@@ -149,6 +153,9 @@ export function readSettings(): Settings {
         ? clampAutoUpdateInterval(s.autoUpdateIntervalSecs)
         : AUTO_UPDATE_INTERVAL_DEFAULT_S,
       updateNotify: bool(s.updateNotify, true),
+      updateCooldownDays: Number.isFinite(s.updateCooldownDays)
+        ? clampUpdateCooldownDays(s.updateCooldownDays)
+        : 0,
       portableMode: bool(s.portableMode, false),
       hideTrayIcon: bool(s.hideTrayIcon, false),
     };
@@ -167,6 +174,7 @@ export function readSettings(): Settings {
       autoUpdate: false,
       autoUpdateIntervalSecs: AUTO_UPDATE_INTERVAL_DEFAULT_S,
       updateNotify: true,
+      updateCooldownDays: 0,
       portableMode: false,
       hideTrayIcon: false,
     };
@@ -202,6 +210,10 @@ export function writeSettings(patch: Partial<Settings>): Settings {
         ? clampAutoUpdateInterval(patch.autoUpdateIntervalSecs)
         : cur.autoUpdateIntervalSecs,
     updateNotify: bool(patch.updateNotify, cur.updateNotify),
+    updateCooldownDays:
+      patch.updateCooldownDays !== undefined
+        ? clampUpdateCooldownDays(patch.updateCooldownDays)
+        : cur.updateCooldownDays,
     portableMode: bool(patch.portableMode, cur.portableMode),
     hideTrayIcon: bool(patch.hideTrayIcon, cur.hideTrayIcon),
   };

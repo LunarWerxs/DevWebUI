@@ -177,6 +177,13 @@ export interface Settings {
    */
   updateNotify: boolean;
   /**
+   * Update cooldown in whole days (compiled distribution): only a GitHub Release published at
+   * least this many days ago is offered or installed, so a bad or compromised release has time
+   * to be caught and pulled before it reaches this machine. 0 = off (adopt the newest release at
+   * once). Clamped to [0, 90]; default 0. See server/src/github-updater.ts.
+   */
+  updateCooldownDays: number;
+  /**
    * Open the app UI in a chromeless Chromium app window (`--app=URL`) instead of a
    * normal browser tab — both from the in-app toggle and the tray/desktop launcher.
    * Default OFF. See server/src/portable-window.mjs (shared kit) + POST /api/portable-window.

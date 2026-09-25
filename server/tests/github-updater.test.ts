@@ -6,10 +6,14 @@ import {
   checkForUpdate,
   cleanupStaleUpdateArtifacts,
   isNewer,
+  newestAgedRelease,
   parseChecksums,
+  type Release,
+  releaseAged,
   releaseTarget,
   sha256,
 } from "../src/github-updater";
+import { writeSettings } from "../src/runtime";
 
 const direct = {
   name: "devwebui-windows-x64.exe",
@@ -197,5 +201,80 @@ test("both endpoints down reports the primary failure, not the backstop's", asyn
     expect(String(status.reason)).toContain("primary is unreachable");
   } finally {
     globalThis.fetch = real;
+  }
+});
+
+// Update cooldown: only a release public for N days is offered or installed, so a bad or
+// compromised release has time to be caught before an install adopts it. These pin that a
+// too-young latest release is never offered, that the newest OLD-ENOUGH release is offered in
+// its place, and that an unreachable release list fails closed rather than open.
+const DAY = 24 * 60 * 60 * 1000;
+const NOW = Date.parse("2026-09-25T00:00:00Z");
+const daysAgo = (n: number) => new Date(NOW - n * DAY).toISOString();
+
+test("releaseAged: under a cooldown, too-young or undated releases are not old enough", () => {
+  const rel = (published_at?: string): Release => ({
+    tag_name: "v1.0.0",
+    assets: [],
+    published_at,
+  });
+  expect(releaseAged(rel(daysAgo(8)), 7, NOW)).toBe(true);
+  expect(releaseAged(rel(daysAgo(2)), 7, NOW)).toBe(false);
+  expect(releaseAged(rel(undefined), 7, NOW)).toBe(false);
+  expect(releaseAged(rel(daysAgo(0)), 0, NOW)).toBe(true); // 0 = cooldown off
+});
+
+test("newestAgedRelease picks the highest aged stable release, skipping young, draft and prerelease", () => {
+  const releases: Release[] = [
+    { tag_name: "v5.0.0", assets: [], published_at: daysAgo(1) },
+    { tag_name: "v4.1.0", assets: [], published_at: daysAgo(30), prerelease: true },
+    { tag_name: "v4.2.0", assets: [], published_at: daysAgo(30), draft: true },
+    { tag_name: "v3.0.0", assets: [], published_at: daysAgo(40) },
+    { tag_name: "v4.0.0", assets: [], published_at: daysAgo(10) },
+  ];
+  expect(newestAgedRelease(releases, 7, NOW)?.tag_name).toBe("v4.0.0");
+  expect(newestAgedRelease(releases.slice(0, 1), 7, NOW)).toBeNull();
+});
+
+test("checkForUpdate under a cooldown offers the newest aged release, not the too-young latest", async () => {
+  const real = globalThis.fetch;
+  const young = { tag_name: "v999.0.0", assets: [], published_at: new Date().toISOString() };
+  const aged = {
+    tag_name: "v998.0.0",
+    assets: [{ name: assetName, browser_download_url: "https://example.test/a", size: 1 }],
+    published_at: new Date(Date.now() - 10 * DAY).toISOString(),
+  };
+  globalThis.fetch = stubFetchJson({
+    "/v1/app/devwebui/latest": () => new Response(JSON.stringify(young), { status: 200 }),
+    "/releases?per_page=": () => new Response(JSON.stringify([young, aged]), { status: 200 }),
+  });
+  writeSettings({ updateCooldownDays: 7 });
+  try {
+    const status = await checkForUpdate({ fresh: true });
+    expect(status.updateAvailable).toBe(true);
+    expect(status.remoteCommit).toBe("v998.0.0");
+    expect(status.canApply).toBe(true);
+  } finally {
+    globalThis.fetch = real;
+    writeSettings({ updateCooldownDays: 0 });
+  }
+});
+
+test("checkForUpdate under a cooldown fails closed when the release list is unreachable", async () => {
+  const real = globalThis.fetch;
+  const young = { tag_name: "v999.0.0", assets: [], published_at: new Date().toISOString() };
+  globalThis.fetch = stubFetchJson({
+    "/v1/app/devwebui/latest": () => new Response(JSON.stringify(young), { status: 200 }),
+    "/releases?per_page=": () => new Response("rate limited", { status: 403 }),
+  });
+  writeSettings({ updateCooldownDays: 7 });
+  try {
+    const status = await checkForUpdate({ fresh: true });
+    expect(status.ok).toBe(true);
+    expect(status.updateAvailable).toBe(false);
+    expect(String(status.reason)).toContain("cooldown");
+  } finally {
+    globalThis.fetch = real;
+    writeSettings({ updateCooldownDays: 0 });
   }
 });

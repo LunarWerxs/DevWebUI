@@ -78,6 +78,8 @@ const PREF_KEYS = [
   // Update preferences, minus the one that acts on its own — see NEVER_SYNCED.
   "updateNotify",
   "autoUpdateIntervalSecs",
+  // A risk preference, not an action: a longer cooldown only ever makes an install wait.
+  "updateCooldownDays",
   // How you like the app to present itself.
   "portableMode",
   "hideTrayIcon",

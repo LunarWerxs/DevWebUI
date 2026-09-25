@@ -360,6 +360,9 @@ export default {
     autoUpdate: "Auto-update",
     autoUpdateHelp:
       'When <strong class="text-foreground">on</strong>, DevWebUI periodically checks for a newer version and, if your local copy has <strong class="text-foreground">no uncommitted changes</strong>, pulls it, reinstalls, rebuilds, and restarts the daemon on its own — no prompt. Default <strong class="text-foreground">off</strong>, since it restarts the daemon unattended. A dirty working tree is never touched.',
+    updateCooldown: "Update cooldown (days)",
+    updateCooldownHelp:
+      'Only offer or install a release once it has been public for this many days, so a bad or compromised release has time to be caught and pulled before it reaches this machine. <strong class="text-foreground">0</strong> turns the cooldown off (the newest release is offered at once); the maximum is 90. Applies to the prebuilt app, not to a source checkout.',
     openInBrowser: "Open in browser",
     portableMode: "Portable window",
     portableModeHelp:
