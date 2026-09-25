@@ -35,6 +35,7 @@ import { initFileLogging } from "./log-file.mjs";
 import { dataDir } from "./data-dir";
 import { openUi } from "./open-ui";
 import { cleanupStaleUpdateArtifacts } from "./updater";
+import { authRequired, removeCookieFile, writeCookieFile } from "./local-auth";
 import pkg from "../../package.json";
 
 // ---------------------------------------------------------------------------
@@ -221,7 +222,18 @@ writeInstanceInfo(PORT, {
 // leftover can't make a freshly-launched tray quit the instant it starts. Only a genuine
 // in-session UI shutdown (the /api/shutdown route) writes a fresh one; the tray watches for it.
 clearShutdownRequest();
-const cleanup = () => clearInstanceInfo();
+// The cookie file the CLI and MCP shim authenticate with; a fresh secret every boot, removed on a
+// clean exit (a hard kill leaves a stale one, which the next boot overwrites). Best-effort: without
+// it only an enforcing daemon is affected, and that one then refuses the CLI instead of not booting.
+try {
+  writeCookieFile();
+} catch (e) {
+  console.error(`[devwebui] could not write the auth cookie file: ${(e as Error).message}`);
+}
+const cleanup = () => {
+  clearInstanceInfo();
+  removeCookieFile();
+};
 process.on("exit", cleanup);
 
 let shuttingDown = false;
@@ -260,9 +272,14 @@ for (const sig of ["SIGINT", "SIGTERM"] as const)
 
 const app = createApp(manager, {
   shutdownToken: process.env.DEVWEBUI_TRAY_SHUTDOWN_TOKEN,
+  requireAuth: authRequired(),
   requestShutdown: () => shutdown(0, 250),
   port: PORT,
 });
+if (authRequired())
+  console.log(
+    "[devwebui] local API auth is ON: /api needs the cookie file (CLI/MCP) or a paired browser.",
+  );
 
 // Auto-update loop (opt-in; see server/src/auto-update.ts). When it applies an update it must
 // restart the daemon ITSELF — the tray is a bare supervisor that never relaunches us. So hand it a

@@ -51,6 +51,15 @@ export const ROUTES = {
   settingsSyncPull: "/api/settings/sync/pull",
   settingsSyncPush: "/api/settings/sync/push",
 
+  // ---- local API auth (server/src/local-auth.ts): OTP pairing + paired-client admin ----
+  // status/request/verify stay reachable without a credential so a browser can pair; the rest
+  // need the cookie file or a paired key once DEVWEBUI_REQUIRE_AUTH=1 turns enforcement on.
+  pairingStatus: "/api/pairing/status",
+  pairingRequest: "/api/pairing/request",
+  pairingVerify: "/api/pairing/verify",
+  pairingCodes: "/api/pairing/codes",
+  pairingClients: "/api/pairing/clients",
+
   // ---- projects (collection + add/load/clone/scan flows) ----
   projects: "/api/projects",
   projectsLoad: "/api/projects/load",
@@ -111,6 +120,13 @@ export const ROUTES = {
     build: (id: string) => `/api/processes/${id}/shortcut`,
   },
 
+  // ---- parameterized: paired clients ----
+  /** DELETE (revoke) one paired client by id. */
+  pairingClient: {
+    pattern: "/api/pairing/clients/:id",
+    build: (id: string) => `/api/pairing/clients/${id}`,
+  },
+
   // ---- parameterized: alert rules ----
   /** PUT/DELETE one alert rule by id. */
   alertRule: {
@@ -160,6 +176,7 @@ export const ROUTES = {
 // `pattern` types that the `as const` above preserves for Hono.
 type _AssertParamRoutes = {
   alertRule: typeof ROUTES.alertRule extends ParamRoute ? true : never;
+  pairingClient: typeof ROUTES.pairingClient extends ParamRoute ? true : never;
   processAction: typeof ROUTES.processAction extends ParamRoute ? true : never;
   processLogs: typeof ROUTES.processLogs extends ParamRoute ? true : never;
   processLogFile: typeof ROUTES.processLogFile extends ParamRoute ? true : never;
@@ -175,6 +192,7 @@ type _AssertParamRoutes = {
 };
 const _assert: _AssertParamRoutes = {
   alertRule: true,
+  pairingClient: true,
   processAction: true,
   processLogs: true,
   processLogFile: true,

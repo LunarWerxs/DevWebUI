@@ -6,6 +6,7 @@ import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import type { Manager } from "../manager";
 import { loopbackGuard } from "../loopback-guard.mjs";
+import { createLocalAuth } from "../local-auth";
 import {
   allowedOrigins,
   registerRealtime,
@@ -16,6 +17,7 @@ import { registerProjectRoutes } from "./project-routes";
 import { registerProcessRoutes } from "./process-routes";
 import { registerConnectionsRoutes } from "./connections-routes";
 import { registerAlertRoutes } from "./alert-routes";
+import { registerPairingRoutes } from "./pairing-routes";
 
 function embeddedContentType(pathname: string): string {
   const ext = path.extname(pathname).toLowerCase();
@@ -49,6 +51,16 @@ export function createApp(manager: Manager, options: CreateAppOptions = {}) {
   // DevWebUI's former hand-rolled requireAllowedOrigin (which gated only mutating verbs); the shared
   // guard also blocks cross-site GET read-exfil.
   app.use("/api/*", loopbackGuard);
+  // Local auth (server/src/local-auth.ts): the guard above only stops browsers; this stops any
+  // other local process too, by requiring the cookie file or a paired key. Opt-in, so it is a
+  // no-op unless the daemon was started with DEVWEBUI_REQUIRE_AUTH=1.
+  app.use(
+    "/api/*",
+    createLocalAuth({
+      required: () => options.requireAuth === true,
+      trayToken: options.shutdownToken,
+    }),
+  );
 
   registerRealtime(app, manager);
   registerSystemRoutes(app, manager, options);
@@ -56,6 +68,7 @@ export function createApp(manager: Manager, options: CreateAppOptions = {}) {
   registerProcessRoutes(app, manager);
   registerConnectionsRoutes(app, manager);
   registerAlertRoutes(app, manager);
+  registerPairingRoutes(app, options);
   registerWebAssetRoutes(app);
   return app;
 }

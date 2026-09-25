@@ -10,6 +10,16 @@
  * referenced key is missing here or if any other locale drifts from this shape.
  */
 export default {
+  pairing: {
+    title: "Pair this browser",
+    body: "This DevWebUI daemon only answers paired browsers and its own command-line tools.",
+    request: "Get a pairing code",
+    whereIsCode:
+      'Enter the 6-digit code the daemon just printed, or run <code class="text-foreground">devwebui pairing codes</code>.',
+    codePlaceholder: "6-digit code",
+    verify: "Pair",
+    newCode: "New code",
+  },
   time: {
     secondsAgo: "{n}s ago",
     minutesAgo: "{n}m ago",

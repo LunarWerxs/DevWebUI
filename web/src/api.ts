@@ -101,6 +101,21 @@ export const clearErrors = (processId?: string) =>
 export const dismissError = (fingerprint: string) =>
   req(ROUTES.errorsDismiss, jsonInit("POST", { fingerprint }));
 
+// ---- local API auth pairing (server/src/local-auth.ts; matters only when enforced) ----
+export const getPairingStatus = () =>
+  reqJson<{ required: boolean; authorized: boolean }>(ROUTES.pairingStatus);
+export const requestPairing = (label: string) =>
+  reqJson<{ requestId: string; expiresInSecs: number }>(
+    ROUTES.pairingRequest,
+    jsonInit("POST", { label }),
+  );
+/** On success the daemon also sets the HttpOnly pairing cookie every later request carries. */
+export const verifyPairing = (requestId: string, code: string) =>
+  reqJson<{ clientId: string; label: string }>(
+    ROUTES.pairingVerify,
+    jsonInit("POST", { requestId, code }),
+  );
+
 // ---- alert rules (threshold alerting on process CPU/memory) ----
 export const addAlertRule = (input: AlertRuleInput) =>
   reqJson<AlertRule>(ROUTES.alertRules, jsonInit("POST", input));
