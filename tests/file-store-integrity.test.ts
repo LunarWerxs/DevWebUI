@@ -163,19 +163,17 @@ test("updateProcessInFile merges every field the payload omits, but an explicitl
 });
 
 // Prompt answers are file-only (the GUI form does not edit them), so a GUI edit must keep them.
-test("prompt answers and the autoAnswer opt-out survive a GUI-style edit", () => {
+test("prompt answers survive a GUI-style edit", () => {
   const answers = [{ expect: "Proceed?", send: "y", optional: true }];
   const file = makeProjectFile({
-    processes: [{ id: "web", name: "Web", command: "echo hi", answers, autoAnswer: false }],
+    processes: [{ id: "web", name: "Web", command: "echo hi", answers }],
   });
   updateProcessInFile(file, "web", { id: "web", name: "Web Renamed", command: "echo hi" });
   setProcessStarred(file, "web", true);
   const web = readRaw(file).processes.find((p: { id: string }) => p.id === "web");
   expect(web.answers).toEqual(answers);
-  expect(web.autoAnswer).toBe(false);
   const loaded = readDevWebUIFile(file).processes[0];
   expect(loaded.answers).toEqual(answers);
-  expect(loaded.autoAnswer).toBe(false);
 });
 
 test("addProcessToFile does not need to merge (a brand new process has nothing stored to preserve)", () => {

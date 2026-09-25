@@ -1,25 +1,29 @@
-// Prompt answers: expect/send rules that reply to a dev server's interactive
-// prompts on its stdin. WHY: an unattended process that stops at "Port 3000 is
-// in use, use another? (Y/n)" or npx's "Ok to proceed? (y)" otherwise hangs
-// forever with nobody at a terminal to type the answer.
+// Prompt answers: user-written expect/send rules that reply to a managed process's
+// interactive prompts on its stdin. WHY: managed children run on pipes, not a TTY, so
+// a program that still reads stdin without a TTY check (a shell `read`, cmd's
+// `set /p`, Python's input(), a custom setup script) would otherwise wait forever
+// with nobody at a terminal to type the answer. Tools that check for a TTY (npx,
+// most CLI prompt libraries) skip their prompts on a pipe, so there is deliberately
+// no built-in table of "common prompts": only the process's own rules apply.
 //
 // The idea (an ordered rule list watched against session output) follows the
 // login-script processor in Eugeny/tabby (MIT); this is a fresh implementation.
 //
 // Semantics, per spawn of a process:
 //   - Rules run in file order. A rule fires at most once, then is consumed.
-//   - A rule with no `expect` fires as soon as the process spawns (it and any
-//     other leading expect-less rules), before any output is seen.
+//   - Leading rules with no `expect` fire as soon as the process spawns, before
+//     any output is seen.
 //   - On output, the pending rules are walked in order: a match fires and is
 //     consumed; an `optional` rule that does not match is passed over (it stays
 //     armed); the walk stops at the first required rule that has not matched.
-//   - After the user's rules, a small built-in table of common prompts applies
-//     (all optional) unless the process sets `autoAnswer: false`.
+//   - A rule with no `expect` further down the chain counts as an instant match
+//     when the walk reaches it: it is sent right after the rule before it fires,
+//     or, when only optional rules stand before it, on the first output.
 // Pure and I/O-free: the caller feeds output text in and writes what comes back.
 import { stripAnsi } from "./errors";
 
 export interface AnswerRule {
-  /** Text (or a regex source when `isRegex`) to wait for in the output. Omit to send on spawn. */
+  /** Text (or a regex source when `isRegex`) to wait for in the output. Omit to send without waiting. */
   expect?: string;
   /** What to type. Escapes \n \r \t \xHH \uHHHH \\ are decoded; a newline is added unless it ends in one. */
   send: string;
@@ -27,30 +31,6 @@ export interface AnswerRule {
   /** An optional rule that has not matched does not hold back the rules after it. */
   optional?: boolean;
 }
-
-/**
- * The built-in answers: only prompts that block a configured dev command from
- * continuing, answered the way a developer at the terminal usually would. Kept
- * deliberately small (same stance as diagnose.ts's known-signature table).
- */
-export const BUILTIN_ANSWERS: readonly AnswerRule[] = [
-  // CRA / Angular / Nuxt style "the port is taken, use another one?" questions.
-  {
-    expect: String.raw`(?:another|a different) port(?: instead)?\?[^\n]*\((?:Y/n|y/N|y/n)\)`,
-    send: "y",
-    isRegex: true,
-    optional: true,
-  },
-  // npx / npm exec asking to install the package the command itself names.
-  { expect: "Ok to proceed? (y)", send: "y", optional: true },
-  // First-run usage-data questions (Angular CLI analytics and similar): decline.
-  {
-    expect: String.raw`(?:share|send)[^\n]*(?:usage data|analytics|telemetry)[^\n]*\?[^\n]*\((?:y/N|Y/n|y/n)\)`,
-    send: "n",
-    isRegex: true,
-    optional: true,
-  },
-];
 
 const ESCAPE_RE = /\\(?:x([0-9a-fA-F]{2})|u([0-9a-fA-F]{4})|([nrt\\]))/g;
 
@@ -90,18 +70,15 @@ function arm(rule: AnswerRule): Armed {
 
 export class PromptAnswerer {
   private pending: Armed[];
-  // A separate chain so a user's required rule that never matches cannot hold them back.
-  private builtins: Armed[];
   private buffer = "";
 
-  constructor(rules: readonly AnswerRule[] | undefined, builtins = true) {
+  constructor(rules: readonly AnswerRule[] | undefined) {
     this.pending = (rules ?? []).map(arm);
-    this.builtins = builtins ? BUILTIN_ANSWERS.map(arm) : [];
   }
 
   /** The rules still waiting to fire (for tests and diagnostics). */
   get remaining(): number {
-    return this.pending.length + this.builtins.length;
+    return this.pending.length;
   }
 
   /** Answers to type the moment the process spawns: the leading rules with no `expect`. */
@@ -114,32 +91,34 @@ export class PromptAnswerer {
 
   /** Feed one chunk of process output; returns the rules that fired, in order. */
   feed(chunk: string): AnswerRule[] {
-    if (!this.remaining) return [];
+    if (!this.pending.length) return [];
     this.buffer = (this.buffer + stripAnsi(chunk)).slice(-MAX_BUFFER);
-    const fired = this.walk(this.pending);
-    // A prompt the user's rules already answered has cleared the buffer, so the
-    // built-ins only ever see output nobody has replied to yet.
-    fired.push(...this.walk(this.builtins));
-    return fired;
-  }
-
-  /** Walk one ordered chain against the buffer, consuming the rules that fire. */
-  private walk(chain: Armed[]): AnswerRule[] {
     const fired: AnswerRule[] = [];
-    for (let i = 0; i < chain.length; ) {
-      const armed = chain[i];
-      const { expect, optional } = armed.rule;
-      const hit = !expect || (armed.re ? armed.re.test(this.buffer) : this.buffer.includes(expect));
-      if (hit) {
+    for (let i = 0; i < this.pending.length; ) {
+      const armed = this.pending[i];
+      const end = this.matchEnd(armed);
+      if (end !== null) {
         fired.push(armed.rule);
-        chain.splice(i, 1);
-        // The prompt that matched is answered: never let it satisfy a later rule too.
-        this.buffer = "";
+        this.pending.splice(i, 1);
+        // Drop output only up to the end of the answered prompt: it must never satisfy a
+        // later rule too, but a second prompt in the same chunk still has to be seen.
+        this.buffer = this.buffer.slice(end);
         continue;
       }
-      if (!optional) break;
+      if (!armed.rule.optional) break;
       i++;
     }
     return fired;
+  }
+
+  /** Where the rule's prompt ends in the buffer (0 for a rule with no `expect`), or null. */
+  private matchEnd({ rule, re }: Armed): number | null {
+    if (!rule.expect) return 0;
+    if (re) {
+      const m = re.exec(this.buffer);
+      return m ? m.index + m[0].length : null;
+    }
+    const at = this.buffer.indexOf(rule.expect);
+    return at < 0 ? null : at + rule.expect.length;
   }
 }

@@ -8,12 +8,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Processes can answer their own interactive prompts.** A dev server that stops at "use another
-  port? (Y/n)", npx's "Ok to proceed? (y)" or a first-run telemetry question used to hang forever
-  under DevWebUI, with no terminal to type into. A process's new `answers` rules (ordered
-  expect/send pairs, plain text or regex, optional or required) are typed into its stdin when the
-  output matches, and a small built-in table answers those common prompts out of the box
-  (`"autoAnswer": false` turns it off). Each answer is noted in the process log without echoing
+- **Processes can answer prompts from scripts that read stdin.** Managed processes run on pipes
+  with no terminal, so a program that asks a question without checking for a TTY (a shell `read`,
+  `set /p`, Python `input()`, a custom setup script) waits forever. A process's new `answers` rules
+  (ordered expect/send pairs, plain text or regex, optional or required) are typed into its stdin
+  when the output matches. Each answer is noted in the process log by rule number, without echoing
   what was sent. Rule semantics follow Tabby's login scripts (MIT, ideas only).
 
 ## [1.0.0] - 2026-09-20

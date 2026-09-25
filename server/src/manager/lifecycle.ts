@@ -227,7 +227,7 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
     e.startedAt = e.pid ? Date.now() : null;
 
     // Prompt answers watch BOTH streams: prompt libraries differ on where they print.
-    const answerer = new PromptAnswerer(e.def.answers, e.def.autoAnswer !== false);
+    const answerer = new PromptAnswerer(e.def.answers);
     // A child that closed its stdin makes a late write EPIPE; that must not crash the daemon.
     child.stdin?.on("error", () => {});
     const onOutput = (stream: "stdout" | "stderr") => (d: Buffer) => {
@@ -243,19 +243,15 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
     this.typeAnswers(e, child, answerer.start());
   }
 
-  /** Type fired prompt answers into the child's stdin, noting each in its log (never the
-   *  answer itself, which may be a secret the user put in their .devwebui file). */
+  /** Type fired prompt answers into the child's stdin, noting each in its log by rule number:
+   *  never the answer (it may be a secret from the .devwebui file), and not the `expect` text
+   *  either, so the note cannot trip the error recorder or diagnose.ts on the prompt's words. */
   private typeAnswers(e: Entry, child: ChildProcess, fired: AnswerRule[]): void {
     for (const rule of fired) {
       if (!child.stdin || child.stdin.destroyed || e.child !== child) return;
       child.stdin.write(answerText(rule));
-      this.addLog(
-        e,
-        "stdout",
-        rule.expect
-          ? `[devwebui] answered a prompt matching "${rule.expect}"`
-          : "[devwebui] sent a startup answer",
-      );
+      const n = (e.def.answers?.indexOf(rule) ?? -1) + 1;
+      this.addLog(e, "stdout", `[devwebui] typed the reply from answers rule #${n}`);
     }
   }
 

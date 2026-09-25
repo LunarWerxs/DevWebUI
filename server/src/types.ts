@@ -37,8 +37,6 @@ export interface ProcessDef {
   companion?: boolean;
   /** Expect/send rules answering the process's interactive prompts (see prompt-answers.ts). */
   answers?: AnswerRule[];
-  /** `false` turns off the built-in answers for common prompts. */
-  autoAnswer?: boolean;
   projectId: string;
   projectName: string;
 }
