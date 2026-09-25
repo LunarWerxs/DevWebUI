@@ -18,6 +18,17 @@ test("the relaunch handover parses", () => {
   });
 });
 
+// A shortcut or tray entry launching `devwebui --safe-mode` must boot the daemon quietly, not
+// fall into the CLI and exit; and it must not be mistaken for the auto-update handover.
+test("--safe-mode is a daemon flag, distinct from --relaunch", () => {
+  expect(parseDaemonArgs(["--safe-mode"])).toEqual({
+    port: null,
+    relaunch: false,
+    resume: [],
+    safeMode: true,
+  });
+});
+
 test("resume ids come across as a list", () => {
   const parsed = parseDaemonArgs(["--relaunch", "--resume", "a.1,b.2 , c.3"]);
   expect(parsed?.resume).toEqual(["a.1", "b.2", "c.3"]);

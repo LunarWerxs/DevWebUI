@@ -36,6 +36,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `devwebui.ignore` are left alone, and `mode: "start-and-stop"` stops what DevWebUI started once
   the last process using the stack stops. Idea from Spring Boot's docker-compose support.
 
+- **Safe mode after a crash.** Every daemon launch now leaves a run marker under the data
+  directory's `.sentinel/` folder and a clean shutdown removes it, so a marker still there at the
+  next launch means the previous run crashed. That launch loads your projects but auto-starts
+  nothing (neither `autoStartOnLaunch` nor an auto-update's resume list), records the crash, with
+  the uncaught error when there was one, as a de-duplicated entry in the error log, and shows a
+  banner with **View crash** and **Leave safe mode**. A marker from before the current OS boot (a
+  reboot or logoff) is not a crash and is dropped. Before this, a server that crashed the daemon
+  on start was relaunched into the same crash by the tray every time. `--safe-mode` or
+  `DEVWEBUI_SAFE_MODE=1` starts in safe mode on purpose; `GET /api/safe-mode` and
+  `POST /api/safe-mode/exit` expose it.
+
 ## [1.0.0] - 2026-09-20
 
 ### Fixed

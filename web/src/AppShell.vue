@@ -8,6 +8,7 @@ import AppContainer from "@/shell/AppContainer.vue";
 import { usePushPanel } from "@/shell/usePushPanel";
 import TopBar from "./components/TopBar.vue";
 import UpdateBanner from "./components/UpdateBanner.vue";
+import SafeModeBanner from "./components/SafeModeBanner.vue";
 import ProjectPanel from "./components/ProjectPanel.vue";
 import ProcessForm from "./components/ProcessForm.vue";
 import AddProjectDialog from "./components/AddProjectDialog.vue";
@@ -233,6 +234,7 @@ onMounted(async () => {
 
     <main class="flex-1 py-6">
       <AppContainer>
+      <SafeModeBanner class="mb-4" @view-crash="openProcessErrors" />
       <UpdateBanner class="mb-4" />
       <div v-if="projects.length" v-auto-animate class="flex flex-col gap-4">
         <ProjectPanel
