@@ -70,6 +70,8 @@ export const ROUTES = {
   processes: "/api/processes",
   startAll: "/api/processes/start-all",
   stopAll: "/api/processes/stop-all",
+  /** GET the agent-POV <RUNTIME_SERVICES> block (`?all=1` also lists stopped processes). */
+  runtimeServices: "/api/runtime-services",
 
   // ---- live stream ----
   stream: "/api/stream",

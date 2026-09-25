@@ -69,8 +69,8 @@ function toolNamed(name: string): McpEngineTool {
   return t;
 }
 
-test("all 36 tools are loaded", () => {
-  expect(TOOLS.length).toBe(36);
+test("all 37 tools are loaded", () => {
+  expect(TOOLS.length).toBe(37);
 });
 
 // One row per tool: the args it's invoked with, and the request it MUST produce. `body` is
@@ -123,6 +123,13 @@ const cases: Case[] = [
   { name: "start_project", args: { id: "p1" }, method: "POST", url: "/api/projects/p1/start" },
   { name: "stop_project", args: { id: "p1" }, method: "POST", url: "/api/projects/p1/stop" },
   { name: "list_processes", args: {}, method: "GET", url: "/api/processes" },
+  { name: "get_runtime_services", args: {}, method: "GET", url: "/api/runtime-services" },
+  {
+    name: "get_runtime_services",
+    args: { includeStopped: true },
+    method: "GET",
+    url: "/api/runtime-services?all=1",
+  },
   {
     name: "add_process",
     args: { projectId: "p1", id: "api", name: "API", command: "bun run dev" },

@@ -6,6 +6,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`get_runtime_services` MCP tool (and `GET /api/runtime-services`).** Returns a paste-ready
+  `<RUNTIME_SERVICES>` block listing every running dev server as an agent on this machine reaches
+  it (base URL, status, pid), the daemon's own health URL, and the names of credential env vars
+  from each process's `.devwebui` env - names only, never values - so an agent stops probing ports
+  and guessing base URLs. `includeStopped: true` lists stopped processes too.
+
 ## [1.0.0] - 2026-09-20
 
 ### Fixed

@@ -133,7 +133,7 @@ Save the result as `<repo-name>.devwebui` in the repo root. Then in DevWebUI cli
 
 DevWebUI exposes an MCP server - a thin stdio client over the running daemon, so the GUI and
 agents share one state. Register it as shown in the README's
-[MCP section](README.md#drive-it-from-an-ai-agent-mcp), then use the **36 tools**:
+[MCP section](README.md#drive-it-from-an-ai-agent-mcp), then use the **37 tools**:
 
 **Projects**
 
@@ -149,6 +149,9 @@ agents share one state. Register it as shown in the README's
 **Processes**
 
 - `list_processes` - every managed process with live status, pid, uptime, CPU and memory.
+- `get_runtime_services` - a paste-ready `<RUNTIME_SERVICES>` block: each running server's URL as
+  reachable from this machine, its status and pid, the DevWebUI daemon's health URL, and the NAMES
+  (never values) of credential env vars in its `.devwebui` env. `includeStopped: true` adds the rest.
 - `add_process` - add a process to a project's `.devwebui` file (id, name, command + optional fields).
 - `update_process` - replace a process's whole config by its in-file id (send the full definition; renames follow links).
 - `remove_process` - delete a process from a project (a project must keep at least one).
