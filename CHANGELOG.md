@@ -6,6 +6,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Jump from a logged error to the line that threw it.** Every `file:line:col` in the error log
+  (Node/Bun stack frames, Vite, tsc, Python, Rust, bare `path:line`) is now a link that opens that
+  spot in the editor you already have running: DevWebUI finds it in the process list (VS Code and
+  its forks, JetBrains IDEs, Zed, Sublime Text, Notepad++) and passes that editor's own line/column
+  flag. `DEVWEBUI_EDITOR` picks one explicitly. The same jump is `POST /api/open-in-editor` and the
+  new `open_in_editor` MCP tool, and `list_errors` now returns each error's `frames` pre-parsed.
+  Non-integer lines, UNC paths and control characters are refused before anything is spawned, and
+  the editor is launched outside the daemon's process tree, never through `cmd.exe`.
+
 ## [1.0.0] - 2026-09-20
 
 ### Fixed

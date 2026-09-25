@@ -25,6 +25,7 @@ import {
   writeShutdownRequest,
 } from "../instance";
 import { openPortableWindow } from "../portable-window.mjs";
+import { openInEditor } from "../open-in-editor";
 
 export interface Client {
   send: (event: string, data: unknown) => Promise<void>;
@@ -273,6 +274,16 @@ async function handleErrorsDismiss(c: Context, manager: Manager) {
   return c.json({ ok: true });
 }
 
+// A frame logged by a process is usually relative to that process's cwd (Vite, tsc, eslint), so
+// the caller names the process and the daemon resolves against the cwd only it knows.
+async function handleOpenInEditor(c: Context, manager: Manager) {
+  const body = await readBody(c);
+  const processId = typeof body.processId === "string" ? body.processId : "";
+  const cwd = processId ? manager.view(processId)?.cwd : undefined;
+  const result = await openInEditor(body, cwd);
+  return c.json(result, !result.ok && result.reason === "bad-input" ? 400 : 200);
+}
+
 /** Register health/update/shutdown/settings/error-log routes. */
 export function registerSystemRoutes(app: Hono, manager: Manager, options: CreateAppOptions) {
   // `service` is the identity the launchers match on. Without it a responder is indistinguishable
@@ -298,4 +309,5 @@ export function registerSystemRoutes(app: Hono, manager: Manager, options: Creat
     return c.json({ ok: true });
   });
   app.post(ROUTES.errorsDismiss, (c) => handleErrorsDismiss(c, manager));
+  app.post(ROUTES.openInEditor, (c) => handleOpenInEditor(c, manager));
 }

@@ -133,7 +133,7 @@ Save the result as `<repo-name>.devwebui` in the repo root. Then in DevWebUI cli
 
 DevWebUI exposes an MCP server - a thin stdio client over the running daemon, so the GUI and
 agents share one state. Register it as shown in the README's
-[MCP section](README.md#drive-it-from-an-ai-agent-mcp), then use the **36 tools**:
+[MCP section](README.md#drive-it-from-an-ai-agent-mcp), then use the **37 tools**:
 
 **Projects**
 
@@ -173,7 +173,8 @@ agents share one state. Register it as shown in the README's
 
 - `get_logs` - recent in-memory log lines for a process (most recent last).
 - `get_log_file` - tail a process's on-disk rotating log file (survives daemon restarts and the in-memory cap).
-- `list_errors` - the de-duplicated record of process errors (stderr / crashes / error-looking stdout), most recent first.
+- `list_errors` - the de-duplicated record of process errors (stderr / crashes / error-looking stdout), most recent first. Each record carries `frames`: the `file` / `line` / `column` locations found in its sample.
+- `open_in_editor` - open a source location in the editor the developer already has running (or `DEVWEBUI_EDITOR`). Pass `file` + `line` (+ optional `column`), and `processId` when the path is relative to that process's cwd. Returns `{ ok: true, editor }` or `{ ok: false, reason }` (`not-found`, `no-editor`, ...).
 - `clear_errors` - clear the error log (optionally for a single process id).
 - `diagnose_process` - Incident Autopilot: a structured root-cause guess (exit code + error log + port ownership + command) plus a suggested remediation (never auto-executed).
 
@@ -189,4 +190,4 @@ agents share one state. Register it as shown in the README's
 **Common flows:** to onboard a repo, write its `.devwebui` file (above) then `load_project` with the
 absolute path - or `scan_projects` to find existing ones. Build or reshape a project with
 `add_process` / `update_process` / `update_project`. To diagnose breakage, `list_errors` then
-`diagnose_process`. To hand a repo fully over to DevWebUI, `take_over_autostart` on its folder.
+`diagnose_process`; `open_in_editor` on a frame puts the developer on the failing line. To hand a repo fully over to DevWebUI, `take_over_autostart` on its folder.

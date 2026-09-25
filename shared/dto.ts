@@ -397,3 +397,26 @@ export type ShortcutFailure =
 export type ShortcutResult =
   | { ok: true; path: string }
   | { ok: false; reason: ShortcutFailure; detail?: string };
+
+/** Why {@link OpenInEditorResult} came back unsuccessful. */
+export type OpenInEditorFailure =
+  /** Malformed request: a non-integer line/column, a control character, a UNC path, or a
+   *  relative path with no process to resolve it against. The only one answered with HTTP 400. */
+  | "bad-input"
+  /** The path resolved, but no such file exists (e.g. a frame from a deleted or bundled file). */
+  | "not-found"
+  /** No editor is running and none is configured (DEVWEBUI_EDITOR, VISUAL, EDITOR). */
+  | "no-editor"
+  /** The configured editor cannot be launched here (on Windows, a .cmd/.bat shim). */
+  | "unsupported-editor"
+  /** The editor process failed to start. */
+  | "launch-failed";
+
+/**
+ * Outcome of POST /api/open-in-editor (server/src/open-in-editor.ts): jump from a logged
+ * `file:line:col` to that spot in the developer's editor. Like {@link ShortcutResult}, every
+ * failure but `bad-input` is a reported outcome at HTTP 200, shown to the user as a message.
+ */
+export type OpenInEditorResult =
+  | { ok: true; editor: string; file: string; line: number; column: number }
+  | { ok: false; reason: OpenInEditorFailure; detail?: string };

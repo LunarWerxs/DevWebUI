@@ -86,7 +86,7 @@ taken, the daemon hops to the next free one and opens the URL it actually bound.
 - **One panel per repo**: a `.devwebui` file groups every process under one collapsible header; your projects auto-reload next launch.
 - **Runtime-aware launches**: automatic mode follows each project's lockfile, and compatible Bun/Node commands launch without a permanent shell wrapper.
 - **Port-conflict rescue**: detects a taken port, tells you which process is holding it, and frees it on request.
-- **Persistent error log**: de-duplicated stderr / crashes / error-looking stdout that survives restarts.
+- **Persistent error log**: de-duplicated stderr / crashes / error-looking stdout that survives restarts. Every `file:line:col` in it is a link that opens that line in the editor you already have running (VS Code and its forks, JetBrains IDEs, Zed, Sublime Text, Notepad++); set `DEVWEBUI_EDITOR` to the editor's executable to pick one explicitly.
 - **Desktop shortcuts (Windows)**: send any server (or a whole repo) to your Desktop from the ⋮ menu; double-click starts it, linked servers and all, in a small window with a Stop button.
 - **Built for agents**: a full set of MCP tools drives the same daemon you click, off one shared state.
 - **Localized & themed**: full i18n (English base; [add a language](web/src/i18n/README.md)), light/dark.
@@ -150,8 +150,8 @@ state. Start the daemon, then register:
 }
 ```
 
-36 tools cover projects, processes (start/stop/restart, enable/disable, all), logs, the error
-log, and threshold alerts. **Full list →** [`AI_GUIDE.md`](AI_GUIDE.md#for-an-ai-driving-devwebui-over-mcp)
+37 tools cover projects, processes (start/stop/restart, enable/disable, all), logs, the error
+log (with jump-to-source via `open_in_editor`), and threshold alerts. **Full list →** [`AI_GUIDE.md`](AI_GUIDE.md#for-an-ai-driving-devwebui-over-mcp)
 
 ## CLI
 
@@ -222,11 +222,11 @@ daemon on port 4000 and the GUI on port 4010. macOS and Linux tray support is on
 **How is DevWebUI different from PM2's web UI, hotel, or exo?**
 Hotel and exo are local dev-server GUIs that haven't shipped a release in a while, and PM2's web
 dashboard (PM2 Plus / PM2.io) is a paid product beyond its free tier. DevWebUI is actively
-maintained, free, and local-first, and pairs its GUI with a 36-tool MCP server so AI agents can
+maintained, free, and local-first, and pairs its GUI with a 37-tool MCP server so AI agents can
 drive the same daemon you click.
 
 **Can AI agents control DevWebUI directly?**
-Yes. DevWebUI ships a stdio MCP server (`devwebui mcp`, or `server/src/mcp.ts`) with 36 tools
+Yes. DevWebUI ships a stdio MCP server (`devwebui mcp`, or `server/src/mcp.ts`) with 37 tools
 covering projects, starting/stopping/restarting processes, enabling/disabling them, logs, the
 error log, and threshold alerts. It's a thin client over the same running daemon the GUI uses, so
 an agent and a human see and change the same state.

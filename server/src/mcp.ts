@@ -12,6 +12,8 @@ import { ROUTES } from "../../shared/routes";
 import { runMcpStdio } from "./mcp-stdio.mjs";
 import pkg from "../../package.json";
 import type { McpEngineTool } from "./mcp-stdio.mjs";
+import { findSourceFrames } from "../../shared/source-frames";
+import type { ErrorEvent } from "../../shared/dto";
 
 // Resolve the base URL per call: an explicit DEVWEBUI_URL/DEVWEBUI_PORT always wins, else follow
 // the port the daemon ACTUALLY bound (~/.devwebui/runtime.json), so an auto-hopped port still works.
@@ -411,9 +413,50 @@ const TOOLS: McpEngineTool[] = [
   {
     name: "list_errors",
     description:
-      "List the de-duplicated record of process errors (stderr / crashes / error-looking stdout), most recent first.",
+      "List the de-duplicated record of process errors (stderr / crashes / error-looking stdout), most recent first. Each carries `frames`: the file:line:col locations found in its sample, ready for open_in_editor.",
     inputSchema: S(),
-    run: () => api(ROUTES.errors),
+    // The frames are parsed here rather than stored, so the persisted log and the GUI's copy
+    // of it stay exactly the ErrorEvent shape; an agent just gets the locations pre-extracted.
+    run: async () => {
+      const errors = await api(ROUTES.errors);
+      if (!Array.isArray(errors)) return errors;
+      return errors.map((e: ErrorEvent) => ({
+        ...e,
+        frames: findSourceFrames(e.sample ?? "").map(({ file, line, column }) => ({
+          file,
+          line,
+          column,
+        })),
+      }));
+    },
+  },
+  {
+    name: "open_in_editor",
+    description:
+      "Open a source location (e.g. a frame from list_errors) in the editor the developer already has running (VS Code family, JetBrains, Zed, Sublime, Notepad++), or DEVWEBUI_EDITOR. Pass processId for a path relative to that process's cwd. Returns { ok, editor } or { ok: false, reason }.",
+    inputSchema: S(
+      {
+        file: { type: "string", description: "Absolute path, or relative to the process's cwd." },
+        line: { type: "integer", minimum: 1 },
+        column: { type: "integer", minimum: 1, description: "Optional; defaults to 1." },
+        processId: {
+          type: "string",
+          description: "The process that logged the frame (resolves a relative path).",
+        },
+      },
+      ["file", "line"],
+    ),
+    run: (a) =>
+      api(ROUTES.openInEditor, {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          file: a.file,
+          line: a.line,
+          column: a.column,
+          processId: a.processId,
+        }),
+      }),
   },
   {
     name: "clear_errors",
