@@ -170,7 +170,7 @@ Save the result as `<repo-name>.devwebui` in the repo root. Then in DevWebUI cli
 
 DevWebUI exposes an MCP server - a thin stdio client over the running daemon, so the GUI and
 agents share one state. Register it as shown in the README's
-[MCP section](README.md#drive-it-from-an-ai-agent-mcp), then use the **37 tools**:
+[MCP section](README.md#drive-it-from-an-ai-agent-mcp), then use the **42 tools**:
 
 **Projects**
 
@@ -217,6 +217,45 @@ agents share one state. Register it as shown in the README's
 - `clear_errors` - clear the error log (optionally for a single process id).
 - `diagnose_process` - Incident Autopilot: a structured root-cause guess (exit code + error log + port ownership + command) plus a suggested remediation (never auto-executed).
 
+**Browser tabs** (the page side of a dev app; needs the snippet below)
+
+- `list_browser_tabs` - the live tabs of supervised dev apps that loaded the snippet: tab id, current URL, title.
+- `get_browser_errors` - client-side runtime errors each tab has buffered (uncaught errors, failed resource
+  loads, unhandled rejections, `console.error`), which never reach the dev server's stdout and so never
+  reach `list_errors`.
+- `get_page_metadata` - what each tab shows: URL, title, ready state, viewport, meta tags, load timing.
+- `list_page_tools` / `call_page_tool` - tools the app registered on its own page (see below). A call runs
+  in exactly one tab; pass `tabId` or `processId` when several are open.
+
+Every browser tool takes optional `processId` (only tabs on that process's declared `port`), `tabId`
+and `timeoutMs` (default 5000). The question goes to every matching tab at once and the answer lists
+one entry per tab; a tab that does not answer in time is left out (`timedOut: true`) instead of
+failing the call, which errors only when no tab answered.
+
+To opt a dev app in, load the snippet from the daemon in its page (development builds only; use the
+daemon's real port from `devwebui status`):
+
+```html
+<script src="http://localhost:4000/api/browser/client.js"></script>
+```
+
+The page must be served from a loopback host (`localhost`, `127.0.0.1`, `[::1]`); the daemon refuses
+the bridge to any other origin. To publish app-specific inspection tools (a component tree, the source
+`file:line` behind a DOM element, store state), register them on the page:
+
+```js
+window.__devwebui.register("component_at", {
+  description: "The component that rendered the element matching `selector`, with its source file:line.",
+  inputSchema: { type: "object", properties: { selector: { type: "string" } }, required: ["selector"] },
+  run: ({ selector }) => lookUpComponent(document.querySelector(selector)),
+});
+```
+
+`run` may return a value or a promise; a throw reaches the agent as that tab's `error`. Tools set on
+`window.__devwebui = { tools: { ... } }` before the snippet loads are kept. From a bundled module, where
+the script tag cannot tell the snippet its own address, set `window.__devwebui = { url: "http://localhost:4000" }`
+first.
+
 **Threshold alerts**
 
 - `list_alert_rules` / `add_alert_rule` / `remove_alert_rule` - configure rules that fire once a
@@ -229,4 +268,4 @@ agents share one state. Register it as shown in the README's
 **Common flows:** to onboard a repo, write its `.devwebui` file (above) then `load_project` with the
 absolute path - or `scan_projects` to find existing ones. Build or reshape a project with
 `add_process` / `update_process` / `update_project`. To diagnose breakage, `list_errors` then
-`diagnose_process`. To hand a repo fully over to DevWebUI, `take_over_autostart` on its folder.
+`diagnose_process`; for a page that renders wrong while the server logs look clean, `get_browser_errors`. To hand a repo fully over to DevWebUI, `take_over_autostart` on its folder.

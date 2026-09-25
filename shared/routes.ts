@@ -78,6 +78,18 @@ export const ROUTES = {
   // ---- live stream ----
   stream: "/api/stream",
 
+  // Browser bridge: tabs of a supervised dev app answer agents here (server/src/browser-bridge.ts).
+  /** GET the opt-in page snippet a dev app loads with a <script> tag. */
+  browserClient: "/api/browser/client.js",
+  /** GET the SSE stream a tab holds open to receive requests. */
+  browserConnect: "/api/browser/connect",
+  /** POST a tab's answer to one request. */
+  browserReply: "/api/browser/reply",
+  /** GET the connected tabs. */
+  browserTabs: "/api/browser/tabs",
+  /** POST a request fanned out to the matching tabs (errors | metadata | tools | call). */
+  browserQuery: "/api/browser/query",
+
   // ---- parameterized: processes ----
   /** POST a process lifecycle/toggle action (start|stop|restart|enable|disable). */
   processAction: {

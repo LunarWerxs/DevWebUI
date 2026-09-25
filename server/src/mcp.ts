@@ -120,6 +120,69 @@ const procBody = (a: Record<string, unknown>) => ({
   companion: a.companion,
 });
 
+// Browser-bridge tools: each fans one question out to the live tabs of a supervised app (see
+// server/src/browser-bridge.ts) and returns one answer per tab, partial if some tab is slow.
+const TAB_TARGET: Record<string, unknown> = {
+  processId: {
+    type: "string",
+    description: "Only tabs whose page is on this process's declared port (optional).",
+  },
+  tabId: { type: "string", description: "Only this tab, from list_browser_tabs (optional)." },
+  timeoutMs: {
+    type: "number",
+    description: "How long to wait for slow tabs, in ms (optional; default 5000, max 30000).",
+  },
+};
+const browserQuery = (kind: string, a: Record<string, unknown>, extra: object = {}) =>
+  api(ROUTES.browserQuery, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({
+      kind,
+      processId: a.processId,
+      tabId: a.tabId,
+      timeoutMs: a.timeoutMs,
+      ...extra,
+    }),
+  });
+const BROWSER_QUERY_TOOLS: McpEngineTool[] = [
+  {
+    name: "get_browser_errors",
+    description:
+      "Client-side runtime errors buffered in the live browser tabs of a dev app (uncaught errors, failed resource loads, unhandled promise rejections, console.error), most recent last, one entry per tab. These never reach the dev server's stdout, so list_errors cannot see them. Needs the page to load DevWebUI's browser snippet.",
+    inputSchema: S(TAB_TARGET),
+    run: (a) => browserQuery("errors", a),
+  },
+  {
+    name: "get_page_metadata",
+    description:
+      "What each live tab of a dev app is showing: URL, title, ready state, viewport, meta tags, load timing, buffered error count and the names of tools the page registered. Needs the page to load DevWebUI's browser snippet.",
+    inputSchema: S(TAB_TARGET),
+    run: (a) => browserQuery("metadata", a),
+  },
+  {
+    name: "list_page_tools",
+    description:
+      "Inspection tools a dev app registered on its own page with window.__devwebui.register(name, { description, inputSchema, run }) - e.g. a component tree or element-to-source-file lookup. Returns each tab's tool names, descriptions and input schemas; run one with call_page_tool.",
+    inputSchema: S(TAB_TARGET),
+    run: (a) => browserQuery("tools", a),
+  },
+  {
+    name: "call_page_tool",
+    description:
+      "Run one tool a dev app registered on its page (see list_page_tools) with `args`, in exactly ONE tab: pass tabId or processId when more than one tab is connected. A tool that throws comes back as that tab's `error`.",
+    inputSchema: S(
+      {
+        tool: { type: "string", description: "The page tool's name." },
+        args: { type: "object", description: "Arguments for the tool (optional)." },
+        ...TAB_TARGET,
+      },
+      ["tool"],
+    ),
+    run: (a) => browserQuery("call", a, { tool: a.tool, args: a.args }),
+  },
+];
+
 const TOOLS: McpEngineTool[] = [
   {
     name: "list_projects",
@@ -438,6 +501,14 @@ const TOOLS: McpEngineTool[] = [
         { method: "POST" },
       ),
   },
+  {
+    name: "list_browser_tabs",
+    description:
+      "List the live browser tabs of supervised dev apps that loaded DevWebUI's browser snippet (<script src=\"<daemon>/api/browser/client.js\">), with each tab's id, current URL and title. Pass a tabId from here to target one tab.",
+    inputSchema: S(),
+    run: () => api(ROUTES.browserTabs),
+  },
+  ...BROWSER_QUERY_TOOLS,
   {
     name: "list_alert_rules",
     description:

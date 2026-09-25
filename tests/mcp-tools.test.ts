@@ -69,8 +69,8 @@ function toolNamed(name: string): McpEngineTool {
   return t;
 }
 
-test("all 37 tools are loaded", () => {
-  expect(TOOLS.length).toBe(37);
+test("all 42 tools are loaded", () => {
+  expect(TOOLS.length).toBe(42);
 });
 
 // One row per tool: the args it's invoked with, and the request it MUST produce. `body` is
@@ -209,6 +209,35 @@ const cases: Case[] = [
     args: { processId: "p1.api" },
     method: "POST",
     url: "/api/errors/clear?processId=p1.api",
+  },
+  { name: "list_browser_tabs", args: {}, method: "GET", url: "/api/browser/tabs" },
+  {
+    name: "get_browser_errors",
+    args: { processId: "p1.web" },
+    method: "POST",
+    url: "/api/browser/query",
+    body: { kind: "errors", processId: "p1.web" },
+  },
+  {
+    name: "get_page_metadata",
+    args: { tabId: "t1", timeoutMs: 2000 },
+    method: "POST",
+    url: "/api/browser/query",
+    body: { kind: "metadata", tabId: "t1", timeoutMs: 2000 },
+  },
+  {
+    name: "list_page_tools",
+    args: {},
+    method: "POST",
+    url: "/api/browser/query",
+    body: { kind: "tools" },
+  },
+  {
+    name: "call_page_tool",
+    args: { tool: "componentAt", args: { selector: "#app" }, tabId: "t1" },
+    method: "POST",
+    url: "/api/browser/query",
+    body: { kind: "call", tool: "componentAt", args: { selector: "#app" }, tabId: "t1" },
   },
   { name: "list_alert_rules", args: {}, method: "GET", url: "/api/alerts/rules" },
   {

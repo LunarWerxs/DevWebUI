@@ -153,8 +153,9 @@ state. Start the daemon, then register:
 }
 ```
 
-37 tools cover projects, processes (start/stop/restart, enable/disable, all), logs, the error
-log, and threshold alerts. **Full list →** [`AI_GUIDE.md`](AI_GUIDE.md#for-an-ai-driving-devwebui-over-mcp)
+42 tools cover projects, processes (start/stop/restart, enable/disable, all), logs, the error
+log, threshold alerts, and the live browser tabs of your dev apps: an opt-in `<script>` snippet lets
+an agent read a page's client-side errors and call inspection tools the app registers on the page. **Full list →** [`AI_GUIDE.md`](AI_GUIDE.md#for-an-ai-driving-devwebui-over-mcp)
 
 ## CLI
 
@@ -225,11 +226,11 @@ daemon on port 4000 and the GUI on port 4010. macOS and Linux tray support is on
 **How is DevWebUI different from PM2's web UI, hotel, or exo?**
 Hotel and exo are local dev-server GUIs that haven't shipped a release in a while, and PM2's web
 dashboard (PM2 Plus / PM2.io) is a paid product beyond its free tier. DevWebUI is actively
-maintained, free, and local-first, and pairs its GUI with a 37-tool MCP server so AI agents can
+maintained, free, and local-first, and pairs its GUI with a 42-tool MCP server so AI agents can
 drive the same daemon you click.
 
 **Can AI agents control DevWebUI directly?**
-Yes. DevWebUI ships a stdio MCP server (`devwebui mcp`, or `server/src/mcp.ts`) with 37 tools
+Yes. DevWebUI ships a stdio MCP server (`devwebui mcp`, or `server/src/mcp.ts`) with 42 tools
 covering projects, starting/stopping/restarting processes, enabling/disabling them, logs, the
 error log, and threshold alerts. It's a thin client over the same running daemon the GUI uses, so
 an agent and a human see and change the same state.

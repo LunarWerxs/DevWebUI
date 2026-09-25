@@ -47,6 +47,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `DEVWEBUI_SAFE_MODE=1` starts in safe mode on purpose; `GET /api/safe-mode` and
   `POST /api/safe-mode/exit` expose it.
 
+- **Agents can ask the live browser tabs of a dev app what is broken.** A dev page that loads
+  `<script src="http://localhost:<daemon port>/api/browser/client.js">` keeps an SSE line open to the
+  daemon, and five new MCP tools reach it: `list_browser_tabs`, `get_browser_errors` (uncaught
+  errors, failed resource loads, unhandled rejections and `console.error` - the client-side errors
+  that never reach the dev server's stdout), `get_page_metadata`, `list_page_tools` and
+  `call_page_tool`. The last two run inspection tools the app registers on its own page with
+  `window.__devwebui.register(...)`, so a component tree or an element's source `file:line` can come
+  from the app instead of a CSS selector. One question fans out to every matching tab and returns
+  whatever answered within the timeout, failing only when no tab did, so one frozen tab never hides
+  the rest. Only loopback-origin pages get the bridge. See AI_GUIDE.md, "Browser tabs".
+
 ## [1.0.0] - 2026-09-20
 
 ### Fixed
