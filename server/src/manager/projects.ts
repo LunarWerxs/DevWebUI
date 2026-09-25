@@ -14,7 +14,9 @@ function execDefinitionChanged(prev: ProcessDef, next: ProcessDef): boolean {
     prev.command !== next.command ||
     prev.cwd !== next.cwd ||
     prev.runtime !== next.runtime ||
-    JSON.stringify(prev.env ?? null) !== JSON.stringify(next.env ?? null)
+    JSON.stringify(prev.env ?? null) !== JSON.stringify(next.env ?? null) ||
+    // A compose block runs docker commands before spawning, so it is executed config too.
+    JSON.stringify(prev.compose ?? null) !== JSON.stringify(next.compose ?? null)
   );
 }
 

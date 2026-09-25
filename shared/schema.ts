@@ -45,6 +45,20 @@ export const ProcessSchema = z.object({
   // started individually (GUI start button / MCP start_process) — e.g. a shared
   // database or proxy that everything needs but nobody wants to start by hand.
   companion: z.boolean().optional(),
+  // Compose-managed dependencies (file-only, like `env`): before spawning, run
+  // `docker compose up -d` for this stack, wait for its published ports, and inject
+  // image-derived connection env (postgres gives DATABASE_URL). `file` is relative to
+  // the .devwebui file; omitted, compose finds compose.yaml from the process's cwd.
+  compose: z
+    .object({
+      file: z.string().min(1).optional(),
+      mode: z.enum(["none", "start-only", "start-and-stop"]).optional(),
+      skipIfRunning: z.boolean().optional(),
+      readinessTimeoutMs: z.number().int().positive().optional(),
+      services: z.array(z.string().min(1)).optional(),
+      injectEnv: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const DevWebUIFileSchema = z.object({

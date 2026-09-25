@@ -62,6 +62,10 @@ export function readDevWebUIFile(filePath: string): LoadedProject {
       waitForPort: p.waitForPort,
       links: p.links,
       companion: p.companion,
+      // `file` resolves against the .devwebui folder, the same rule `cwd` follows.
+      compose: p.compose?.file
+        ? { ...p.compose, file: path.resolve(dir, p.compose.file) }
+        : p.compose,
       projectId: id,
       projectName: parsed.name,
     };
@@ -94,6 +98,7 @@ const KNOWN_PROCESS_KEYS = new Set<string>([
   "waitForPort",
   "links",
   "companion",
+  "compose",
 ]);
 const KNOWN_FILE_KEYS = new Set<string>(["name", "color", "processes"]);
 
@@ -200,6 +205,7 @@ function clean(proc: DevWebUIProcess): DevWebUIProcess {
   const links = [...new Set(proc.links ?? [])].filter((l) => l !== proc.id);
   if (links.length) out.links = links;
   if (proc.companion) out.companion = true;
+  if (proc.compose) out.compose = proc.compose;
   return out;
 }
 
@@ -221,6 +227,7 @@ const MERGEABLE_KEYS = [
   "waitForPort",
   "links",
   "companion",
+  "compose",
 ] as const satisfies readonly (keyof DevWebUIProcess)[];
 
 /** Fill in every optional field the caller omitted from the stored record. */
