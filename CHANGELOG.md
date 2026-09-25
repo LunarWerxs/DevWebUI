@@ -6,6 +6,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The dashboard search box is fuzzy and ranked.** It used a plain substring test, so `asv`
+  never found "API Server" and hits came back in list order. It now runs a port of fzf's
+  FuzzyMatchV2 scorer (`web/src/lib/fuzzy.ts`, MIT): any in-order subsequence matches, word
+  starts, camelCase humps and consecutive runs score higher, and while a search is active the
+  best match comes first, both among a project's processes and in the order of the project
+  panels. Spaces split the query into terms that must all match. Project names use fzf's
+  "path" scheme (slashes are word boundaries; a shorter name wins a tie).
+
 ## [1.0.0] - 2026-09-20
 
 ### Fixed

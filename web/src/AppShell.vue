@@ -23,7 +23,7 @@ import type { AppNotification, ProcessView } from "@/types";
 const { t } = useI18n({ useScope: "global" });
 
 const store = useAppStore();
-const { projects, connected, allProcesses } = storeToRefs(store);
+const { projects, rankedProjects, connected, allProcesses } = storeToRefs(store);
 
 const selected = ref<string | null>(null);
 const drawerOpen = ref(false);
@@ -236,7 +236,7 @@ onMounted(async () => {
       <UpdateBanner class="mb-4" />
       <div v-if="projects.length" v-auto-animate class="flex flex-col gap-4">
         <ProjectPanel
-          v-for="proj in projects"
+          v-for="proj in rankedProjects"
           :key="proj.id"
           :project="proj"
           @logs="openLogs"

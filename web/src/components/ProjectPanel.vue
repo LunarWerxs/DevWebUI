@@ -52,6 +52,7 @@ import { useShortcutAction } from "@/lib/shortcut";
 import { useTooltipConfig } from "@/lib/tooltip-config";
 import { statusPill } from "@/lib/severity";
 import { arrangeProcesses } from "@/lib/arrange";
+import { fuzzySearch } from "@/lib/fuzzy";
 import type { ProcessView, ProjectView } from "@/types";
 
 const { t } = useI18n({ useScope: "global" });
@@ -94,10 +95,13 @@ async function onToggleStack(v: boolean) {
   }
 }
 
-/** True when the project's own name matches the toolbar search (blank search always matches). */
+/**
+ * True when the project's own name fuzzy-matches the toolbar search (blank search always
+ * matches). "path" scheme: a project name is usually its folder name.
+ */
 const projectNameMatches = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase();
-  return !q || props.project.name.toLowerCase().includes(q);
+  const q = searchQuery.value.trim();
+  return !q || fuzzySearch(props.project.name, q, "path") !== null;
 });
 
 // Filtered + sorted once here; both the card grid and the table render this list.
