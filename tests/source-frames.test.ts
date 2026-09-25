@@ -5,14 +5,17 @@
 import { expect, test } from "bun:test";
 import { findSourceFrames, frameFilePath } from "../shared/source-frames";
 
-const pick = (text: string) => findSourceFrames(text).map(({ file, line, column }) => ({ file, line, column }));
+const pick = (text: string) =>
+  findSourceFrames(text).map(({ file, line, column }) => ({ file, line, column }));
 
 test("Node stack frame in parens keeps a drive letter and spaces in the path", () => {
   const text = "    at run (C:\\Users\\dev one\\app\\src\\main.ts:12:5)";
   const [f] = findSourceFrames(text);
   expect(f).toMatchObject({ file: "C:\\Users\\dev one\\app\\src\\main.ts", line: 12, column: 5 });
   // The link span is the location itself, without the surrounding parens.
-  expect(text.slice(f!.index, f!.index + f!.length)).toBe("C:\\Users\\dev one\\app\\src\\main.ts:12:5");
+  expect(text.slice(f!.index, f!.index + f!.length)).toBe(
+    "C:\\Users\\dev one\\app\\src\\main.ts:12:5",
+  );
 });
 
 test("a file:// URL frame becomes a plain path", () => {

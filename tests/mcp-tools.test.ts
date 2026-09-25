@@ -323,7 +323,10 @@ test("list_errors: attaches the file:line:col frames found in each sample", asyn
   globalThis.fetch = (async () =>
     new Response(
       JSON.stringify([
-        { fingerprint: "f1", sample: "TypeError: x is undefined\n    at run (/srv/app/src/main.ts:12:5)" },
+        {
+          fingerprint: "f1",
+          sample: "TypeError: x is undefined\n    at run (/srv/app/src/main.ts:12:5)",
+        },
         { fingerprint: "f2", sample: "plain failure, no location" },
       ]),
       { status: 200 },

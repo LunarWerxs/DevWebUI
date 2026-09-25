@@ -56,7 +56,10 @@ test("line and column must be positive integers", () => {
 
 test("UNC paths, control characters and cwd-less relative paths are refused", () => {
   for (const file of ["\\\\evil\\share\\a.ts", "//evil/share/a.ts", "/a.ts\n--x", "src/a.ts", ""]) {
-    expect(validateOpenRequest({ file, line: 1 })).toMatchObject({ ok: false, reason: "bad-input" });
+    expect(validateOpenRequest({ file, line: 1 })).toMatchObject({
+      ok: false,
+      reason: "bad-input",
+    });
   }
 });
 

@@ -25,7 +25,10 @@ export function proxyLabelFromHost(host: string | undefined | null): string | nu
 
 /** Hostname-safe form of a project name, so `My App` is reachable as `my-app.localhost`. */
 export function proxySlug(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 /**
@@ -107,7 +110,7 @@ function loopbackOrder(port: number): string[] {
   return first ? [first, ...LOOPBACKS.filter((h) => h !== first)] : LOOPBACKS;
 }
 
-const escapeHtml =(s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
 /** A refused request. A browser page load gets a one-click confirm page (code-server sends it to
  *  its login; DevWebUI has no login, so the user's own click is the proof of intent - the click
@@ -179,7 +182,10 @@ async function forward(c: Context, port: number): Promise<Response> {
   // A redirect to the dev server's own absolute origin stays inside the proxy.
   const location = out.get("location");
   if (location) {
-    const ownOrigin = new RegExp(`^https?://(?:localhost|127\\.0\\.0\\.1|\\[::1\\]):${port}(?=/|$)`, "i");
+    const ownOrigin = new RegExp(
+      `^https?://(?:localhost|127\\.0\\.0\\.1|\\[::1\\]):${port}(?=/|$)`,
+      "i",
+    );
     out.set("location", location.replace(ownOrigin, "") || "/");
   }
   return new Response(upstream.body, {

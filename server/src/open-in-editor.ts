@@ -28,19 +28,12 @@ const EDITORS: [string, EditorKind][] = [
   ["windsurf", "vscode"],
   ["codium", "vscode"],
   ["vscodium", "vscode"],
-  ...[
-    "idea",
-    "webstorm",
-    "phpstorm",
-    "pycharm",
-    "rider",
-    "goland",
-    "rubymine",
-    "clion",
-  ].flatMap((n): [string, EditorKind][] => [
-    [n, "jetbrains"],
-    [`${n}64`, "jetbrains"],
-  ]),
+  ...["idea", "webstorm", "phpstorm", "pycharm", "rider", "goland", "rubymine", "clion"].flatMap(
+    (n): [string, EditorKind][] => [
+      [n, "jetbrains"],
+      [`${n}64`, "jetbrains"],
+    ],
+  ),
   ["zed", "zed"],
   ["sublime_text", "sublime"],
   ["subl", "sublime"],
@@ -160,7 +153,8 @@ async function resolveEditor(
       : {
           ok: false,
           reason: "unsupported-editor",
-          detail: "DEVWEBUI_EDITOR must name the editor's .exe (a .cmd/.bat shim cannot be launched)",
+          detail:
+            "DEVWEBUI_EDITOR must name the editor's .exe (a .cmd/.bat shim cannot be launched)",
         };
   }
   const running = pickEditor(await runningExecutables(platform), platform);
@@ -198,7 +192,10 @@ export function validateOpenRequest(
   const { line, column } = body;
   if (typeof line !== "number" || !Number.isInteger(line) || line < 1)
     return bad("line must be a positive integer");
-  if (column !== undefined && (typeof column !== "number" || !Number.isInteger(column) || column < 1))
+  if (
+    column !== undefined &&
+    (typeof column !== "number" || !Number.isInteger(column) || column < 1)
+  )
     return bad("column must be a positive integer");
   if (typeof body.file !== "string" || !body.file.trim() || body.file.length > 4096)
     return bad("file must be a non-empty path");
