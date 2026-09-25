@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
 import type { Manager } from "../manager";
-import { loopbackGuard } from "../loopback-guard.mjs";
+import { isLoopbackOrigin, loopbackGuard } from "../loopback-guard.mjs";
 import {
   allowedOrigins,
   registerRealtime,
@@ -16,6 +16,7 @@ import { registerProjectRoutes } from "./project-routes";
 import { registerProcessRoutes } from "./process-routes";
 import { registerConnectionsRoutes } from "./connections-routes";
 import { registerAlertRoutes } from "./alert-routes";
+import { BROWSER_PAGE_PATHS, registerBrowserRoutes } from "./browser-routes";
 
 function embeddedContentType(pathname: string): string {
   const ext = path.extname(pathname).toLowerCase();
@@ -41,7 +42,20 @@ export function createApp(manager: Manager, options: CreateAppOptions = {}) {
   // gates whether a browser lets a page READ a cross-origin response; the Origin-gate
   // below stops the mutating request from running at all. Non-browser clients (no Origin
   // header) are unaffected by either.
-  app.use("/api/*", cors({ origin: allowedOrigins(options.port) }));
+  // The browser bridge's page paths are the one exception: a supervised dev app on ANOTHER
+  // loopback port must read its SSE stream and post answers, so those two paths grant any
+  // loopback origin (never a non-loopback one; the guard below refuses those anyway).
+  const origins = allowedOrigins(options.port);
+  app.use(
+    "/api/*",
+    cors({
+      origin: (origin, c) =>
+        origins.includes(origin) ||
+        (BROWSER_PAGE_PATHS.includes(c.req.path) && isLoopbackOrigin(origin))
+          ? origin
+          : null,
+    }),
+  );
   // Cross-site (CSRF) guard — the shared kit primitive (server/src/loopback-guard.mjs). Rejects
   // browser cross-site requests (Sec-Fetch-Site: cross-site, or a present non-loopback Origin/Host)
   // on every /api/* verb; same-origin (GUI), same-site (dev), and non-browser (CLI/tray/MCP) pass.
@@ -56,6 +70,7 @@ export function createApp(manager: Manager, options: CreateAppOptions = {}) {
   registerProcessRoutes(app, manager);
   registerConnectionsRoutes(app, manager);
   registerAlertRoutes(app, manager);
+  registerBrowserRoutes(app, manager);
   registerWebAssetRoutes(app);
   return app;
 }
