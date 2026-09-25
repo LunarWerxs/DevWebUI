@@ -6,6 +6,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Open any managed dev server through DevWebUI's own port.** A request to
+  `http://<target>.localhost:<daemon port>` is relayed (HTTP and WebSocket, so HMR keeps working)
+  to the port of the managed process `<target>` names: a process id, a project name in
+  lower-case-hyphen form, or a declared port. `/proxy/<target>/...` redirects there. Each proxied
+  server gets its own `*.localhost` origin rather than the daemon's, so its scripts cannot reach
+  the local API; only ports a registered process declares are relayed, and the same cross-site
+  guard as the API applies (a browser arriving from another site gets a one-click confirm page).
+  Idea from code-server's domain proxy (MIT).
+
 ## [1.0.0] - 2026-09-20
 
 ### Fixed

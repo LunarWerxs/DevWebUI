@@ -7,6 +7,7 @@ import { materializeTrayToolkit, startTrayHostIfMissing } from "./tray-bootstrap
 import { Manager } from "./manager";
 import { createApp } from "./http";
 import { applyToManager } from "./http/connections-routes";
+import { proxySocketHandlers, upgradeProxySocket, type UpgradeServer } from "./http/port-proxy";
 import { readDevWebUIFile, readRegistry } from "./projects";
 import { startProjectWatch } from "./project-watch";
 import { materializeSettings, readSettings } from "./runtime";
@@ -360,7 +361,11 @@ const bunRuntime = (
       serve(options: {
         hostname: string;
         port: number;
-        fetch: (request: Request) => Response | Promise<Response>;
+        fetch: (
+          request: Request,
+          server: UpgradeServer,
+        ) => Response | Promise<Response> | undefined;
+        websocket: typeof proxySocketHandlers;
         idleTimeout: number;
       }): { port: number };
     };
@@ -376,7 +381,11 @@ const server = bunRuntime.serve({
   // loopback is what makes that guard's threat model true. See tests/bind-address.test.ts.
   hostname: "127.0.0.1",
   port: PORT,
-  fetch: app.fetch,
+  // A WebSocket upgrade addressed to a managed `<target>.localhost` (a dev server's HMR socket)
+  // must be taken here, before Hono; see http/port-proxy.ts. Everything else is the app.
+  fetch: (request, srv) =>
+    upgradeProxySocket(request, srv, manager, PORT) ? undefined : app.fetch(request, srv),
+  websocket: proxySocketHandlers,
   idleTimeout: 255, // keep SSE connections alive (Bun max)
 });
 

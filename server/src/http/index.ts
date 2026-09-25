@@ -16,6 +16,7 @@ import { registerProjectRoutes } from "./project-routes";
 import { registerProcessRoutes } from "./process-routes";
 import { registerConnectionsRoutes } from "./connections-routes";
 import { registerAlertRoutes } from "./alert-routes";
+import { registerPortProxy } from "./port-proxy";
 
 function embeddedContentType(pathname: string): string {
   const ext = path.extname(pathname).toLowerCase();
@@ -37,6 +38,10 @@ function embeddedContentType(pathname: string): string {
 
 export function createApp(manager: Manager, options: CreateAppOptions = {}) {
   const app = new Hono();
+  // Port proxy first: a `<target>.localhost` request belongs to that managed dev server, /api/*
+  // paths included, so it must be claimed before cors, the guard below, or any daemon route. It
+  // runs the same CSRF guard itself (http/port-proxy.ts).
+  registerPortProxy(app, manager, options.port);
   // CORS is scoped to the daemon's own origin(s) — see allowedOrigins(). This alone only
   // gates whether a browser lets a page READ a cross-origin response; the Origin-gate
   // below stops the mutating request from running at all. Non-browser clients (no Origin
