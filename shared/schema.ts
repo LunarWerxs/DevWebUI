@@ -59,6 +59,20 @@ export const ProcessSchema = z.object({
       injectEnv: z.boolean().optional(),
     })
     .optional(),
+  // Prompt answers: ordered expect/send rules typed into the process's stdin when its
+  // output shows a prompt, for programs that read stdin without a TTY check (shell `read`,
+  // `set /p`, Python input(), custom setup scripts) and would otherwise wait forever.
+  // See server/src/prompt-answers.ts for the matching rules.
+  answers: z
+    .array(
+      z.object({
+        expect: z.string().min(1).optional(),
+        send: z.string(),
+        isRegex: z.boolean().optional(),
+        optional: z.boolean().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export const DevWebUIFileSchema = z.object({

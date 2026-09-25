@@ -33,7 +33,10 @@ and put it in the repo root.
       "waitForPort": "web",    // optional; wait for a literal port, or a sibling id's port, before spawning
       "links": ["web"],        // optional; sibling ids that act as one unit with this one: start and stop together (symmetric, transitive)
       "companion": true,       // optional; starts whenever any other process in the project is started individually
-      "compose": { "mode": "start-and-stop" } // optional; bring up this repo's docker compose stack first (see below)
+      "compose": { "mode": "start-and-stop" }, // optional; bring up this repo's docker compose stack first (see below)
+      "answers": [             // optional; replies typed into stdin when a script stops at a prompt
+        { "expect": "Proceed? (y/N)", "send": "y", "optional": true }
+      ]
     }
   ]
 }
@@ -58,6 +61,7 @@ and put it in the repo root.
 | `links`      | no       | Sibling process `id`s (same file) that act as one unit with this one. Symmetric and transitive; starting or stopping any member (single-process actions in the GUI, or MCP `start_process` / `stop_process`) starts or stops the whole group. Unknown ids are ignored at runtime. |
 | `companion`  | no       | `true` to start this process whenever any *other* process in the project is started individually. For a shared database or proxy everything needs but nobody starts by hand. |
 | `compose`    | no       | Compose-managed dependencies. Before spawning, DevWebUI runs `docker compose up -d` (skipped when every service is already running), waits until each published port accepts TCP connections, then injects connection env derived from each service's image into the process. See [Compose-managed dependencies](#compose-managed-dependencies). |
+| `answers`    | no       | Ordered `{ "expect", "send", "isRegex"?, "optional"? }` rules for programs that read stdin without checking for a terminal (shell `read`, `set /p`, Python `input()`, custom setup scripts). Processes run on pipes, not a TTY, so tools that check for one (npx, most CLI prompt libraries) skip their prompts and need no rule. When the output shows `expect` (plain text, or a case-insensitive regex with `isRegex`), `send` is typed into the process's stdin once. Rules go in order: a required rule that has not matched yet holds back the ones after it, an `optional` one does not. Leading rules with no `expect` are sent as soon as the process starts; a later one is sent right after the rule before it fires (or, behind only optional rules, on the first output). `send` decodes `\n`, `\r`, `\t`, `\xHH`, `\uHHHH`, and gets a newline unless it ends in one. The log notes each answer by rule number but never shows what was sent. |
 
 ### Authoring guidance
 

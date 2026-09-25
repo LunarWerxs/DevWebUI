@@ -58,6 +58,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whatever answered within the timeout, failing only when no tab did, so one frozen tab never hides
   the rest. Only loopback-origin pages get the bridge. See AI_GUIDE.md, "Browser tabs".
 
+- **Processes can answer prompts from scripts that read stdin.** Managed processes run on pipes
+  with no terminal, so a program that asks a question without checking for a TTY (a shell `read`,
+  `set /p`, Python `input()`, a custom setup script) waits forever. A process's new `answers` rules
+  (ordered expect/send pairs, plain text or regex, optional or required) are typed into its stdin
+  when the output matches. Each answer is noted in the process log by rule number, without echoing
+  what was sent. Rule semantics follow Tabby's login scripts (MIT, ideas only).
+
 ## [1.0.0] - 2026-09-20
 
 ### Fixed

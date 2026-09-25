@@ -66,6 +66,7 @@ export function readDevWebUIFile(filePath: string): LoadedProject {
       compose: p.compose?.file
         ? { ...p.compose, file: path.resolve(dir, p.compose.file) }
         : p.compose,
+      answers: p.answers,
       projectId: id,
       projectName: parsed.name,
     };
@@ -99,6 +100,7 @@ const KNOWN_PROCESS_KEYS = new Set<string>([
   "links",
   "companion",
   "compose",
+  "answers",
 ]);
 const KNOWN_FILE_KEYS = new Set<string>(["name", "color", "processes"]);
 
@@ -206,6 +208,7 @@ function clean(proc: DevWebUIProcess): DevWebUIProcess {
   if (links.length) out.links = links;
   if (proc.companion) out.companion = true;
   if (proc.compose) out.compose = proc.compose;
+  if (proc.answers?.length) out.answers = proc.answers;
   return out;
 }
 
@@ -228,6 +231,7 @@ const MERGEABLE_KEYS = [
   "links",
   "companion",
   "compose",
+  "answers",
 ] as const satisfies readonly (keyof DevWebUIProcess)[];
 
 /** Fill in every optional field the caller omitted from the stored record. */
