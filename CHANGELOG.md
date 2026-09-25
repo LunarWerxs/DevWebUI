@@ -74,6 +74,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Non-integer lines, UNC paths and control characters are refused before anything is spawned, and
   the editor is launched outside the daemon's process tree, never through `cmd.exe`.
 
+- **Opt-in local API authentication.** The loopback guard only stops cross-site browser pages; any
+  other local process could still drive the API. Start the daemon with `DEVWEBUI_REQUIRE_AUTH=1`
+  and every `/api` route except `/api/health` needs a credential: the per-boot cookie file the
+  daemon writes to its data dir (the CLI and MCP server send it automatically), or a per-browser
+  key earned by typing a 6-digit pairing code the daemon prints. The GUI keeps that key in its own
+  local storage and sends it as a header (a cookie would reach every localhost dev server, since
+  cookies ignore the port); the live stream opens with a single-use ticket. Paired browsers are listed and
+  revoked with `devwebui pairing clients|revoke`. The cookie file is written on every boot, so
+  turning enforcement on later needs no other setup.
+
 ## [1.0.0] - 2026-09-20
 
 ### Fixed

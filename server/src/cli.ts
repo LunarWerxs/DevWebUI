@@ -20,6 +20,7 @@
  *   devwebui disable-process <id|name>
  *   devwebui start-all | stop-all              start / stop every managed process
  *   devwebui alerts list|add|remove|events|clear   threshold alert rules + fired-event history
+ *   devwebui pairing codes|clients|revoke     local API auth: pairing codes + paired clients
  *   devwebui open-process <file> <id>          desktop-shortcut launcher: boot+load+start+focus
  *   devwebui open-project <file>               desktop-shortcut launcher for a whole codebase
  *   devwebui mcp                               run the stdio MCP server for AI agents
@@ -41,6 +42,7 @@ import { daemonUrl, focusPath } from "../../shared/constants";
 import { dataDir } from "./data-dir";
 import { findLiveInstance, readInstanceInfo, type InstanceInfo } from "./instance";
 import { daemonLaunchVector, isCompiledBinary } from "./launch-vector";
+import { type PairedClient, type PendingPairingView, withLocalAuth } from "./local-auth";
 import { projectIdFromPath } from "./projects/file-store";
 import pkg from "../../package.json";
 
@@ -114,7 +116,11 @@ async function api<T = unknown>(pathname: string, init?: RequestInit): Promise<T
   const url = `${base()}${pathname}`;
   let res: Response;
   try {
-    res = await fetch(url, { ...init, signal: AbortSignal.timeout(API_TIMEOUT_MS) });
+    // withLocalAuth: send the daemon's cookie file so a DEVWEBUI_REQUIRE_AUTH=1 daemon lets us in.
+    res = await fetch(url, {
+      ...withLocalAuth(url, init),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
   } catch (e) {
     const reason = (e as Error).name === "TimeoutError" ? "timed out" : (e as Error).message;
     throw new Error(`could not reach the DevWebUI daemon at ${url} (${reason})`);
@@ -417,6 +423,44 @@ async function alertsClear(args: Args): Promise<void> {
   console.log(processId ? `Cleared alert events for ${processId}.` : "Cleared all alert events.");
 }
 
+const PAIRING_USAGE = `Usage:
+  devwebui pairing codes [--json]      Open pairing requests and the code each one waits for
+  devwebui pairing clients [--json]    Paired browsers/devices
+  devwebui pairing revoke <clientId>   Revoke one paired client`;
+
+/** `devwebui pairing ...`: the trusted channel that shows a browser's pairing code (this call
+ *  itself carries the cookie file, so only the owner sees codes) and manages paired clients. */
+async function pairingCmd(args: Args): Promise<void> {
+  await requireLive();
+  const [sub, id] = args._;
+  if (sub === "codes") {
+    const codes = await api<PendingPairingView[]>(ROUTES.pairingCodes);
+    if (args.json) console.log(JSON.stringify(codes, null, 2));
+    else if (!codes.length) console.log("No open pairing requests.");
+    else
+      console.log(
+        table([["CODE", "LABEL", "EXPIRES"], ...codes.map((p) => [p.code, p.label, p.expiresAt])]),
+      );
+    return;
+  }
+  if (sub === "clients") {
+    const clients = await api<PairedClient[]>(ROUTES.pairingClients);
+    if (args.json) console.log(JSON.stringify(clients, null, 2));
+    else if (!clients.length) console.log("No paired clients.");
+    else
+      console.log(
+        table([["ID", "LABEL", "PAIRED"], ...clients.map((c) => [c.id, c.label, c.createdAt])]),
+      );
+    return;
+  }
+  if (sub === "revoke" && id) {
+    await api(ROUTES.pairingClient.build(id), { method: "DELETE" });
+    console.log(`Revoked paired client ${id}.`);
+    return;
+  }
+  throw new UsageError(PAIRING_USAGE);
+}
+
 async function alertsCmd(args: Args): Promise<void> {
   await requireLive(); // every subcommand needs a daemon, including the usage error below
   const [sub, ...rest] = args._;
@@ -477,10 +521,9 @@ async function stopCmd(): Promise<void> {
     return;
   }
   // The shutdown route accepts the `ui` source header without a token (see http/core.ts).
-  const res = await fetch(`${live.url}${ROUTES.shutdown}`, {
-    method: "POST",
-    headers: { "x-devwebui-shutdown-source": "ui" },
-  });
+  const shutdownUrl = `${live.url}${ROUTES.shutdown}`;
+  const init = { method: "POST", headers: { "x-devwebui-shutdown-source": "ui" } };
+  const res = await fetch(shutdownUrl, withLocalAuth(shutdownUrl, init));
   if (!res.ok) throw new Error(`shutdown refused (${res.status}): ${await res.text()}`);
   console.log(`Stopped DevWebUI (${live.url}).`);
 }
@@ -748,6 +791,11 @@ Threshold alerts ("alert if this process exceeds 80% CPU for 2 minutes"):
   devwebui alerts events [--json]            List fired alert events, most recent first
   devwebui alerts clear [--process <id|name>] Clear fired-event history (optionally one process)
 
+Local API auth (enforced when the daemon runs with DEVWEBUI_REQUIRE_AUTH=1):
+  devwebui pairing codes [--json]            Show the code a browser asking to pair is waiting for
+  devwebui pairing clients [--json]          List paired browsers/devices
+  devwebui pairing revoke <clientId>         Revoke one paired client
+
 Desktop shortcuts (what a .lnk from "Add desktop shortcut" runs):
   devwebui open-process <file.devwebui> <id> Boot the daemon if needed, load the project if
                                              needed, start that process (+ its linked group)
@@ -786,6 +834,7 @@ const CLI_COMMANDS: Record<string, CliHandler> = {
   "stop-all": () => bulkCmd(ROUTES.stopAll, "Stopped all processes."),
 
   alerts: (args) => alertsCmd(args),
+  pairing: (args) => pairingCmd(args),
 
   "open-process": (args) => openCmd("process", args),
   "open-project": (args) => openCmd("project", args),

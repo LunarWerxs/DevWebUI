@@ -8,6 +8,7 @@
 // ROUTES.* endpoint. Replaces the previous @modelcontextprotocol/sdk-based server (dep dropped).
 import { daemonUrl } from "./constants";
 import { readInstanceInfo } from "./instance";
+import { withLocalAuth } from "./local-auth";
 import { ROUTES } from "../../shared/routes";
 import { runMcpStdio } from "./mcp-stdio.mjs";
 import pkg from "../../package.json";
@@ -26,7 +27,9 @@ function daemonBase(): string {
 async function api(pathname: string, init?: RequestInit): Promise<unknown> {
   let res: Response;
   try {
-    res = await fetch(`${daemonBase()}${pathname}`, init);
+    // The cookie file is what lets the shim through once the daemon enforces local auth.
+    const url = `${daemonBase()}${pathname}`;
+    res = await fetch(url, withLocalAuth(url, init));
   } catch (e) {
     throw new Error(
       `couldn't reach the DevWebUI daemon at ${daemonBase()} — start it with \`devwebui start\`. (${e instanceof Error ? e.message : String(e)})`,

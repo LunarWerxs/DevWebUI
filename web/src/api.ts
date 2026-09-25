@@ -49,8 +49,29 @@ export type {
   UpdateStatus,
 } from "../../shared/dto";
 
-const req = httpFetch;
-const reqJson = httpJson;
+// The paired-browser key a daemon enforcing local auth (server/src/local-auth.ts) wants as a
+// Bearer header. It lives in this origin's localStorage, never in a cookie: browsers do not scope
+// cookies by port, so every localhost dev server opened from the dashboard would receive one.
+const PAIRED_KEY_STORAGE = "devwebui.pairedKey";
+
+export function getPairedKey(): string | null {
+  try {
+    return localStorage.getItem(PAIRED_KEY_STORAGE);
+  } catch {
+    return null;
+  }
+}
+
+function withPairedKey(init?: RequestInit): RequestInit | undefined {
+  const key = getPairedKey();
+  if (!key) return init;
+  const headers = new Headers(init?.headers);
+  if (!headers.has("authorization")) headers.set("authorization", `Bearer ${key}`);
+  return { ...init, headers };
+}
+
+const req = (url: string, init?: RequestInit) => httpFetch(url, withPairedKey(init));
+const reqJson = <T>(url: string, init?: RequestInit) => httpJson<T>(url, withPairedKey(init));
 
 const jsonInit = (method: string, body: unknown): RequestInit => ({
   method,
@@ -110,6 +131,28 @@ export const openInEditor = (frame: {
   column?: number;
   processId?: string;
 }) => reqJson<OpenInEditorResult>(ROUTES.openInEditor, jsonInit("POST", frame));
+
+// ---- local API auth pairing (server/src/local-auth.ts; matters only when enforced) ----
+export const getPairingStatus = () =>
+  reqJson<{ required: boolean; authorized: boolean }>(ROUTES.pairingStatus);
+export const requestPairing = (label: string) =>
+  reqJson<{ requestId: string; expiresInSecs: number }>(
+    ROUTES.pairingRequest,
+    jsonInit("POST", { label }),
+  );
+/** On success keep the returned key: every later request sends it (see withPairedKey). */
+export async function verifyPairing(requestId: string, code: string): Promise<void> {
+  const { key } = await reqJson<{ clientId: string; label: string; key: string }>(
+    ROUTES.pairingVerify,
+    jsonInit("POST", { requestId, code }),
+  );
+  localStorage.setItem(PAIRED_KEY_STORAGE, key);
+}
+/** A single-use ticket for the live stream: EventSource cannot send the Bearer header. */
+export const getStreamTicket = () =>
+  reqJson<{ ticket: string; expiresInSecs: number }>(ROUTES.pairingStreamTicket, {
+    method: "POST",
+  });
 
 // ---- alert rules (threshold alerting on process CPU/memory) ----
 export const addAlertRule = (input: AlertRuleInput) =>

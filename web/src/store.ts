@@ -338,15 +338,35 @@ export const useAppStore = defineStore("app", () => {
   }
 
   function connect() {
+    // A paired browser (daemon enforcing local auth) cannot hand EventSource its Bearer key, so
+    // each connect uses a fresh single-use ticket; EventSource's own retry would replay a spent
+    // one, so on every drop we mint a new ticket and swap the URL, which reopens the stream.
+    const paired = api.getPairedKey() !== null;
+    const streamUrl = ref<string | undefined>(paired ? undefined : "/api/stream");
+    const reconnectMs = 2500;
+    async function refreshStreamTicket() {
+      try {
+        const { ticket } = await api.getStreamTicket();
+        streamUrl.value = `/api/stream?ticket=${encodeURIComponent(ticket)}`;
+      } catch {
+        setTimeout(refreshStreamTicket, reconnectMs);
+      }
+    }
     const { status, data, event } = useEventSource(
-      "/api/stream",
+      streamUrl,
       ["projects", "errors", "status", "log", "update_available", "alerts"],
-      { autoReconnect: { retries: -1, delay: 2500 } },
+      { autoReconnect: paired ? false : { retries: -1, delay: reconnectMs } },
     );
     watch(status, (s) => {
       connected.value = s === "OPEN";
       if (s === "OPEN") void refreshSafeMode();
     });
+    if (paired) {
+      void refreshStreamTicket();
+      watch(status, (s) => {
+        if (s === "CLOSED") setTimeout(refreshStreamTicket, reconnectMs);
+      });
+    }
     watch(data, (raw) => {
       if (raw == null) return;
       const parsed = JSON.parse(raw);

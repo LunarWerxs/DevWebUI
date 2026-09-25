@@ -167,11 +167,35 @@ devwebui start-process | stop-process | restart-process <id|name>
 devwebui start-all | stop-all
 devwebui alerts list | add | remove | events | clear  # threshold alert rules + fired-event history
 devwebui open <folder|file.devwebui>                  # add/drop a project; starts it if already added
+devwebui pairing codes | clients | revoke <id>        # local API auth: pairing codes + paired browsers
 devwebui mcp                                           # the stdio MCP server for agents
 ```
 
 A thin client over the same REST API the GUI and MCP use. Run `devwebui --help` for the rest;
 `DEVWEBUI_URL` / `DEVWEBUI_PORT` point it at another daemon.
+
+### Locking the local API to you
+
+By default the daemon's REST API answers any local caller that is not a cross-site browser page.
+Start it with `DEVWEBUI_REQUIRE_AUTH=1` to require a credential on every `/api` route except
+`/api/health`:
+
+- **Cookie file.** Every boot the daemon writes a fresh random secret to `.cookie` in its data dir
+  (`~/.devwebui`, owner-only) and deletes it on exit. The CLI and the MCP server read it and send it
+  automatically, so nothing needs configuring; a process that cannot read your data dir is refused.
+  The secret is only ever sent to a loopback address, even when `DEVWEBUI_URL` points elsewhere.
+- **Pairing a browser.** A browser cannot read that file, so the GUI shows a pairing screen. Click
+  *Get a pairing code*, then type the 6-digit code the daemon prints (or that
+  `devwebui pairing codes` lists). The browser keeps its own key in the GUI origin's local storage
+  and sends it as a header, never as a cookie: browsers share cookies across every localhost port,
+  so a cookie would reach the dev servers you open from the dashboard. List paired browsers with
+  `devwebui pairing clients` and revoke one with `devwebui pairing revoke <id>`.
+  Codes expire after 5 minutes. Ten wrong guesses (from anyone) lock pairing for 15 minutes, so a
+  misbehaving local process can hold pairing shut for that long; the CLI and MCP are unaffected.
+
+The tray's own restart/quit carry its session token and keep working. *Stop all processes* in the
+native tray and the `stopAll` action of `DevWebUI-Tray.ps1` do not send a credential yet, so both
+are refused while enforcement is on; use `devwebui stop-all` instead.
 
 ## Stack
 

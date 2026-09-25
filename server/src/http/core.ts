@@ -36,6 +36,8 @@ export interface Client {
 export interface CreateAppOptions {
   requestShutdown?: () => Promise<void> | void;
   shutdownToken?: string;
+  /** Enforce local auth (cookie file or paired key) on /api/*; see server/src/local-auth.ts. */
+  requireAuth?: boolean;
   /** Port the daemon itself bound to (its own same-origin GUI origin) — see allowedOrigins(). */
   port?: number;
 }
