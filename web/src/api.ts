@@ -141,7 +141,7 @@ export const applyUpdate = () =>
 /** Is the daemon in safe mode (booted after a crash, launch-time auto-start skipped)? */
 export const getSafeMode = () => reqJson<SafeModeStatus>(ROUTES.safeMode);
 
-/** "Restart normally": leave safe mode and run the auto-start a normal boot would have run. */
+/** "Leave safe mode": leave safe mode and run the auto-start a normal boot would have run. */
 export const exitSafeMode = () =>
   reqJson<SafeModeExitResult>(ROUTES.safeModeExit, { method: "POST" });
 

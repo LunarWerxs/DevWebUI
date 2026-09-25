@@ -275,7 +275,7 @@ async function handleErrorsDismiss(c: Context, manager: Manager) {
   return c.json({ ok: true });
 }
 
-// Safe mode's "Restart normally": leave safe mode and run exactly the auto-start a normal boot
+// Safe mode's "Leave safe mode": leave safe mode and run exactly the auto-start a normal boot
 // would have run (only when the owner has autoStartOnLaunch on), without bouncing the daemon and
 // dropping every open tab's SSE stream.
 function handleSafeModeExit(c: Context, manager: Manager) {

@@ -186,7 +186,7 @@ setUpdateNotifyEnabled(startupSettings.updateNotify !== false);
 // shutdown() means it crashed, and the tray will keep reviving us into the same crash if boot
 // auto-starts whatever caused it. So that boot, or one launched with --safe-mode /
 // DEVWEBUI_SAFE_MODE=1, is SAFE MODE: projects load, nothing auto-starts, and the GUI offers
-// "Restart normally". The dev launcher is exempt: `bun --watch` hard-restarts the daemon on every
+// "Leave safe mode". The dev launcher is exempt: `bun --watch` hard-restarts the daemon on every
 // save, and each of those would otherwise read as a crash.
 const previousCrash = process.env.DEVWEBUI_PORT_FIXED === "1" ? null : armCrashSentinel();
 const safeModeRequested = DAEMON_ARGS?.safeMode === true || process.env.DEVWEBUI_SAFE_MODE === "1";
@@ -198,7 +198,7 @@ if (SAFE_MODE) {
   setSafeMode({
     active: true,
     trigger: previousCrash ? "crash" : "requested",
-    crashedAt: previousCrash?.startedAt || null,
+    crashedRunStartedAt: previousCrash?.startedAt || null,
     reason: previousCrash?.reason ?? null,
     crashProcessId: crashFingerprint ? DAEMON_ERROR_INFO.processId : null,
     crashFingerprint,
@@ -294,7 +294,9 @@ async function shutdown(exitCode = 0, exitDelayMs = 0): Promise<void> {
   }
 }
 
-for (const sig of ["SIGINT", "SIGTERM"] as const)
+// SIGHUP too: a closed console or ended session is an orderly stop, and letting it kill us
+// without shutdown() would leave the crash sentinel armed and boot the next launch in safe mode.
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const)
   process.on(sig, () => {
     void shutdown(0);
   });

@@ -54,7 +54,7 @@ export class ManagerWithProjects extends ManagerWithLifecycle {
   }
 
   /**
-   * Run the launch-time auto-start the boot loop skipped: safe mode's "Restart normally". Same
+   * Run the launch-time auto-start the boot loop skipped: safe mode's "Leave safe mode". Same
    * selection addProject makes (project switch AND process toggle); anything already running or
    * queued is left alone by startMany. Returns the ids it asked to start.
    */

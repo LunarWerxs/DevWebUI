@@ -315,7 +315,7 @@ export interface SafeModeStatus {
   /** What put the daemon in safe mode: a leftover crash sentinel, or an explicit request. */
   trigger: "crash" | "requested" | null;
   /** When the crashed run had started (ms epoch); null when unknown or not a crash. */
-  crashedAt: number | null;
+  crashedRunStartedAt: number | null;
   /** The uncaught throw the crashed run recorded, if it got the chance. */
   reason: string | null;
   /** Error-log processId the crash was recorded under, so the GUI can open that entry. */

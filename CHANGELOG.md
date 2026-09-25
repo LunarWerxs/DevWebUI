@@ -13,7 +13,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   next launch means the previous run crashed. That launch loads your projects but auto-starts
   nothing (neither `autoStartOnLaunch` nor an auto-update's resume list), records the crash, with
   the uncaught error when there was one, as a de-duplicated entry in the error log, and shows a
-  banner with **View crash** and **Restart normally**. Before this, a server that crashed the daemon
+  banner with **View crash** and **Leave safe mode**. A marker from before the current OS boot (a
+  reboot or logoff) is not a crash and is dropped. Before this, a server that crashed the daemon
   on start was relaunched into the same crash by the tray every time. `--safe-mode` or
   `DEVWEBUI_SAFE_MODE=1` starts in safe mode on purpose; `GET /api/safe-mode` and
   `POST /api/safe-mode/exit` expose it.

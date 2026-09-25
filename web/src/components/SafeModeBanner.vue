@@ -5,7 +5,7 @@
 // shutdown (server/src/crash-sentinel.ts), or when launched with --safe-mode. Projects are loaded
 // but nothing auto-started, so a server that takes the daemon down on start cannot loop it through
 // the tray's revive. "View crash" opens the de-duplicated error entry the daemon recorded for it;
-// "Restart normally" runs the skipped auto-start. There is no dismiss: the banner is the only
+// "Leave safe mode" runs the skipped auto-start. There is no dismiss: the banner is the only
 // sign that the servers the owner expects to be up were deliberately left down.
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
@@ -22,7 +22,7 @@ const { t } = useI18n({ useScope: "global" });
 const status = computed(() => (store.safeMode?.active ? store.safeMode : null));
 const restarting = ref(false);
 
-async function restartNormally() {
+async function leaveSafeMode() {
   if (restarting.value) return;
   restarting.value = true;
   try {
@@ -64,10 +64,10 @@ async function restartNormally() {
           <TriangleAlert class="size-4" />
           {{ t("safeMode.viewCrash") }}
         </Button>
-        <Button size="sm" :disabled="restarting" @click="restartNormally">
+        <Button size="sm" :disabled="restarting" @click="leaveSafeMode">
           <Loader2 v-if="restarting" class="size-4 animate-spin" />
           <Play v-else class="size-4" />
-          {{ t("safeMode.restartNormally") }}
+          {{ t("safeMode.leaveSafeMode") }}
         </Button>
       </div>
     </div>

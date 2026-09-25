@@ -152,7 +152,7 @@ export const useAppStore = defineStore("app", () => {
       /* an older daemon without the route, or a blip: keep what we had */
     }
   }
-  /** "Restart normally": leave safe mode and let the skipped auto-start run. */
+  /** "Leave safe mode": leave safe mode and let the skipped auto-start run. */
   async function exitSafeMode() {
     const result = await api.exitSafeMode();
     await refreshSafeMode();

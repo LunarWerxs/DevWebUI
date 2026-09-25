@@ -25,6 +25,8 @@ afterEach(() => {
 });
 
 const dead = () => false;
+// The fixture runs below are dated in the ms after epoch; a boot at 0 keeps them "this boot".
+const bootTime = 0;
 
 test("a dead run's leftover is reported once, then a clean shutdown boots normally", () => {
   const dir = freshDir();
@@ -32,20 +34,30 @@ test("a dead run's leftover is reported once, then a clean shutdown boots normal
     path.join(dir, "run_old"),
     JSON.stringify({ id: "old", pid: 999_999, startedAt: 5, reason: "boom" }),
   );
-  const crash = armCrashSentinel({ dir, isAlive: dead });
+  const crash = armCrashSentinel({ dir, isAlive: dead, bootTime });
   expect(crash?.id).toBe("old");
   expect(crash?.reason).toBe("boom");
   expect(existsSync(path.join(dir, "run_old"))).toBe(false); // consumed: safe mode once, not forever
 
   disarmCrashSentinel(); // clean shutdown
-  expect(armCrashSentinel({ dir, isAlive: dead })).toBeNull();
+  expect(armCrashSentinel({ dir, isAlive: dead, bootTime })).toBeNull();
+});
+
+// A reboot or logoff ends the daemon with no shutdown(); its run file predates this boot. Reading
+// it as a crash would boot every login into safe mode, and its pid may now belong to anything.
+test("a run from before the current OS boot is dropped, not reported, whatever its pid", () => {
+  const dir = freshDir();
+  const stale = path.join(dir, "run_prevboot");
+  writeFileSync(stale, JSON.stringify({ id: "prevboot", pid: 4242, startedAt: 1_000 }));
+  expect(armCrashSentinel({ dir, isAlive: (pid) => pid === 4242, bootTime: 2_000 })).toBeNull();
+  expect(existsSync(stale)).toBe(false); // cleaned up even though pid 4242 is "alive" (reused)
 });
 
 test("a live sibling's run is not a crash and is left for its owner to remove", () => {
   const dir = freshDir();
   const sibling = path.join(dir, "run_pred");
   writeFileSync(sibling, JSON.stringify({ id: "pred", pid: 4242, startedAt: 1 }));
-  expect(armCrashSentinel({ dir, isAlive: (pid) => pid === 4242 })).toBeNull();
+  expect(armCrashSentinel({ dir, isAlive: (pid) => pid === 4242, bootTime })).toBeNull();
   expect(existsSync(sibling)).toBe(true);
   expect(readdirSync(dir).filter((n) => n.startsWith("run_"))).toHaveLength(2);
 });
