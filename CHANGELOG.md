@@ -14,6 +14,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from each process's `.devwebui` env - names only, never values - so an agent stops probing ports
   and guessing base URLs. `includeStopped: true` lists stopped processes too.
 
+- **Open any managed dev server through DevWebUI's own port.** A request to
+  `http://<target>.localhost:<daemon port>` is relayed (HTTP and WebSocket, so HMR keeps working)
+  to the port of the managed process `<target>` names: a process id, a project name in
+  lower-case-hyphen form, or a declared port. `/proxy/<target>/...` redirects there. Each proxied
+  server gets its own `*.localhost` origin rather than the daemon's, so its scripts cannot reach
+  the local API; only ports a registered process declares are relayed, and the same cross-site
+  guard as the API applies (a browser arriving from another site gets a one-click confirm page).
+  A dev server listening on IPv6 loopback only (Vite's default `localhost` under Node 17+) is
+  reached too. For now the URL is typed by hand: no process card or MCP tool links to it yet, and
+  it serves this machine only, since a phone, another PC or a tunnel cannot resolve
+  `*.localhost` names. Idea from code-server's domain proxy (MIT).
+
 ## [1.0.0] - 2026-09-20
 
 ### Fixed

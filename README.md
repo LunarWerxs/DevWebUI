@@ -86,6 +86,7 @@ taken, the daemon hops to the next free one and opens the URL it actually bound.
 - **One panel per repo**: a `.devwebui` file groups every process under one collapsible header; your projects auto-reload next launch.
 - **Runtime-aware launches**: automatic mode follows each project's lockfile, and compatible Bun/Node commands launch without a permanent shell wrapper.
 - **Port-conflict rescue**: detects a taken port, tells you which process is holding it, and frees it on request.
+- **One origin for every server**: open any managed process through DevWebUI's own port at `http://<target>.localhost:4000` (or `/proxy/<target>/`), where `<target>` is a process id like `p1a2b3c4.web`, a project name like `my-app`, or a declared port; HTTP and WebSocket (HMR) are relayed, only to ports a registered process declares, behind the same cross-site guard as the API.
 - **Persistent error log**: de-duplicated stderr / crashes / error-looking stdout that survives restarts.
 - **Desktop shortcuts (Windows)**: send any server (or a whole repo) to your Desktop from the ⋮ menu; double-click starts it, linked servers and all, in a small window with a Stop button.
 - **Built for agents**: a full set of MCP tools drives the same daemon you click, off one shared state.
