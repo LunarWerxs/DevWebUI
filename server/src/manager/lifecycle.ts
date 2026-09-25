@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import treeKill from "tree-kill";
 import { freePort, isPortListening, killPids, portOwners } from "../ports";
+import { type AnswerRule, answerText, PromptAnswerer } from "../prompt-answers";
 import { effectiveRuntime, withRuntime } from "../runtime";
 import { planManagedSpawn } from "../spawn-plan";
 import { setEnabledOverride, setProjectOverride } from "../state";
@@ -225,11 +226,37 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
     e.pid = child.pid ?? null;
     e.startedAt = e.pid ? Date.now() : null;
 
-    child.stdout?.on("data", (d: Buffer) => this.addLog(e, "stdout", d.toString()));
-    child.stderr?.on("data", (d: Buffer) => this.addLog(e, "stderr", d.toString()));
+    // Prompt answers watch BOTH streams: prompt libraries differ on where they print.
+    const answerer = new PromptAnswerer(e.def.answers, e.def.autoAnswer !== false);
+    // A child that closed its stdin makes a late write EPIPE; that must not crash the daemon.
+    child.stdin?.on("error", () => {});
+    const onOutput = (stream: "stdout" | "stderr") => (d: Buffer) => {
+      const text = d.toString();
+      this.addLog(e, stream, text);
+      this.typeAnswers(e, child, answerer.feed(text));
+    };
+    child.stdout?.on("data", onOutput("stdout"));
+    child.stderr?.on("data", onOutput("stderr"));
     child.on("error", (err) => this.handleSpawnError(e, child, err));
     child.on("exit", (code) => this.handleExit(e, child, code));
     if (e.pid) this.setStatus(e, "running");
+    this.typeAnswers(e, child, answerer.start());
+  }
+
+  /** Type fired prompt answers into the child's stdin, noting each in its log (never the
+   *  answer itself, which may be a secret the user put in their .devwebui file). */
+  private typeAnswers(e: Entry, child: ChildProcess, fired: AnswerRule[]): void {
+    for (const rule of fired) {
+      if (!child.stdin || child.stdin.destroyed || e.child !== child) return;
+      child.stdin.write(answerText(rule));
+      this.addLog(
+        e,
+        "stdout",
+        rule.expect
+          ? `[devwebui] answered a prompt matching "${rule.expect}"`
+          : "[devwebui] sent a startup answer",
+      );
+    }
   }
 
   // ---- enable/disable: setters (predicates live in ManagerBase) -----------

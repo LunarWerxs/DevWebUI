@@ -62,6 +62,8 @@ export function readDevWebUIFile(filePath: string): LoadedProject {
       waitForPort: p.waitForPort,
       links: p.links,
       companion: p.companion,
+      answers: p.answers,
+      autoAnswer: p.autoAnswer,
       projectId: id,
       projectName: parsed.name,
     };
@@ -94,6 +96,8 @@ const KNOWN_PROCESS_KEYS = new Set<string>([
   "waitForPort",
   "links",
   "companion",
+  "answers",
+  "autoAnswer",
 ]);
 const KNOWN_FILE_KEYS = new Set<string>(["name", "color", "processes"]);
 
@@ -200,6 +204,9 @@ function clean(proc: DevWebUIProcess): DevWebUIProcess {
   const links = [...new Set(proc.links ?? [])].filter((l) => l !== proc.id);
   if (links.length) out.links = links;
   if (proc.companion) out.companion = true;
+  if (proc.answers?.length) out.answers = proc.answers;
+  // Only the opt-out is worth writing: built-in answers are on by default.
+  if (proc.autoAnswer === false) out.autoAnswer = false;
   return out;
 }
 
@@ -221,6 +228,8 @@ const MERGEABLE_KEYS = [
   "waitForPort",
   "links",
   "companion",
+  "answers",
+  "autoAnswer",
 ] as const satisfies readonly (keyof DevWebUIProcess)[];
 
 /** Fill in every optional field the caller omitted from the stored record. */

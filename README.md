@@ -125,10 +125,13 @@ One small file per repo lists the servers to run. Drop it in the repo root and c
 ```
 
 Per-process: `id`, `name`, `command`, plus optional `cwd`, `port`, `url`, `color`, `env`,
-`autostart`, `waitForPort`, `links`, `companion`. You can also add and edit processes right in the
-GUI, and DevWebUI writes them back to the file. `links` groups servers that run as one unit
-(starting or stopping one starts or stops them all); `companion` marks a process, like a shared
-database, that starts alongside any other process in the project you start by hand.
+`autostart`, `waitForPort`, `links`, `companion`, `answers`, `autoAnswer`. You can also add and edit
+processes right in the GUI, and DevWebUI writes them back to the file. `links` groups servers that
+run as one unit (starting or stopping one starts or stops them all); `companion` marks a process,
+like a shared database, that starts alongside any other process in the project you start by hand.
+`answers` lists expect/send rules that type a reply when a server stops at an interactive prompt,
+so an unattended process does not hang on "use another port? (Y/n)"; a few common prompts are
+answered out of the box unless `autoAnswer` is `false`.
 
 **Full field spec + a copy-paste prompt that writes the file for you →** [`AI_GUIDE.md`](AI_GUIDE.md)
 

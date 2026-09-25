@@ -9,6 +9,7 @@ export type {
   ProjectView,
   Status,
 } from "../../shared/dto";
+import type { AnswerRule } from "./prompt-answers";
 
 export interface ProcessDef {
   id: string; // global, unique: `${projectId}.${localId}`
@@ -34,6 +35,10 @@ export interface ProcessDef {
   links?: string[];
   /** Companion: starts whenever any other process in this project is started individually. */
   companion?: boolean;
+  /** Expect/send rules answering the process's interactive prompts (see prompt-answers.ts). */
+  answers?: AnswerRule[];
+  /** `false` turns off the built-in answers for common prompts. */
+  autoAnswer?: boolean;
   projectId: string;
   projectName: string;
 }

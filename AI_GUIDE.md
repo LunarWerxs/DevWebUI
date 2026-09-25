@@ -32,7 +32,11 @@ and put it in the repo root.
       "env": { "NODE_ENV": "development" }, // optional; extra env vars for this process
       "waitForPort": "web",    // optional; wait for a literal port, or a sibling id's port, before spawning
       "links": ["web"],        // optional; sibling ids that act as one unit with this one: start and stop together (symmetric, transitive)
-      "companion": true        // optional; starts whenever any other process in the project is started individually
+      "companion": true,       // optional; starts whenever any other process in the project is started individually
+      "answers": [             // optional; replies typed into the process when it stops at a prompt
+        { "expect": "Proceed? (y/N)", "send": "y", "optional": true }
+      ],
+      "autoAnswer": false      // optional; false turns off the built-in answers to common prompts
     }
   ]
 }
@@ -56,6 +60,8 @@ and put it in the repo root.
 | `waitForPort`| no       | Dependency-ordered startup. A number waits on that literal port; a string names a sibling process's `id` and waits on THAT process's declared `port` instead. |
 | `links`      | no       | Sibling process `id`s (same file) that act as one unit with this one. Symmetric and transitive; starting or stopping any member (single-process actions in the GUI, or MCP `start_process` / `stop_process`) starts or stops the whole group. Unknown ids are ignored at runtime. |
 | `companion`  | no       | `true` to start this process whenever any *other* process in the project is started individually. For a shared database or proxy everything needs but nobody starts by hand. |
+| `answers`    | no       | Ordered `{ "expect", "send", "isRegex"?, "optional"? }` rules. When the output shows `expect` (plain text, or a case-insensitive regex with `isRegex`), `send` is typed into the process's stdin once. Rules go in order: a required rule that has not matched yet holds back the ones after it, an `optional` one does not. A rule with no `expect` is sent as soon as the process starts. `send` decodes `\n`, `\r`, `\t`, `\xHH`, `\uHHHH`, and gets a newline unless it ends in one. The log notes each answer but never shows what was sent. |
+| `autoAnswer` | no       | Built-in answers cover a few common prompts: "use another/a different port? (Y/n)" gets `y`, npx's "Ok to proceed? (y)" gets `y`, and usage-data/telemetry questions get `n`. Set `false` to turn them off. |
 
 ### Authoring guidance
 

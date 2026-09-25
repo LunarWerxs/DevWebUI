@@ -45,6 +45,22 @@ export const ProcessSchema = z.object({
   // started individually (GUI start button / MCP start_process) — e.g. a shared
   // database or proxy that everything needs but nobody wants to start by hand.
   companion: z.boolean().optional(),
+  // Prompt answers: ordered expect/send rules typed into the process's stdin when its
+  // output shows an interactive prompt, so an unattended server does not hang on one.
+  // See server/src/prompt-answers.ts for the matching rules.
+  answers: z
+    .array(
+      z.object({
+        expect: z.string().min(1).optional(),
+        send: z.string(),
+        isRegex: z.boolean().optional(),
+        optional: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  // Built-in answers for a few common prompts (port taken, npx install, telemetry) are on
+  // unless this is `false`.
+  autoAnswer: z.boolean().optional(),
 });
 
 export const DevWebUIFileSchema = z.object({
