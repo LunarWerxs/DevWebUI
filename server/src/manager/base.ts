@@ -5,6 +5,7 @@ import { diagnose, type Diagnosis } from "../diagnose";
 import { ErrorRecorder, type ErrorInfo, type ErrorEvent, isErrorActive } from "../errors";
 import { BufferedLogWriter, tailLog } from "../log-vault";
 import type { RuntimePref } from "../runtime";
+import { buildRuntimeServicesInfo, type RuntimeServicesInfo } from "../runtime-services";
 import { getEnabledOverride, getProjectOverride } from "../state";
 import type { LogLine, ProcessDef, ProcessView, ProjectView, Status } from "../types";
 import { toProcessView } from "../process-view";
@@ -201,6 +202,19 @@ export abstract class ManagerBase extends EventEmitter {
     const e = this.entries.get(id);
     if (!e) return null;
     return toProcessView(e.def, e, this.processEnabled(e.def));
+  }
+
+  /**
+   * The agent-POV <RUNTIME_SERVICES> summary. Lives here because only the manager holds each
+   * process's `.devwebui` env; the builder keeps its credential-looking NAMES and drops values.
+   */
+  runtimeServices(daemonOrigin: string, includeStopped = false): RuntimeServicesInfo {
+    return buildRuntimeServicesInfo(
+      this.list(),
+      (id) => this.entries.get(id)?.def.env,
+      daemonOrigin,
+      includeStopped,
+    );
   }
 
   getLogs(id: string): LogLine[] {

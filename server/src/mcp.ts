@@ -244,6 +244,19 @@ const TOOLS: McpEngineTool[] = [
     run: () => api(ROUTES.processes),
   },
   {
+    // Saves an agent the list/ps-then-guess-the-URL dance: one block to paste into its context.
+    name: "get_runtime_services",
+    description:
+      "Get a paste-ready <RUNTIME_SERVICES> block (plus the same data as `services`) listing every running dev server as reachable from THIS machine: its base URL, status, pid, and the NAMES (never values) of its .devwebui env vars that hold credentials. Also lists the DevWebUI daemon with its health URL. Pass includeStopped:true to list stopped/crashed processes too.",
+    inputSchema: S({
+      includeStopped: {
+        type: "boolean",
+        description: "Also list processes that are not running (optional; default false).",
+      },
+    }),
+    run: (a) => api(`${ROUTES.runtimeServices}${a.includeStopped ? "?all=1" : ""}`),
+  },
+  {
     name: "add_process",
     description:
       "Add a new process to a project's .devwebui file. Requires the project id plus the process id, name and command; every other field is optional. The daemon reloads the project so the new process appears immediately.",

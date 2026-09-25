@@ -248,6 +248,12 @@ export function registerProcessRoutes(app: Hono, manager: Manager) {
   });
   app.post(ROUTES.processFreePort.pattern, (c) => handleProcessFreePort(c, manager));
 
+  // The origin the CALLER reached the daemon on is, by construction, a URL that works from the
+  // caller's side, which is the point of the block (the GUI's linkHost is the browser's view).
+  app.get(ROUTES.runtimeServices, (c) =>
+    c.json(manager.runtimeServices(new URL(c.req.url).origin, c.req.query("all") === "1")),
+  );
+
   // Incident Autopilot: composite root-cause guess + remediation suggestion (never auto-executed).
   app.get(ROUTES.processDiagnose.pattern, (c) => handleProcessDiagnose(c, manager));
 
