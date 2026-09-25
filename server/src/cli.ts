@@ -118,7 +118,7 @@ async function api<T = unknown>(pathname: string, init?: RequestInit): Promise<T
   try {
     // withLocalAuth: send the daemon's cookie file so a DEVWEBUI_REQUIRE_AUTH=1 daemon lets us in.
     res = await fetch(url, {
-      ...withLocalAuth(init),
+      ...withLocalAuth(url, init),
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
   } catch (e) {
@@ -428,7 +428,6 @@ const PAIRING_USAGE = `Usage:
   devwebui pairing clients [--json]    Paired browsers/devices
   devwebui pairing revoke <clientId>   Revoke one paired client`;
 
-
 /** `devwebui pairing ...`: the trusted channel that shows a browser's pairing code (this call
  *  itself carries the cookie file, so only the owner sees codes) and manages paired clients. */
 async function pairingCmd(args: Args): Promise<void> {
@@ -522,10 +521,9 @@ async function stopCmd(): Promise<void> {
     return;
   }
   // The shutdown route accepts the `ui` source header without a token (see http/core.ts).
-  const res = await fetch(
-    `${live.url}${ROUTES.shutdown}`,
-    withLocalAuth({ method: "POST", headers: { "x-devwebui-shutdown-source": "ui" } }),
-  );
+  const shutdownUrl = `${live.url}${ROUTES.shutdown}`;
+  const init = { method: "POST", headers: { "x-devwebui-shutdown-source": "ui" } };
+  const res = await fetch(shutdownUrl, withLocalAuth(shutdownUrl, init));
   if (!res.ok) throw new Error(`shutdown refused (${res.status}): ${await res.text()}`);
   console.log(`Stopped DevWebUI (${live.url}).`);
 }

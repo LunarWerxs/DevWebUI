@@ -1,23 +1,19 @@
 // REST surface for local API auth (server/src/local-auth.ts): the pairing handshake a browser
 // uses to earn a key, and the paired-client list the owner manages. status/request/verify are on
-// local-auth's open list; codes/clients/revoke need a credential once enforcement is on, which is
-// what makes the CLI (holding the cookie file) the trusted place a pairing code is shown.
+// local-auth's open list; codes/clients/revoke/stream-ticket need a credential once enforcement
+// is on, which makes the CLI (holding the cookie file) the trusted place a pairing code is shown.
 import type { Context, Hono } from "hono";
-import { setCookie } from "hono/cookie";
 import {
-  PAIRED_COOKIE,
   completePairing,
   isAuthorized,
   listPairedClients,
+  mintStreamTicket,
   pendingPairings,
   revokePairedClient,
   startPairing,
 } from "../local-auth";
 import { ROUTES } from "../routes";
 import { type CreateAppOptions, fail, readBody } from "./core";
-
-/** Browsers cap cookie lifetime at 400 days; revocation, not expiry, is the real off switch. */
-const PAIRED_COOKIE_MAX_AGE_SECS = 400 * 24 * 60 * 60;
 
 function handleStatus(c: Context, options: CreateAppOptions) {
   const required = options.requireAuth === true;
@@ -38,14 +34,9 @@ async function handleVerify(c: Context) {
     return fail(c, "requestId and code are required");
   const result = completePairing(body.requestId, body.code);
   if (!result.ok) return fail(c, result.reason, 403);
-  // HttpOnly + SameSite=Strict: page script never sees the key, and no other site can make the
-  // browser send it. A cookie (not a header) because EventSource cannot set headers.
-  setCookie(c, PAIRED_COOKIE, result.key, {
-    httpOnly: true,
-    sameSite: "Strict",
-    path: "/",
-    maxAge: PAIRED_COOKIE_MAX_AGE_SECS,
-  });
+  // The key goes back in the body, once, for the GUI to keep in its own origin's localStorage and
+  // send as a Bearer header. Deliberately not a cookie: cookies ignore the port, so every other
+  // localhost server the browser visits (the user's dev servers) would receive it.
   return c.json({ clientId: result.client.id, label: result.client.label, key: result.key });
 }
 
@@ -61,5 +52,6 @@ export function registerPairingRoutes(app: Hono, options: CreateAppOptions) {
   app.post(ROUTES.pairingVerify, handleVerify);
   app.get(ROUTES.pairingCodes, (c) => c.json(pendingPairings()));
   app.get(ROUTES.pairingClients, (c) => c.json(listPairedClients()));
+  app.post(ROUTES.pairingStreamTicket, (c) => c.json(mintStreamTicket()));
   app.delete(ROUTES.pairingClient.pattern, handleRevoke);
 }

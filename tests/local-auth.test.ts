@@ -1,13 +1,14 @@
 // Contract for opt-in local API auth (server/src/local-auth.ts + http/pairing-routes.ts): with
 // requireAuth on, /api/* refuses a caller with no credential, accepts the cookie file the CLI and
-// MCP shim send, and lets a browser in only after the OTP pairing handshake - until revoked.
+// MCP shim send, and lets a browser in only after the OTP pairing handshake - until revoked. The
+// paired key is a Bearer header, never a cookie (cookies ignore the port, so the user's other
+// localhost dev servers would receive it); the stream takes a single-use ticket instead.
 // Drives a REAL Hono app over a REAL Manager with app.request, the house pattern.
 import "./isolate"; // CWD-proof data-dir isolation - must load before any server/src import
 import { afterEach, expect, test } from "bun:test";
 import { createApp } from "../server/src/http";
 import { Manager } from "../server/src/manager";
 import {
-  PAIRED_COOKIE,
   readCookieFile,
   resetPairingState,
   withLocalAuth,
@@ -16,6 +17,8 @@ import {
 import { ROUTES } from "../shared/routes";
 
 const JSON_HEADERS = { "content-type": "application/json" };
+/** The loopback daemon URL the CLI/MCP would target; withLocalAuth only signs loopback targets. */
+const LOCAL = "http://127.0.0.1:7171";
 
 function newApp(requireAuth: boolean) {
   const manager = new Manager();
@@ -33,7 +36,7 @@ test("enforcing daemon: no credential is refused, health stays open, cookie file
     expect((await app.request(ROUTES.processes)).status).toBe(401);
     expect((await app.request(ROUTES.health)).status).toBe(200);
     expect(readCookieFile()).toMatch(/^__cookie__:[0-9a-f]{64}$/);
-    expect((await app.request(ROUTES.processes, withLocalAuth())).status).toBe(200);
+    expect((await app.request(ROUTES.processes, withLocalAuth(LOCAL))).status).toBe(200);
     const wrong = { headers: { authorization: `Basic ${btoa("__cookie__:nope")}` } };
     expect((await app.request(ROUTES.processes, wrong)).status).toBe(401);
   } finally {
@@ -50,7 +53,15 @@ test("non-enforcing daemon keeps the open-on-loopback behaviour", async () => {
   }
 });
 
-test("pairing: code only via an authorized caller, right code earns a revocable cookie", async () => {
+test("the cookie-file secret is never attached to a non-loopback daemon URL", () => {
+  writeCookieFile();
+  const remote = new Headers(withLocalAuth("http://devbox.example:7171/api/processes").headers);
+  expect(remote.has("authorization")).toBe(false);
+  const local = new Headers(withLocalAuth("http://localhost:7171/api/processes").headers);
+  expect(local.get("authorization")).toStartWith("Basic ");
+});
+
+test("pairing: code only via an authorized caller, right code earns a revocable key", async () => {
   writeCookieFile();
   const { app, manager } = newApp(true);
   try {
@@ -68,7 +79,7 @@ test("pairing: code only via an authorized caller, right code earns a revocable 
 
     // The code list is behind auth: an unpaired caller cannot read its own code back.
     expect((await app.request(ROUTES.pairingCodes)).status).toBe(401);
-    const codes = (await (await app.request(ROUTES.pairingCodes, withLocalAuth())).json()) as {
+    const codes = (await (await app.request(ROUTES.pairingCodes, withLocalAuth(LOCAL))).json()) as {
       requestId: string;
       code: string;
     }[];
@@ -89,12 +100,11 @@ test("pairing: code only via an authorized caller, right code earns a revocable 
       body: JSON.stringify({ requestId, code }),
     });
     expect(ok.status).toBe(200);
-    const setCookie = ok.headers.get("set-cookie") ?? "";
-    expect(setCookie).toContain(`${PAIRED_COOKIE}=`);
-    expect(setCookie).toContain("HttpOnly");
-    const { clientId } = (await ok.json()) as { clientId: string };
-    const cookie = { headers: { cookie: setCookie.split(";")[0]! } };
-    expect((await app.request(ROUTES.processes, cookie)).status).toBe(200);
+    // No ambient cookie: it would reach every other localhost port the browser visits.
+    expect(ok.headers.get("set-cookie")).toBeNull();
+    const { clientId, key } = (await ok.json()) as { clientId: string; key: string };
+    const bearer = { headers: { authorization: `Bearer ${key}` } };
+    expect((await app.request(ROUTES.processes, bearer)).status).toBe(200);
 
     // A code is single-use.
     const replay = await app.request(ROUTES.pairingVerify, {
@@ -106,10 +116,31 @@ test("pairing: code only via an authorized caller, right code earns a revocable 
 
     const revoke = await app.request(
       ROUTES.pairingClient.build(clientId),
-      withLocalAuth({ method: "DELETE" }),
+      withLocalAuth(LOCAL, { method: "DELETE" }),
     );
     expect(revoke.status).toBe(200);
-    expect((await app.request(ROUTES.processes, cookie)).status).toBe(401);
+    expect((await app.request(ROUTES.processes, bearer)).status).toBe(401);
+  } finally {
+    manager.dispose();
+  }
+});
+
+test("stream ticket: minted only with a credential, opens only the stream, once", async () => {
+  writeCookieFile();
+  const { app, manager } = newApp(true);
+  try {
+    expect((await app.request(ROUTES.pairingStreamTicket, { method: "POST" })).status).toBe(401);
+    const minted = await app.request(
+      ROUTES.pairingStreamTicket,
+      withLocalAuth(LOCAL, { method: "POST" }),
+    );
+    const { ticket } = (await minted.json()) as { ticket: string };
+    // A ticket is not a general credential.
+    expect((await app.request(`${ROUTES.processes}?ticket=${ticket}`)).status).toBe(401);
+    const first = await app.request(`${ROUTES.stream}?ticket=${ticket}`);
+    expect(first.status).toBe(200);
+    await first.body?.cancel();
+    expect((await app.request(`${ROUTES.stream}?ticket=${ticket}`)).status).toBe(401);
   } finally {
     manager.dispose();
   }

@@ -12,8 +12,12 @@
 //   - PAIRING (the hoppscotch-agent idea): a browser cannot read files, so the GUI asks the daemon
 //     for a pairing request; the daemon shows a 6-digit code on a trusted channel (the daemon
 //     console, `devwebui pairing codes`, which itself needs the cookie). Typing that code back
-//     earns a per-client random key, stored only as a SHA-256 hash, sent back as an HttpOnly
-//     SameSite=Strict cookie (so fetch AND EventSource carry it) and revocable one client at a time.
+//     earns a per-client random key, stored server-side only as a SHA-256 hash and revocable one
+//     client at a time. The GUI keeps the key in localStorage and sends it as `Authorization:
+//     Bearer`. NOT an HTTP cookie: browsers do not scope cookies by port, so every localhost dev
+//     server the user opens from the dashboard would receive it. EventSource cannot set headers,
+//     so the live stream instead takes a short-lived, single-use ticket minted by an authorized
+//     fetch (see {@link mintStreamTicket}).
 //
 // Enforcement is OPT-IN (DEVWEBUI_REQUIRE_AUTH=1): the cookie file is always written and the CLI
 // and MCP always send it, but a daemon without the flag keeps the long-standing open-on-loopback
@@ -22,15 +26,14 @@ import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 
 import { chmodSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import type { Context, MiddlewareHandler } from "hono";
-import { getCookie } from "hono/cookie";
 import { writeFileAtomic, writeJsonAtomic } from "./atomic-write";
 import { dataDir } from "./data-dir";
 import { ROUTES } from "./routes";
 
 /** The Basic-auth user name the cookie file carries (bitcoind's convention). */
 export const COOKIE_USER = "__cookie__";
-/** Name of the HTTP cookie a paired browser presents. */
-export const PAIRED_COOKIE = "devwebui_auth";
+/** Query parameter carrying a stream ticket (EventSource cannot send an Authorization header). */
+export const STREAM_TICKET_PARAM = "ticket";
 /** Header the tray host already sends with its per-session secret (see http/core.ts). */
 const TRAY_TOKEN_HEADER = "x-devwebui-shutdown-token";
 
@@ -39,9 +42,16 @@ export const PAIRING_TTL_MS = 5 * 60_000;
 const MAX_ATTEMPTS_PER_REQUEST = 5;
 /** At most this many open requests: a new one evicts the oldest, so spam cannot pile up codes. */
 const MAX_PENDING = 3;
-/** Global brake on guessing: this many wrong codes inside the window locks pairing for the window. */
+/** Global brake on guessing: this many wrong codes inside the window locks pairing for the window.
+ *  Deliberately global, not per request: a per-request limit alone lets a local process open
+ *  request after request and brute-force the 6-digit space. The cost is that such a process can
+ *  hold pairing locked (and evict the owner's open request) for the window; the CLI and MCP, which
+ *  use the cookie file, are unaffected. */
 const MAX_FAILURES_PER_WINDOW = 10;
 const FAILURE_WINDOW_MS = 15 * 60_000;
+/** A stream ticket is good for one EventSource connect within this long of being minted. */
+const STREAM_TICKET_TTL_MS = 30_000;
+const MAX_STREAM_TICKETS = 32;
 
 /** Routes a caller must reach WITHOUT a credential: liveness probes and the pairing handshake. */
 const OPEN_ROUTES = new Set<string>([
@@ -103,8 +113,21 @@ export function readCookieFile(): string | null {
   }
 }
 
-/** Client side: add the cookie file's Basic credential to a request, unless the caller set one. */
-export function withLocalAuth(init: RequestInit = {}): RequestInit {
+/** True when `url` targets this machine's loopback interface. */
+function isLoopbackUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return host === "localhost" || host === "::1" || /^127(\.\d{1,3}){3}$/.test(host);
+  } catch {
+    return false;
+  }
+}
+
+/** Client side: add the cookie file's Basic credential to a request to `url`, unless the caller
+ *  set one. Only for a loopback target: DEVWEBUI_URL can point the CLI or MCP anywhere, and the
+ *  secret must never leave the machine. */
+export function withLocalAuth(url: string, init: RequestInit = {}): RequestInit {
+  if (!isLoopbackUrl(url)) return init;
   const line = readCookieFile();
   if (!line) return init;
   const headers = new Headers(init.headers);
@@ -247,10 +270,35 @@ export function completePairing(requestId: string, code: string): PairingResult 
   return { ok: true, client, key };
 }
 
-/** Test hook: forget open requests and the failure window. */
+// Stream tickets live only in memory, keyed by the ticket, valued by its expiry.
+const streamTickets = new Map<string, number>();
+
+/** Mint a single-use ticket an authorized caller hands to EventSource as `?ticket=`. It opens only
+ *  the stream route, once, within {@link STREAM_TICKET_TTL_MS}, so a URL that lands in a log or
+ *  history is already dead. */
+export function mintStreamTicket(): { ticket: string; expiresInSecs: number } {
+  const now = Date.now();
+  for (const [t, exp] of streamTickets) if (exp <= now) streamTickets.delete(t);
+  while (streamTickets.size >= MAX_STREAM_TICKETS)
+    streamTickets.delete(streamTickets.keys().next().value as string);
+  const ticket = randomBytes(32).toString("hex");
+  streamTickets.set(ticket, now + STREAM_TICKET_TTL_MS);
+  return { ticket, expiresInSecs: STREAM_TICKET_TTL_MS / 1000 };
+}
+
+/** Spend a stream ticket: true (and gone) when it was live, false otherwise. */
+function consumeStreamTicket(ticket: string): boolean {
+  const exp = streamTickets.get(ticket);
+  if (exp === undefined) return false;
+  streamTickets.delete(ticket);
+  return exp > Date.now();
+}
+
+/** Test hook: forget open requests, the failure window and unspent stream tickets. */
 export function resetPairingState(): void {
   pending.clear();
   failures = [];
+  streamTickets.clear();
 }
 
 export interface LocalAuthOptions {
@@ -261,7 +309,7 @@ export interface LocalAuthOptions {
 }
 
 /** Does this request carry a valid credential: the cookie file (Basic or Bearer), a paired key
- *  (Bearer or the HTTP cookie), or the tray's session token? */
+ *  (Bearer), or the tray's session token? */
 export function isAuthorized(c: Context, options: LocalAuthOptions = {}): boolean {
   const auth = c.req.header("authorization") ?? "";
   const [scheme, value = ""] = auth.split(/\s+/, 2);
@@ -273,8 +321,6 @@ export function isAuthorized(c: Context, options: LocalAuthOptions = {}): boolea
     if (cookieSecret && safeEqual(value, cookieSecret)) return true;
     if (isPairedKey(value)) return true;
   }
-  const cookie = getCookie(c, PAIRED_COOKIE);
-  if (cookie && isPairedKey(cookie)) return true;
   const tray = c.req.header(TRAY_TOKEN_HEADER) ?? "";
   return !!options.trayToken && !!tray && safeEqual(tray, options.trayToken);
 }
@@ -284,6 +330,8 @@ export function createLocalAuth(options: LocalAuthOptions = {}): MiddlewareHandl
   const required = options.required ?? authRequired;
   return async (c, next) => {
     if (!required() || OPEN_ROUTES.has(c.req.path) || isAuthorized(c, options)) return next();
+    const ticket = c.req.query(STREAM_TICKET_PARAM);
+    if (c.req.path === ROUTES.stream && ticket && consumeStreamTicket(ticket)) return next();
     return c.json(
       {
         error: "unauthorized: send the cookie file (devwebui CLI/MCP) or pair this browser",

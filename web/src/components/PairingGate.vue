@@ -2,8 +2,8 @@
 // Shown INSTEAD of the app when the daemon enforces local auth (DEVWEBUI_REQUIRE_AUTH=1) and this
 // browser holds no paired key yet. The browser cannot read the daemon's cookie file, so it asks
 // for a pairing request and the owner copies the 6-digit code from a trusted channel (the daemon
-// console or `devwebui pairing codes`). A correct code makes the daemon set an HttpOnly cookie;
-// reloading then mounts the real app with every request, SSE included, carrying it.
+// console or `devwebui pairing codes`). A correct code returns this browser's key, which api.ts
+// keeps in localStorage; reloading then mounts the real app with every request sending it.
 import { ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { requestPairing, verifyPairing } from "@/api";

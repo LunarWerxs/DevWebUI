@@ -59,6 +59,8 @@ export const ROUTES = {
   pairingVerify: "/api/pairing/verify",
   pairingCodes: "/api/pairing/codes",
   pairingClients: "/api/pairing/clients",
+  /** POST: a single-use ticket that lets EventSource (which cannot send headers) open the stream. */
+  pairingStreamTicket: "/api/pairing/stream-ticket",
 
   // ---- projects (collection + add/load/clone/scan flows) ----
   projects: "/api/projects",

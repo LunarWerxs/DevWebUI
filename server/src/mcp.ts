@@ -26,7 +26,8 @@ async function api(pathname: string, init?: RequestInit): Promise<unknown> {
   let res: Response;
   try {
     // The cookie file is what lets the shim through once the daemon enforces local auth.
-    res = await fetch(`${daemonBase()}${pathname}`, withLocalAuth(init));
+    const url = `${daemonBase()}${pathname}`;
+    res = await fetch(url, withLocalAuth(url, init));
   } catch (e) {
     throw new Error(
       `couldn't reach the DevWebUI daemon at ${daemonBase()} — start it with \`devwebui start\`. (${e instanceof Error ? e.message : String(e)})`,
