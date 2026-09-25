@@ -5,6 +5,7 @@ import * as api from "./api";
 import { useSelfUpdate } from "@/lib/useSelfUpdate";
 import { bindSignInNudgeStatus, nudgeOnSettingsChange } from "@/lib/sign-in-nudge";
 import { useTheme } from "@/lib/theme";
+import { rankProjectsBySearch } from "@/lib/arrange";
 import type { AddResult, DetectedProcess } from "./api";
 import type { ScanResult } from "./api";
 import type { SyncStatus } from "./api";
@@ -259,6 +260,11 @@ export const useAppStore = defineStore("app", () => {
    * hiding everything on next launch would be far more confusing than starting blank.
    */
   const searchQuery = ref("");
+  /**
+   * Project panels in fuzzy-search relevance order while the toolbar search is active
+   * (lib/arrange.ts rankProjectsBySearch), plain list order otherwise.
+   */
+  const rankedProjects = computed(() => rankProjectsBySearch(projects.value, searchQuery.value));
 
   /** Click a column: same key flips direction, a new key starts ascending. */
   function toggleSort(key: SortKey) {
@@ -667,6 +673,7 @@ export const useAppStore = defineStore("app", () => {
     sortDir,
     statusFilter,
     searchQuery,
+    rankedProjects,
     toggleSort,
     toggleStatusFilter,
     now,
