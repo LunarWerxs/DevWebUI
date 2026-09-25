@@ -212,7 +212,13 @@ export function validateOpenRequest(
   return { ok: true, req: { file, line, column: (column as number | undefined) ?? 1 } };
 }
 
-/** Spawn the editor outside the daemon's process tree; resolves false when it cannot start. */
+/**
+ * Spawn the editor outside the daemon's process tree; resolves false when it cannot start.
+ * On Windows the spawned process is detached-spawn's powershell wrapper, which always exits 0,
+ * so 'spawn' only proves powershell started: a missing or refused editor is not reported as
+ * launch-failed there. The wrapper's Start-Process fallback (used only when WMI refuses) also
+ * passes `-WindowStyle Hidden`, which can keep a not-yet-running GUI editor's window hidden.
+ */
 function launch(editor: string, args: string[]): Promise<boolean> {
   const plan = buildDetachedSpawn(process.platform, [editor, ...args]);
   return new Promise((resolve) => {
