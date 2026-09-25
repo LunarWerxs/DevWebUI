@@ -36,21 +36,19 @@ function evt(over: Partial<ErrorEvent> = {}): ErrorEvent {
   };
 }
 
-test("isErrorActive: a record from a previous session (lastSeen < bootedAt) is not current", () => {
-  expect(isErrorActive(evt({ lastSeen: BOOT - 1 }), BOOT, null)).toBe(false);
-});
-
-test("isErrorActive: a this-session record is current when no run post-dates it", () => {
+test.each([
+  ["a record from a previous session (lastSeen < bootedAt) is not current", BOOT - 1, null, false],
   // process stopped/crashed now (runStartedAt null) → a crash it just logged still counts.
-  expect(isErrorActive(evt({ lastSeen: BOOT + 5 }), BOOT, null)).toBe(true);
-});
-
-test("isErrorActive: an error predating the process's current run is stale (restart clears it)", () => {
-  expect(isErrorActive(evt({ lastSeen: BOOT + 5 }), BOOT, BOOT + 10)).toBe(false);
-});
-
-test("isErrorActive: an error from within the current run is current", () => {
-  expect(isErrorActive(evt({ lastSeen: BOOT + 15 }), BOOT, BOOT + 10)).toBe(true);
+  ["a this-session record is current when no run post-dates it", BOOT + 5, null, true],
+  [
+    "an error predating the process's current run is stale (restart clears it)",
+    BOOT + 5,
+    BOOT + 10,
+    false,
+  ],
+  ["an error from within the current run is current", BOOT + 15, BOOT + 10, true],
+])("isErrorActive: %s", (_name, lastSeen, runStartedAt, active) => {
+  expect(isErrorActive(evt({ lastSeen }), BOOT, runStartedAt)).toBe(active);
 });
 
 // ---- integration: real Manager load path -----------------------------------

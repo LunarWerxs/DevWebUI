@@ -145,62 +145,46 @@ test("diagnose: EADDRINUSE in the error log is recognized even without a live sq
   expect(result.remediation?.suggestedTool).toBe("restart_process");
 });
 
-test("diagnose: ECONNREFUSED names the port of the refused dependency", async () => {
+test.each([
+  [
+    "ECONNREFUSED names the port of the refused dependency",
+    1,
+    "Error: connect ECONNREFUSED 127.0.0.1:5432",
+    [/5432/, /running\?/i],
+  ],
+  [
+    "MODULE_NOT_FOUND / Cannot find module is recognized",
+    1,
+    "Error: Cannot find module 'lodash'\nrequire stack: ...",
+    [/lodash/, /MODULE_NOT_FOUND/],
+  ],
+  [
+    "command-not-found (unix) is recognized",
+    127,
+    "/bin/sh: 1: turbo: not found",
+    [/turbo/, /not found on path/i],
+  ],
+  [
+    "command-not-found (windows) is recognized",
+    1,
+    "'nonexistent-cli' is not recognized as an internal or external command",
+    [/nonexistent-cli/],
+  ],
+  [
+    "missing env var pattern is recognized",
+    1,
+    "Error: DATABASE_URL is not defined",
+    [/DATABASE_URL/],
+  ],
+])("diagnose: %s", async (_name, exitCode, sample, rootCause) => {
   const result = await diagnose({
     def: def(),
     status: "crashed",
-    exitCode: 1,
-    errors: [errorEvent("Error: connect ECONNREFUSED 127.0.0.1:5432")],
+    exitCode,
+    errors: [errorEvent(sample)],
   });
   expect(result.confidence).toBe("high");
-  expect(result.rootCause).toContain("5432");
-  expect(result.rootCause.toLowerCase()).toContain("running?");
-});
-
-test("diagnose: MODULE_NOT_FOUND / Cannot find module is recognized", async () => {
-  const result = await diagnose({
-    def: def(),
-    status: "crashed",
-    exitCode: 1,
-    errors: [errorEvent("Error: Cannot find module 'lodash'\nrequire stack: ...")],
-  });
-  expect(result.confidence).toBe("high");
-  expect(result.rootCause).toContain("lodash");
-  expect(result.rootCause).toContain("MODULE_NOT_FOUND");
-});
-
-test("diagnose: command-not-found (unix) is recognized", async () => {
-  const result = await diagnose({
-    def: def(),
-    status: "crashed",
-    exitCode: 127,
-    errors: [errorEvent("/bin/sh: 1: turbo: not found")],
-  });
-  expect(result.confidence).toBe("high");
-  expect(result.rootCause).toContain("turbo");
-  expect(result.rootCause.toLowerCase()).toContain("not found on path");
-});
-
-test("diagnose: command-not-found (windows) is recognized", async () => {
-  const result = await diagnose({
-    def: def(),
-    status: "crashed",
-    exitCode: 1,
-    errors: [errorEvent("'nonexistent-cli' is not recognized as an internal or external command")],
-  });
-  expect(result.confidence).toBe("high");
-  expect(result.rootCause).toContain("nonexistent-cli");
-});
-
-test("diagnose: missing env var pattern is recognized", async () => {
-  const result = await diagnose({
-    def: def(),
-    status: "crashed",
-    exitCode: 1,
-    errors: [errorEvent("Error: DATABASE_URL is not defined")],
-  });
-  expect(result.confidence).toBe("high");
-  expect(result.rootCause).toContain("DATABASE_URL");
+  for (const pattern of rootCause) expect(result.rootCause).toMatch(pattern);
 });
 
 test("diagnose: exitCode 0 does not trigger the known-error heuristic even with matching text in old logs", async () => {

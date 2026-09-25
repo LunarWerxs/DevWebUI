@@ -17,50 +17,29 @@ async function withPackageJson(
   }
 }
 
-test("detectProject scaffolds a Next.js dev server", async () => {
-  await withPackageJson(
-    {
-      name: "site",
-      scripts: { dev: "next dev" },
-    },
-    async (dir) => {
-      const detected = await detectProject(dir);
-      expect(detected?.framework).toBe("Next.js");
-      expect(detected?.processes).toMatchObject([
-        { id: "dev", name: "Dev", command: "npm run dev", port: 3000 },
-      ]);
-    },
-  );
-});
-
-test("detectProject scaffolds a React scripts server with the CRA default port", async () => {
-  await withPackageJson(
-    {
-      name: "dashboard",
-      scripts: { start: "react-scripts start" },
-    },
-    async (dir) => {
-      const detected = await detectProject(dir);
-      expect(detected?.framework).toBe("React");
-      expect(detected?.processes).toMatchObject([
-        { id: "start", name: "Start", command: "npm run start", port: 3000 },
-      ]);
-    },
-  );
-});
-
-test("detectProject scaffolds a Webpack dev server and honors explicit ports", async () => {
-  await withPackageJson(
-    {
-      name: "legacy-web",
-      scripts: { dev: "webpack serve --mode development --port 8081" },
-    },
-    async (dir) => {
-      const detected = await detectProject(dir);
-      expect(detected?.framework).toBe("Webpack");
-      expect(detected?.processes).toMatchObject([
-        { id: "dev", name: "Dev", command: "npm run dev", port: 8081 },
-      ]);
-    },
-  );
+test.each([
+  [
+    "a Next.js dev server",
+    { dev: "next dev" },
+    "Next.js",
+    { id: "dev", name: "Dev", command: "npm run dev", port: 3000 },
+  ],
+  [
+    "a React scripts server with the CRA default port",
+    { start: "react-scripts start" },
+    "React",
+    { id: "start", name: "Start", command: "npm run start", port: 3000 },
+  ],
+  [
+    "a Webpack dev server and honors explicit ports",
+    { dev: "webpack serve --mode development --port 8081" },
+    "Webpack",
+    { id: "dev", name: "Dev", command: "npm run dev", port: 8081 },
+  ],
+])("detectProject scaffolds %s", async (_name, scripts, framework, process) => {
+  await withPackageJson({ name: "site", scripts }, async (dir) => {
+    const detected = await detectProject(dir);
+    expect(detected?.framework).toBe(framework);
+    expect(detected?.processes).toMatchObject([process]);
+  });
 });
