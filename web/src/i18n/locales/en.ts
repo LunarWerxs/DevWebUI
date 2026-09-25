@@ -87,6 +87,16 @@ export default {
     confirmShutdownDescription:
       "This stops the DevWebUI daemon itself, along with every process it's running. You'll need to relaunch it to use DevWebUI again.",
   },
+  safeMode: {
+    title: "Safe mode",
+    crashed: "DevWebUI did not shut down cleanly last time, so nothing was started automatically.",
+    requested: "DevWebUI was started in safe mode, so nothing was started automatically.",
+    viewCrash: "View crash",
+    restartNormally: "Restart normally",
+    restarted: "Left safe mode",
+    restartedStarted: "Starting {count} process | Starting {count} processes",
+    restartFailed: "Couldn't leave safe mode",
+  },
   home: {
     noProjectsYet: "No projects yet",
     addProject: "Add project",

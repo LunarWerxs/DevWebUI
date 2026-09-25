@@ -11,6 +11,15 @@ import { toProcessView } from "../process-view";
 import { TICK_INTERVAL, METRICS_INTERVAL, type Entry, type Project } from "./types";
 import { LogBuffer } from "../log-buffer";
 
+/** Error-log identity for the daemon's own unclean shutdowns (no managed process owns them). */
+export const DAEMON_ERROR_INFO: ErrorInfo = {
+  processId: "devwebui:daemon",
+  localId: "daemon",
+  processName: "DevWebUI daemon",
+  projectId: "devwebui",
+  projectName: "DevWebUI",
+};
+
 /**
  * Shared state + the small, self-contained primitives every other manager
  * concern (monitoring, lifecycle, projects) builds on: entry/project maps,
@@ -137,6 +146,18 @@ export abstract class ManagerBase extends EventEmitter {
 
   dismissError(fingerprint: string): boolean {
     return this.errors.dismiss(fingerprint);
+  }
+
+  /**
+   * Record that the DAEMON itself went down uncleanly (crash-sentinel.ts found a leftover run).
+   * It goes through the same fingerprinting as a process crash, so a daemon that keeps dying for
+   * one reason shows as one entry with a count, and safe mode's banner can link straight to it.
+   */
+  recordDaemonCrash(reason: string | null): string | null {
+    const text = reason
+      ? `DevWebUI did not shut down cleanly: ${reason}`
+      : "DevWebUI did not shut down cleanly (no error was recorded before it stopped).";
+    return this.errors.record(DAEMON_ERROR_INFO, "crash", text);
   }
 
   // ---- alert rules (threshold alerting on CPU/memory) --------------------

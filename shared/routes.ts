@@ -38,6 +38,8 @@ export const ROUTES = {
   errors: "/api/errors",
   errorsClear: "/api/errors/clear",
   errorsDismiss: "/api/errors/dismiss",
+  safeMode: "/api/safe-mode",
+  safeModeExit: "/api/safe-mode/exit",
 
   // ---- alert rules (threshold alerting on process CPU/memory) ----
   alertRules: "/api/alerts/rules",

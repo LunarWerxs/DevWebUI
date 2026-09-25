@@ -16,6 +16,8 @@ import type {
   DetectedProcess,
   FreePortResult,
   ScanPreset,
+  SafeModeExitResult,
+  SafeModeStatus,
   ScanResult,
   Settings,
   ShortcutResult,
@@ -135,6 +137,13 @@ export const checkUpdate = (opts?: { force?: boolean }) =>
 /** Apply an available source update. The daemon should be restarted afterward. */
 export const applyUpdate = () =>
   reqJson<UpdateApplyResult>(ROUTES.updatesApply, { method: "POST" });
+
+/** Is the daemon in safe mode (booted after a crash, launch-time auto-start skipped)? */
+export const getSafeMode = () => reqJson<SafeModeStatus>(ROUTES.safeMode);
+
+/** "Restart normally": leave safe mode and run the auto-start a normal boot would have run. */
+export const exitSafeMode = () =>
+  reqJson<SafeModeExitResult>(ROUTES.safeModeExit, { method: "POST" });
 
 /** Patch global settings; `restart` re-launches running processes to apply a runtime change now. */
 export const saveSettings = (patch: Partial<Settings> & { restart?: boolean }) =>

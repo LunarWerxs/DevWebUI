@@ -54,6 +54,22 @@ export class ManagerWithProjects extends ManagerWithLifecycle {
   }
 
   /**
+   * Run the launch-time auto-start the boot loop skipped: safe mode's "Restart normally". Same
+   * selection addProject makes (project switch AND process toggle); anything already running or
+   * queued is left alone by startMany. Returns the ids it asked to start.
+   */
+  startLaunchAutostart(): string[] {
+    const ids: string[] = [];
+    for (const proj of this.projects.values())
+      for (const id of proj.processIds) {
+        const e = this.entries.get(id);
+        if (e && this.willAutostart(e.def)) ids.push(id);
+      }
+    this.startMany(ids);
+    return ids;
+  }
+
+  /**
    * Apply a re-read of a project's file, preserving the running state of unchanged processes.
    *
    * `opts.fromWatch` marks a reload triggered by the file changing ON DISK rather than by a

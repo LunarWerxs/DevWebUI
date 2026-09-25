@@ -102,11 +102,12 @@ export class ErrorRecorder {
     return ERROR_PATTERN.test(text);
   }
 
-  record(info: ErrorInfo, source: ErrorSource, rawText: string): void {
+  /** Record (or bump) an error; returns its fingerprint, or null when it was filtered out. */
+  record(info: ErrorInfo, source: ErrorSource, rawText: string): string | null {
     const text = stripAnsi(rawText).trim();
-    if (!text || !this.isError(source, text)) return;
+    if (!text || !this.isError(source, text)) return null;
     const normalized = normalize(text);
-    if (!normalized) return;
+    if (!normalized) return null;
 
     const fingerprint = `${info.processId}|${source}|${normalized}`;
     const now = Date.now();
@@ -136,6 +137,7 @@ export class ErrorRecorder {
     }
     this.scheduleSave();
     this.onChange();
+    return fingerprint;
   }
 
   list(): ErrorEvent[] {

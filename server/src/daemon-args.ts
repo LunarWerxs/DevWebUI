@@ -23,7 +23,7 @@
 /** Flags whose next token is their value. */
 const VALUE_FLAGS = new Set(["--port", "--resume"]);
 /** Flags that stand alone. */
-const BARE_FLAGS = new Set(["--relaunch"]);
+const BARE_FLAGS = new Set(["--relaunch", "--safe-mode"]);
 
 export interface DaemonArgs {
   /** The port to prefer, from `--port <n>`; null when not given. */
@@ -32,6 +32,9 @@ export interface DaemonArgs {
   relaunch: boolean;
   /** Process ids the predecessor had RUNNING, to bring back up after the update. */
   resume: string[];
+  /** `--safe-mode`: boot without any launch-time auto-start (see crash-sentinel.ts). Only set
+   *  when the flag was given, so the common bare/relaunch shapes stay exactly as they were. */
+  safeMode?: true;
 }
 
 /**
@@ -43,7 +46,8 @@ export function parseDaemonArgs(argv: readonly string[]): DaemonArgs | null {
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i] as string;
     if (BARE_FLAGS.has(token)) {
-      out.relaunch = true;
+      if (token === "--safe-mode") out.safeMode = true;
+      else out.relaunch = true;
       continue;
     }
     if (!VALUE_FLAGS.has(token)) return null;

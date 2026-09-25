@@ -25,6 +25,8 @@ import {
   writeShutdownRequest,
 } from "../instance";
 import { openPortableWindow } from "../portable-window.mjs";
+import { exitSafeMode, getSafeMode } from "../crash-sentinel";
+import type { SafeModeExitResult } from "../../../shared/dto";
 
 export interface Client {
   send: (event: string, data: unknown) => Promise<void>;
@@ -273,6 +275,17 @@ async function handleErrorsDismiss(c: Context, manager: Manager) {
   return c.json({ ok: true });
 }
 
+// Safe mode's "Restart normally": leave safe mode and run exactly the auto-start a normal boot
+// would have run (only when the owner has autoStartOnLaunch on), without bouncing the daemon and
+// dropping every open tab's SSE stream.
+function handleSafeModeExit(c: Context, manager: Manager) {
+  const reply: SafeModeExitResult = { ok: true, started: [] };
+  if (!exitSafeMode()) return c.json(reply);
+  if (readSettings().autoStartOnLaunch) reply.started = manager.startLaunchAutostart();
+  console.log(`[devwebui] left safe mode; auto-starting ${reply.started.length} process(es).`);
+  return c.json(reply);
+}
+
 /** Register health/update/shutdown/settings/error-log routes. */
 export function registerSystemRoutes(app: Hono, manager: Manager, options: CreateAppOptions) {
   // `service` is the identity the launchers match on. Without it a responder is indistinguishable
@@ -298,4 +311,8 @@ export function registerSystemRoutes(app: Hono, manager: Manager, options: Creat
     return c.json({ ok: true });
   });
   app.post(ROUTES.errorsDismiss, (c) => handleErrorsDismiss(c, manager));
+
+  // ---- safe mode (crash sentinel, see server/src/crash-sentinel.ts) ----
+  app.get(ROUTES.safeMode, (c) => c.json(getSafeMode()));
+  app.post(ROUTES.safeModeExit, (c) => handleSafeModeExit(c, manager));
 }

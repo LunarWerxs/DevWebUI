@@ -231,6 +231,13 @@ covering projects, starting/stopping/restarting processes, enabling/disabling th
 error log, and threshold alerts. It's a thin client over the same running daemon the GUI uses, so
 an agent and a human see and change the same state.
 
+**What is safe mode?**
+If the DevWebUI daemon did not shut down cleanly last time (a crash, or a hard kill), the next
+launch comes up in safe mode: your projects load, but nothing starts automatically, so a dev
+server that takes the daemon down on start cannot put it in a crash loop. A banner links to the
+recorded crash entry and offers **Restart normally**, which runs the skipped auto-start. You can
+also start quietly on purpose with `devwebui --safe-mode` (or `DEVWEBUI_SAFE_MODE=1`).
+
 **How do I add a project?**
 Drop a `.devwebui` file (one per repo, listing its dev servers) in the repo root and click **Add
 project** in the GUI, or run `devwebui open <path>` from the CLI. On first launch DevWebUI also

@@ -6,6 +6,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Safe mode after a crash.** Every daemon launch now leaves a run marker under the data
+  directory's `.sentinel/` folder and a clean shutdown removes it, so a marker still there at the
+  next launch means the previous run crashed. That launch loads your projects but auto-starts
+  nothing (neither `autoStartOnLaunch` nor an auto-update's resume list), records the crash, with
+  the uncaught error when there was one, as a de-duplicated entry in the error log, and shows a
+  banner with **View crash** and **Restart normally**. Before this, a server that crashed the daemon
+  on start was relaunched into the same crash by the tray every time. `--safe-mode` or
+  `DEVWEBUI_SAFE_MODE=1` starts in safe mode on purpose; `GET /api/safe-mode` and
+  `POST /api/safe-mode/exit` expose it.
+
 ## [1.0.0] - 2026-09-20
 
 ### Fixed

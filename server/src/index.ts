@@ -5,6 +5,7 @@ import { buildDetachedSpawn } from "./detached-spawn.mjs";
 import { buildRelaunchArgv } from "./relaunch-argv.mjs";
 import { materializeTrayToolkit, startTrayHostIfMissing } from "./tray-bootstrap.mjs";
 import { Manager } from "./manager";
+import { DAEMON_ERROR_INFO } from "./manager/base";
 import { createApp } from "./http";
 import { applyToManager } from "./http/connections-routes";
 import { readDevWebUIFile, readRegistry } from "./projects";
@@ -35,6 +36,12 @@ import { initFileLogging } from "./log-file.mjs";
 import { dataDir } from "./data-dir";
 import { openUi } from "./open-ui";
 import { cleanupStaleUpdateArtifacts } from "./updater";
+import {
+  armCrashSentinel,
+  disarmCrashSentinel,
+  noteCrashReason,
+  setSafeMode,
+} from "./crash-sentinel";
 import pkg from "../../package.json";
 
 // ---------------------------------------------------------------------------
@@ -103,11 +110,13 @@ const killChildrenOnCrash = () => {
 };
 process.on("uncaughtException", (err) => {
   console.error("[devwebui] uncaught exception:", err);
+  noteCrashReason(err); // the next boot's safe-mode banner names this
   killChildrenOnCrash();
   process.exit(1);
 });
 process.on("unhandledRejection", (reason) => {
   console.error("[devwebui] unhandled rejection:", reason);
+  noteCrashReason(reason);
   killChildrenOnCrash();
   process.exit(1);
 });
@@ -173,12 +182,40 @@ setAutoUpdateIntervalSecs(startupSettings.autoUpdateIntervalSecs);
 // `update_available`), so the check timer runs even when auto-update stays off.
 setUpdateNotifyEnabled(startupSettings.updateNotify !== false);
 
+// Crash sentinel (server/src/crash-sentinel.ts): a run file left by a daemon that never reached
+// shutdown() means it crashed, and the tray will keep reviving us into the same crash if boot
+// auto-starts whatever caused it. So that boot, or one launched with --safe-mode /
+// DEVWEBUI_SAFE_MODE=1, is SAFE MODE: projects load, nothing auto-starts, and the GUI offers
+// "Restart normally". The dev launcher is exempt: `bun --watch` hard-restarts the daemon on every
+// save, and each of those would otherwise read as a crash.
+const previousCrash = process.env.DEVWEBUI_PORT_FIXED === "1" ? null : armCrashSentinel();
+const safeModeRequested = DAEMON_ARGS?.safeMode === true || process.env.DEVWEBUI_SAFE_MODE === "1";
+const SAFE_MODE = safeModeRequested || previousCrash !== null;
+if (SAFE_MODE) {
+  const crashFingerprint = previousCrash
+    ? manager.recordDaemonCrash(previousCrash.reason ?? null)
+    : null;
+  setSafeMode({
+    active: true,
+    trigger: previousCrash ? "crash" : "requested",
+    crashedAt: previousCrash?.startedAt || null,
+    reason: previousCrash?.reason ?? null,
+    crashProcessId: crashFingerprint ? DAEMON_ERROR_INFO.processId : null,
+    crashFingerprint,
+  });
+  console.warn(
+    `[devwebui] SAFE MODE (${previousCrash ? "the previous run did not shut down cleanly" : "requested"}): no process will auto-start.`,
+  );
+}
+
 // Auto-load every remembered .devwebui file. Only auto-START them when the user has
 // opted in (autoStartOnLaunch) — otherwise a daemon boot would stampede every server.
 let loaded = 0;
 for (const file of readRegistry()) {
   try {
-    manager.addProject(readDevWebUIFile(file), { autostart: startupSettings.autoStartOnLaunch });
+    manager.addProject(readDevWebUIFile(file), {
+      autostart: startupSettings.autoStartOnLaunch && !SAFE_MODE,
+    });
     loaded += 1;
   } catch (e) {
     console.error(`[devwebui] skipping ${file}: ${(e as Error).message}`);
@@ -197,7 +234,7 @@ const resumeIds = DAEMON_ARGS?.resume.length
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-if (IS_RELAUNCH && resumeIds.length) {
+if (IS_RELAUNCH && resumeIds.length && !SAFE_MODE) {
   manager.startProcesses(resumeIds);
   console.log(`[devwebui] resuming ${resumeIds.length} process(es) after auto-update.`);
 }
@@ -228,6 +265,10 @@ let shuttingDown = false;
 async function shutdown(exitCode = 0, exitDelayMs = 0): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  // Disarm FIRST: an orderly stop is not a crash even when it is cut short. The tray's Quit
+  // bounds its graceful POST at 3s and then force-kills, while the settings flush below may take
+  // up to 6s, so disarming at the end would put the next launch in safe mode after a plain Quit.
+  disarmCrashSentinel();
   let code = exitCode;
   try {
     await Promise.race([
@@ -290,7 +331,10 @@ setAutoUpdateHooks({
       // The resume list is recomputed every generation, so any inherited one is stripped before
       // the fresh one is appended — otherwise the successor's argv (which is the NEXT
       // generation's input) would grow a stale pair on every update.
-      const relaunchArgv = buildRelaunchArgv(stripFlagPair(process.argv, "--resume"), {
+      // --safe-mode is dropped too: the update may be the fix, and a successor that crashes
+      // again is caught by its own crash sentinel.
+      const inherited = stripFlagPair(process.argv, "--resume").filter((a) => a !== "--safe-mode");
+      const relaunchArgv = buildRelaunchArgv(inherited, {
         execPath: process.execPath,
         isCompiled: isCompiledBinary(),
         boundPort: PORT,
@@ -313,6 +357,7 @@ setAutoUpdateHooks({
           ...process.env,
           DEVWEBUI_RELAUNCH: "1",
           DEVWEBUI_RELAUNCH_RESUME: resume.join(","),
+          DEVWEBUI_SAFE_MODE: "0",
           // The port we are actually SERVING on, not the one we preferred. DESIRED_PORT is
           // daemonPort() (config/env); PORT is where findFreePort actually landed, and they diverge
           // for every daemon that has ever hopped. The successor derives BOTH its waitForPortFree()
@@ -349,9 +394,10 @@ if (syncStatus().enabled) {
 }
 
 const moved = PORT !== DESIRED_PORT ? `  (port ${DESIRED_PORT} was busy)` : "";
+const modeLine = SAFE_MODE ? "\n  mode            →  SAFE MODE (auto-start skipped)" : "";
 console.log(`
   DevWebUI daemon  →  http://localhost:${PORT}${moved}
-  loaded          →  ${loaded} project(s) from registry
+  loaded          →  ${loaded} project(s) from registry${modeLine}
 `);
 
 const bunRuntime = (

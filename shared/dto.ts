@@ -305,6 +305,30 @@ export interface UpdateStatus {
   reason: string | null;
 }
 
+/**
+ * Safe mode: the daemon booted after an unclean shutdown (or was told to) and skipped every
+ * launch-time auto-start, so a server that crashes the daemon on start cannot loop it. See
+ * server/src/crash-sentinel.ts.
+ */
+export interface SafeModeStatus {
+  active: boolean;
+  /** What put the daemon in safe mode: a leftover crash sentinel, or an explicit request. */
+  trigger: "crash" | "requested" | null;
+  /** When the crashed run had started (ms epoch); null when unknown or not a crash. */
+  crashedAt: number | null;
+  /** The uncaught throw the crashed run recorded, if it got the chance. */
+  reason: string | null;
+  /** Error-log processId the crash was recorded under, so the GUI can open that entry. */
+  crashProcessId: string | null;
+  crashFingerprint: string | null;
+}
+
+/** POST safeModeExit reply: which launch-time auto-starts were run on leaving safe mode. */
+export interface SafeModeExitResult {
+  ok: boolean;
+  started: string[];
+}
+
 export interface UpdateApplyResult {
   ok: boolean;
   message: string;

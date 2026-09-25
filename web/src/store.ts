@@ -8,6 +8,7 @@ import { useTheme } from "@/lib/theme";
 import type { AddResult, DetectedProcess } from "./api";
 import type { ScanResult } from "./api";
 import type { SyncStatus } from "./api";
+import type { SafeModeStatus } from "../../shared/dto";
 import type { UpdateApplyResult, UpdateStatus } from "./api";
 import { MAX_LOG_LINES } from "../../shared/constants";
 import type {
@@ -136,6 +137,26 @@ export const useAppStore = defineStore("app", () => {
    *  (or a fresh SSE reconnect resync) can re-announce it. */
   function dismissUpdateAvailable() {
     updateAvailable.value = false;
+  }
+  /**
+   * Safe mode (server/src/crash-sentinel.ts): the daemon booted after an unclean shutdown, or was
+   * asked to, and skipped every launch-time auto-start. Re-read on every SSE (re)connect, since a
+   * reconnect is exactly what a tray-revived daemon looks like from here. SafeModeBanner.vue
+   * shows it; null until the first read lands.
+   */
+  const safeMode = ref<SafeModeStatus | null>(null);
+  async function refreshSafeMode() {
+    try {
+      safeMode.value = await api.getSafeMode();
+    } catch {
+      /* an older daemon without the route, or a blip: keep what we had */
+    }
+  }
+  /** "Restart normally": leave safe mode and let the skipped auto-start run. */
+  async function exitSafeMode() {
+    const result = await api.exitSafeMode();
+    await refreshSafeMode();
+    return result;
   }
   /**
    * Portable mode: the app UI opens in a chromeless Chromium app window instead of a
@@ -322,7 +343,10 @@ export const useAppStore = defineStore("app", () => {
       ["projects", "errors", "status", "log", "update_available", "alerts"],
       { autoReconnect: { retries: -1, delay: 2500 } },
     );
-    watch(status, (s) => (connected.value = s === "OPEN"));
+    watch(status, (s) => {
+      connected.value = s === "OPEN";
+      if (s === "OPEN") void refreshSafeMode();
+    });
     watch(data, (raw) => {
       if (raw == null) return;
       const parsed = JSON.parse(raw);
@@ -608,6 +632,8 @@ export const useAppStore = defineStore("app", () => {
     updateAvailable,
     updateAvailableCanApply,
     updateAvailableReason,
+    safeMode,
+    exitSafeMode,
     dismissUpdateAvailable,
     portableMode,
     setAutoUpdate,
