@@ -65,5 +65,20 @@ try {
 } finally {
   child.kill();
   await Promise.race([child.exited, Bun.sleep(5_000)]);
-  rmSync(scratch, { recursive: true, force: true });
+  await removeScratch(scratch);
+}
+
+/** Windows keeps the folder busy for a moment after the executable exits (EBUSY / EPERM), and
+ *  longer on a loaded box: retry the removal instead of failing a smoke run that passed. */
+async function removeScratch(dir: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (attempt >= 40 || (code !== "EBUSY" && code !== "EPERM")) throw e;
+      await Bun.sleep(250);
+    }
+  }
 }
