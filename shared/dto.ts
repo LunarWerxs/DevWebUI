@@ -327,6 +327,7 @@ export interface SafeModeStatus {
   reason: string | null;
   /** Error-log processId the crash was recorded under, so the GUI can open that entry. */
   crashProcessId: string | null;
+  /** Fingerprint of that crash's de-duplicated error entry, so the GUI can link to it. */
   crashFingerprint: string | null;
 }
 

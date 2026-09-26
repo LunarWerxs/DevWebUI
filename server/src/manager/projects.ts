@@ -5,7 +5,7 @@ import { ManagerWithLifecycle } from "./lifecycle";
 import type { Entry, Project } from "./types";
 
 /**
- * The four definition fields that decide what actually GETS EXECUTED. A reload that changes
+ * The definition fields that decide what actually GETS EXECUTED. A reload that changes
  * any of them is the security-relevant case `reconcileProject` treats specially; cosmetic
  * edits (name, port, colour) are never "exec changes".
  */
@@ -16,7 +16,9 @@ function execDefinitionChanged(prev: ProcessDef, next: ProcessDef): boolean {
     prev.runtime !== next.runtime ||
     JSON.stringify(prev.env ?? null) !== JSON.stringify(next.env ?? null) ||
     // A compose block runs docker commands before spawning, so it is executed config too.
-    JSON.stringify(prev.compose ?? null) !== JSON.stringify(next.compose ?? null)
+    JSON.stringify(prev.compose ?? null) !== JSON.stringify(next.compose ?? null) ||
+    // Prompt answers are typed into the process's stdin, so they are executed input too.
+    JSON.stringify(prev.answers ?? null) !== JSON.stringify(next.answers ?? null)
   );
 }
 

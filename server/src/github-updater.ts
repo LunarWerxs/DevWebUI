@@ -476,10 +476,19 @@ async function resolveUpdateAssets(
   | { ok: true; asset: ReleaseAsset; checksumAsset: ReleaseAsset }
   | { ok: false; result: UpdateApplyResult }
 > {
-  let assets: ReleaseAsset[] = [];
+  let release: Release | null = null;
   try {
-    assets = (await targetRelease()).release?.assets ?? [];
+    release = (await targetRelease()).release;
   } catch {}
+  // The release is looked up again here, and the cooldown may pick a different one than the
+  // check did: refuse rather than download a version nobody was offered.
+  const tag = release?.tag_name?.replace(/^v/, "") ?? "";
+  if (release && tag !== remoteVersion)
+    return {
+      ok: false,
+      result: failure(`the release changed since the check (v${tag}); check for updates again`),
+    };
+  const assets: ReleaseAsset[] = release?.assets ?? [];
   const asset = assetForPlatform(assets);
   const checksumAsset = assets.find((a) => a.name === CHECKSUM_ASSET) ?? null;
   if (!asset)

@@ -124,6 +124,28 @@ test("applyUpdate refuses when the release has no SHA256SUMS.txt manifest", asyn
   }
 });
 
+test("applyUpdate refuses when the release changed between the check and the download", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = stubFetchJson({
+    "/v1/app/devwebui/latest": () =>
+      new Response(
+        JSON.stringify({
+          tag_name: calls++ === 0 ? `v${REMOTE_VERSION}` : "v99.0.1",
+          assets: [{ name: assetName, browser_download_url: "https://example.test/asset", size: 1 }],
+        }),
+        { status: 200 },
+      ),
+  });
+  try {
+    const result = await applyUpdate();
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("the release changed since the check");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("applyUpdate refuses when the downloaded bytes don't match the published checksum", async () => {
   const originalFetch = globalThis.fetch;
   const fakeBytes = new TextEncoder().encode("not-the-real-binary");

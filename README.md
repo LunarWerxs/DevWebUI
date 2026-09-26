@@ -181,7 +181,8 @@ A thin client over the same REST API the GUI and MCP use. Run `devwebui --help` 
 
 By default the daemon's REST API answers any local caller that is not a cross-site browser page.
 Start it with `DEVWEBUI_REQUIRE_AUTH=1` to require a credential on every `/api` route except
-`/api/health`:
+`/api/health` and the pairing handshake. That includes `/api/browser/*`: the page snippet has no
+credential to send, so with the flag on, dev pages cannot connect and the browser-tab tools find none.
 
 - **Cookie file.** Every boot the daemon writes a fresh random secret to `.cookie` in its data dir
   (`~/.devwebui`, owner-only) and deletes it on exit. The CLI and the MCP server read it and send it
