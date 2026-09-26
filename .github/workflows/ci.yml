@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   ci:
+    timeout-minutes: 60
     name: lint · typecheck · build · test (${{ matrix.os }})
     # The shipped artifact is a per-OS `bun --compile` binary (see scripts/build.ts /
     # release.yml), so run the full suite on all three rather than just Linux.

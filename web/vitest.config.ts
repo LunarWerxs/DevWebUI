@@ -10,6 +10,8 @@ export default defineConfig({
     alias: { "@": path.resolve(__dirname, "./src") },
   },
   test: {
+    pool: 'forks',
+    maxWorkers: 4,
     environment: "jsdom",
   },
 });
