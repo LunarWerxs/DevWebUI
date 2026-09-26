@@ -132,7 +132,9 @@ test("applyUpdate refuses when the release changed between the check and the dow
       new Response(
         JSON.stringify({
           tag_name: calls++ === 0 ? `v${REMOTE_VERSION}` : "v99.0.1",
-          assets: [{ name: assetName, browser_download_url: "https://example.test/asset", size: 1 }],
+          assets: [
+            { name: assetName, browser_download_url: "https://example.test/asset", size: 1 },
+          ],
         }),
         { status: 200 },
       ),

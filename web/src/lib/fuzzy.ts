@@ -177,7 +177,7 @@ export function fuzzyMatch(
     const pc = pat[i];
     inGap = false;
     for (let j = F[i]; j <= lastIdx; j++) {
-      const s2: number = H[row + j - 1] +(inGap ? SCORE_GAP_EXTENSION : SCORE_GAP_START);
+      const s2: number = H[row + j - 1] + (inGap ? SCORE_GAP_EXTENSION : SCORE_GAP_START);
       let s1 = 0;
       let consecutive = 0;
       if (txt[j] === pc) {
