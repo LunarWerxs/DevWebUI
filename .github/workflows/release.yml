@@ -23,8 +23,13 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   validate:
+    timeout-minutes: 60
     name: validate release metadata
     runs-on: ubuntu-latest
     steps:
@@ -50,6 +55,7 @@ jobs:
           fi
 
   build:
+    timeout-minutes: 60
     name: build (${{ matrix.os }})
     needs: validate
     runs-on: ${{ matrix.os }}
@@ -115,6 +121,7 @@ jobs:
           path: out/*
 
   release:
+    timeout-minutes: 60
     name: publish release
     # Only a TAG publishes. A workflow_dispatch on a branch is a build + smoke validation
     # of the pipeline; dispatching on a tag ref still lands here and publishes for real.
