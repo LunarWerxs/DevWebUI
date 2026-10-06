@@ -479,20 +479,35 @@ const tray = await materializeTrayToolkit({
 if (tray.wrote.length) {
   console.log(`[devwebui] placed the tray toolkit in ${tray.dir} (${tray.wrote.join(", ")})`);
 }
-void startTrayHostIfMissing({
-  appRoot,
-  compiled,
-  configFile: "DevWebUI-Tray.json",
-  hideTray: () => readSettings().hideTrayIcon === true,
-  toolkitDir: tray.dir,
-})
-  .then((r) => {
-    if (r.start) console.log(`[devwebui] started the tray host (${r.exe}) - nothing else had`);
-  })
-  .catch((e) => console.error("[devwebui] tray host start failed:", e));
+// Awaited, not fire-and-forget: whether THIS boot started the tray host decides who
+// opens the release double-click's window just below.
+let trayHostStarted = false;
+try {
+  const r = await startTrayHostIfMissing({
+    appRoot,
+    compiled,
+    configFile: "DevWebUI-Tray.json",
+    hideTray: () => readSettings().hideTrayIcon === true,
+    toolkitDir: tray.dir,
+  });
+  trayHostStarted = r.start;
+  if (r.start) console.log(`[devwebui] started the tray host (${r.exe}) - nothing else had`);
+} catch (e) {
+  console.error("[devwebui] tray host start failed:", e);
+}
 
 if (releaseDoubleClick && process.env.DEVWEBUI_NO_OPEN !== "1") {
-  const url = `http://127.0.0.1:${server.port}/`;
-  if (!openUi(url))
-    console.error(`[devwebui] Could not open a browser automatically. Open ${url} manually.`);
+  // A tray host THIS boot started opens the UI itself the moment it sees the daemon
+  // serve (tray-host-native main.rs open_current_ui) — and in portable mode it opens
+  // the chromeless app window, which openUi's plain `start <url>` never does. Opening
+  // here TOO was the double-window bug: a release double-click got this browser tab
+  // AND the tray's. Open ourselves only when no tray host will (already running —
+  // a surviving host never opens on someone else's boot — hidden, or non-Windows).
+  if (trayHostStarted) {
+    console.log("[devwebui] the tray host will open the app window.");
+  } else {
+    const url = `http://127.0.0.1:${server.port}/`;
+    if (!openUi(url))
+      console.error(`[devwebui] Could not open a browser automatically. Open ${url} manually.`);
+  }
 }
