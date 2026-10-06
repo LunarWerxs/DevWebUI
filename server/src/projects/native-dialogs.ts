@@ -62,14 +62,32 @@ export function browseForDevWebUIFile(signal?: AbortSignal): Promise<string | nu
   return browseLinux(signal);
 }
 
+// Windows denies SetForegroundWindow to a background process's child (the daemon is a tray
+// app), so a dialog owned by a NEVER-SHOWN form lands in the normal z-order band — fully
+// covered by the maximized browser the user clicked "Browse…" in, until the request times
+// out and returns `cancelled`. The owner must actually be SHOWN (minimized, off the
+// taskbar) for its WS_EX_TOPMOST to engage; the owned dialog then rides in the topmost
+// band, visible over every normal window. Focus is still denied until the user clicks —
+// visibility is what was lost.
+function topMostOwnerPrep(): string[] {
+  return [
+    "$t = New-Object System.Windows.Forms.Form",
+    "$t.TopMost = $true",
+    "$t.ShowInTaskbar = $false",
+    "$t.WindowState = 'Minimized'",
+    "$t.Show()",
+  ];
+}
+
 async function browseWindows(signal?: AbortSignal): Promise<string | null> {
   const ps = [
     "Add-Type -AssemblyName System.Windows.Forms | Out-Null",
     "$d = New-Object System.Windows.Forms.OpenFileDialog",
     "$d.Filter = 'DevWebUI files|.devwebui;*.devwebui|All files (*.*)|*.*'",
     "$d.Title = 'Select a .devwebui file'",
-    "$t = New-Object System.Windows.Forms.Form; $t.TopMost = $true",
-    "if ($d.ShowDialog($t) -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.FileName) }",
+    ...topMostOwnerPrep(),
+    "try { $r = $d.ShowDialog($t) } finally { $t.Close() }",
+    "if ($r -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.FileName) }",
   ].join("; ");
   const out = await run("powershell", ["-NoProfile", "-STA", "-Command", ps], { signal });
   return out || null;
@@ -105,8 +123,9 @@ async function browseFolderWindows(signal?: AbortSignal): Promise<string | null>
     "Add-Type -AssemblyName System.Windows.Forms | Out-Null",
     "$d = New-Object System.Windows.Forms.FolderBrowserDialog",
     "$d.Description = 'Choose a destination folder'",
-    "$t = New-Object System.Windows.Forms.Form; $t.TopMost = $true",
-    "if ($d.ShowDialog($t) -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }",
+    ...topMostOwnerPrep(),
+    "try { $r = $d.ShowDialog($t) } finally { $t.Close() }",
+    "if ($r -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }",
   ].join("; ");
   const out = await run("powershell", ["-NoProfile", "-STA", "-Command", ps], { signal });
   return out || null;
