@@ -17,7 +17,7 @@ import { cva } from "class-variance-authority"
  * which of hover/selected wins; reka-ui's Toggle and ToggleGroupItem always set that attribute.
  */
 export const toggleVariants = cva(
-  'text-muted-foreground data-[state=off]:hover:bg-foreground/10 data-[state=off]:hover:text-foreground aria-pressed:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive data-[state=on]:bg-background data-[state=on]:hover:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm gap-1 rounded-md text-xs font-medium transition-all [&_svg:not([class*=size-])]:size-4 group/toggle inline-flex items-center justify-center whitespace-nowrap outline-none focus-visible:ring-3 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  'text-muted-foreground data-[state=off]:hover:bg-foreground/10 data-[state=off]:hover:text-foreground aria-pressed:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive data-[state=on]:bg-background data-[state=on]:hover:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm gap-1 rounded-md text-xs font-medium transition [&_svg:not([class*=size-])]:size-4 group/toggle inline-flex items-center justify-center whitespace-nowrap outline-none focus-visible:ring-3 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0',
   {
     variants: {
       variant: {
