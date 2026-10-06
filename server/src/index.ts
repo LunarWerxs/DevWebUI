@@ -44,6 +44,7 @@ import {
   setSafeMode,
 } from "./crash-sentinel";
 import { authRequired, removeCookieFile, writeCookieFile } from "./local-auth";
+import { promptAlreadyRunning } from "./second-instance";
 import pkg from "../../package.json";
 
 // ---------------------------------------------------------------------------
@@ -128,14 +129,39 @@ process.on("unhandledRejection", (reason) => {
 // which instance is "the" one). The dev launcher (DEVWEBUI_PORT_FIXED) and the
 // auto-update successor (DEVWEBUI_RELAUNCH) are exempt; see skipSingleInstanceGuard
 // for why, and single-instance.test.ts for the regression guard on that exemption.
+//
+// A release double-click gets a CHOICE (second-instance.ts): open the existing UI
+// (the old silent behaviour, also the fallback when the chooser tab is ignored) or
+// restart — the old stack tears down and this process boots as its replacement.
+// Non-release launches (dev runs, DEVWEBUI_NO_OPEN) keep the plain log-and-exit.
 if (!skipSingleInstanceGuard()) {
   const live = await findLiveInstance();
   if (live) {
     console.log(
       `\n  DevWebUI is already running  →  ${live.url}\n  Not starting a second instance.\n`,
     );
-    if (releaseDoubleClick && process.env.DEVWEBUI_NO_OPEN !== "1") openUi(live.url);
-    process.exit(0);
+    if (releaseDoubleClick && process.env.DEVWEBUI_NO_OPEN !== "1") {
+      // The chooser is best-effort: anything unexpected in it falls back to the old
+      // behaviour (open the existing UI and exit) rather than failing the launch.
+      let choice: "open" | "restart" | "timeout";
+      try {
+        choice = await promptAlreadyRunning({
+          liveUrl: live.url,
+          livePid: live.pid,
+          livePort: live.port,
+        });
+      } catch (e) {
+        console.error(`[devwebui] second-instance chooser failed: ${(e as Error).message}`);
+        openUi(live.url);
+        choice = "open";
+      }
+      if (choice !== "restart") process.exit(0);
+      // "restart": the old daemon and its tray are down and its port has been waited
+      // for — fall through and boot normally as the replacement. The release
+      // double-click open at the end of boot still applies, so the fresh window opens.
+    } else {
+      process.exit(0);
+    }
   }
 }
 
