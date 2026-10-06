@@ -1,0 +1,24 @@
+{
+ "closed": null,
+ "def_hash": "fdf7bc0cd05d643a",
+ "id": "20261006-web-shipped-bytes-e262",
+ "idea": "Re-encode favicon.ico's three raw BMP frames as lossless PNG frames (same pixels)",
+ "lane": "normal",
+ "metric": "web.shipped_bytes",
+ "opened": {
+  "at": "2026-10-06T08:52:26+00:00",
+  "by": "blogi",
+  "commit": "b18824c70695356dc9f726888ddbfbf13cfb4bf6",
+  "machine": "MPC-HELL"
+ },
+ "pass_line": null,
+ "predict": {
+  "expect": -9500.0,
+  "hi": -3000.0,
+  "lo": -12000.0,
+  "p_keep": 0.8
+ },
+ "probe_minutes": null,
+ "project": "devwebui",
+ "schema": "hydra-rsi-trial/1"
+}
