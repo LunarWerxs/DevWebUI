@@ -81,6 +81,17 @@
   transition: padding 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Tooltip (InfoHint): the i18n help strings rendered with v-html inside tooltips carry
+   emphasis authored for normal surfaces (<strong class="text-foreground">…</strong>).
+   A tooltip is the INVERSE surface (bg-foreground / text-background), so those spans
+   painted the bubble's own background colour and whole words vanished (every Settings
+   ⓘ hint in both themes). Force them to inherit the tooltip's text colour. Unlayered on
+   purpose: Tailwind v4 puts utilities in @layer utilities, and an unlayered rule wins
+   that cascade regardless of order. */
+[data-slot="tooltip-content"] .text-foreground {
+  color: inherit;
+}
+
 /* ProcessForm: advanced options open/close: the grid-rows 0fr <-> 1fr trick eases the
    section to its natural height with no JS measurement. */
 .advanced-reveal {
