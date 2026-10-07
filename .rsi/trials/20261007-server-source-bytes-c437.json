@@ -1,0 +1,24 @@
+{
+ "closed": null,
+ "def_hash": "7a86067d6a970416",
+ "id": "20261007-server-source-bytes-c437",
+ "idea": "remove three never-referenced exported getters in server/src/auto-update.ts",
+ "lane": "normal",
+ "metric": "server.source_bytes",
+ "opened": {
+  "at": "2026-10-07T10:40:13+00:00",
+  "by": "blogi",
+  "commit": "d26f912bb3f68ccc34e61cb85c64c50f90bbe75c",
+  "machine": "MPC-HELL"
+ },
+ "pass_line": null,
+ "predict": {
+  "expect": 215.0,
+  "hi": 400.0,
+  "lo": 100.0,
+  "p_keep": 0.8
+ },
+ "probe_minutes": null,
+ "project": "devwebui",
+ "schema": "hydra-rsi-trial/1"
+}

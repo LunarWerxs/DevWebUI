@@ -72,19 +72,10 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let ticking = false;
 let applying = false; // an apply is in flight — never overlap checks/applies
 
-export function autoUpdateEnabled(): boolean {
-  return enabled;
-}
-export function updateNotifyEnabled(): boolean {
-  return notifyEnabled;
-}
 /** Toggle "tell me about updates" (PUT /api/settings). Re-arms the shared timer. */
 export function setUpdateNotifyEnabled(on: boolean): void {
   notifyEnabled = on;
   reconcile();
-}
-export function getAutoUpdateIntervalSecs(): number {
-  return intervalSecs;
 }
 
 /** Outcome of one check→apply→relaunch pass. Returned (not just logged) so it's unit-testable. */
