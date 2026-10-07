@@ -1,5 +1,88 @@
 {
- "closed": null,
+ "closed": {
+  "a": {
+   "commit": "d26f912bb3f68ccc34e61cb85c64c50f90bbe75c",
+   "def_hash": "7a86067d6a970416",
+   "dirty": false,
+   "id": "m-20261007T104024-05a53b",
+   "load_after": 0.916,
+   "load_before": 0.973,
+   "machine": "MPC-HELL",
+   "metric": "server.source_bytes",
+   "project": "devwebui",
+   "reason": null,
+   "seconds": 7.106,
+   "settings": {
+    "gate": "exact",
+    "kind": "size",
+    "measure_files": {
+     "scripts/rsi/shipped_bytes.py": "c851aeebbceaae291e6b1686ca383fc2db792b3b"
+    }
+   },
+   "started": "2026-10-07T10:40:24+00:00",
+   "status": "ok",
+   "value": 741611
+  },
+  "applies_if": null,
+  "at": "2026-10-07T10:42:43+00:00",
+  "b": {
+   "commit": "479c784f198599618869e6b1a2b8993ad32d225b",
+   "def_hash": "7a86067d6a970416",
+   "dirty": false,
+   "id": "m-20261007T104231-676bf9",
+   "load_after": 0.885,
+   "load_before": 0.936,
+   "machine": "MPC-HELL",
+   "metric": "server.source_bytes",
+   "project": "devwebui",
+   "reason": null,
+   "seconds": 1.724,
+   "settings": {
+    "gate": "exact",
+    "kind": "size",
+    "measure_files": {
+     "scripts/rsi/shipped_bytes.py": "c851aeebbceaae291e6b1686ca383fc2db792b3b"
+    }
+   },
+   "started": "2026-10-07T10:42:31+00:00",
+   "status": "ok",
+   "value": 741390
+  },
+  "guards": [
+   {
+    "a": 0,
+    "b": 0,
+    "declared": false,
+    "metric": "arkitect_gating_errors",
+    "state": "ok"
+   },
+   {
+    "a": 287,
+    "b": 287,
+    "declared": false,
+    "metric": "arkitect_warnings",
+    "state": "ok"
+   },
+   {
+    "a": 112,
+    "b": 112,
+    "declared": false,
+    "metric": "arkitect_no_data",
+    "state": "ok"
+   },
+   {
+    "a": 34,
+    "b": 34,
+    "declared": false,
+    "metric": "deps_total",
+    "state": "ok"
+   }
+  ],
+  "method": "exact: 741611 -> 741390",
+  "note": "removed three never-referenced exported getters in auto-update.ts",
+  "pattern": null,
+  "verdict": "kept"
+ },
  "def_hash": "7a86067d6a970416",
  "id": "20261007-server-source-bytes-c437",
  "idea": "remove three never-referenced exported getters in server/src/auto-update.ts",
