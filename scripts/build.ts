@@ -74,7 +74,7 @@ function writeReleaseEntrypoint(): string {
   // Every kit app had instead shipped a compiled exe that could never show its icon, with each
   // README noting that down as a limitation (found live 2026-09-11) — so a toolkit file missing
   // from misc\ fails the build now instead of silently shipping that same bug again.
-  const trayNames = ["lunarwerx-tray.exe", "DevWebUI-Tray.json", "DevWebUI.ico"];
+  const trayNames = ["DevWebUI-Tray.exe", "DevWebUI-Tray.json", "DevWebUI.ico"];
   const trayImports: string[] = [];
   const trayRoutes: string[] = [];
   if (isWin) {

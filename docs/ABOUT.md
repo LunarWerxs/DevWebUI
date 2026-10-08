@@ -50,7 +50,7 @@ edit the dossier, not this block. Everything ABOVE the marker is yours.
 - `server/src/projects/` - .devwebui file I/O and schema, git clone, native browse/save dialogs (PowerShell/AppleScript/zenity), load-target resolution
 - `web/src/` - Vue 3 + Vite SPA: store.ts holds reactive state driven by the daemon's SSE stream; components/ are the dashboard views; lib/ has theme, i18n, drag-drop and shortcut helpers
 - `shared/` - cross-boundary DTOs, zod schema and the route table shared verbatim by server, web, CLI and MCP - the one source of truth for the wire contract
-- `misc/tray-host-native/` - lunarwerx-tray: a native Rust Win32 tray host that spawns/health-checks/relaunches the daemon and opens the portable chromeless browser window
+- `misc/tray-host-native/` - DevWebUI-Tray.exe: a native Rust Win32 tray host that spawns/health-checks/relaunches the daemon and opens the portable chromeless browser window
 - `scripts/` - build/release tooling plus repo guardrail checks (lib-types export audit, spawn-test-timeout audit) run in CI
 - `tests/` - Vitest + Bun test suites for server and web (50 files, ~6.4k lines)
 - `docs/` - README screenshots and TESTING.md

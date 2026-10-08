@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "DevWebUI's tray-host config, read by misc/lunarwerx-tray.exe (source vendored beside it in",
+    "DevWebUI's tray-host config, read by misc/DevWebUI-Tray.exe (source vendored beside it in",
     "misc/tray-host-native/). This file is the whole per-app surface; the host binary is generic and",
     "shared, exactly as DevWebUI-Tray.ps1's $TrayConfig hashtable was.",
     "",

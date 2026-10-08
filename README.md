@@ -58,7 +58,7 @@ release younger than that is neither offered nor installed, so a bad release has
 and pulled first (0, the default, offers the newest release at once).
 
 The tray icon comes with both downloads. It comes from a small separate launcher
-(`misc\lunarwerx-tray.exe`); the zip ships it beside the exe, and since 0.8.8 the single-file
+(`misc\DevWebUI-Tray.exe`); the zip ships it beside the exe, and since 0.8.8 the single-file
 `devwebui.exe` carries it inside the binary and writes it out beside its own state on first run, so
 either download gets you the icon, Quit and the auto-restart supervisor. (Before 0.8.8 the bare exe
 had none, and this line said so as though it were a decision.) `misc\Create-Shortcut.ps1` still

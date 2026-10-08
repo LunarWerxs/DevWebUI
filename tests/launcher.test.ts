@@ -608,7 +608,7 @@ test.skipIf(!isWin)(
     // to start PowerShell without a console flash, and the native host suppresses its own console,
     // so both layers are gone: the daemon is created at ~25ms instead of ~475ms.
     assert(
-      /lunarwerx-tray\.exe$/i.test(info.target),
+      /DevWebUI-Tray\.exe$/i.test(info.target),
       `shortcut target isn't the native tray host: ${info.target}`,
     );
     assert(!/wscript/i.test(info.target), `shortcut still goes through wscript: ${info.target}`);
@@ -617,7 +617,7 @@ test.skipIf(!isWin)(
       /DevWebUI-Tray\.json/i.test(info.args),
       `shortcut doesn't pass DevWebUI-Tray.json: ${info.args}`,
     );
-    assert(info.targetExists, "shortcut points at a lunarwerx-tray.exe that doesn't exist");
+    assert(info.targetExists, "shortcut points at a DevWebUI-Tray.exe that doesn't exist");
     assert(info.configExists, "shortcut names a DevWebUI-Tray.json that doesn't exist");
     assert(info.iconExists, "shortcut's tray icon (DevWebUI.ico) doesn't exist");
     expect(info.iconExists && info.targetExists && info.configExists).toBe(true);
