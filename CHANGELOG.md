@@ -11,6 +11,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The Discord link now opens DevWebUI's own channel and gives you the DevWebUI role** on joining,
   instead of dropping you in the server's general room to find it yourself.
 
+### Fixed
+
+- **A project folder that is deleted and restored no longer leaves its settings stale.** On Windows
+  a watch on a deleted folder reports it gone hundreds of times a second and never stops, which held
+  back every reload of `.devwebui` and used a CPU core. That watch now closes the moment its folder
+  is gone, a check every second reloads a changed file directly, and watching resumes once the
+  folder is back (after a branch switch or a re-clone).
+
 ## [1.1.0] - 2026-09-27
 
 ### Added
