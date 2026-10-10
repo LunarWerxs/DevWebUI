@@ -159,6 +159,24 @@ test("two atomic saves in a row both land (the watcher does not go deaf after th
   }
 });
 
+test("a DEAF directory watch still reloads: the stat poll is the backstop", async () => {
+  // The macOS failure: the OS stops reporting events for the watched dir. Closing the
+  // dir watchers reproduces that deterministically; only the stat poll can see the save.
+  const h = harness(["web"]);
+  try {
+    const dirWatchers = (h.watcher as unknown as { dirWatchers: Map<string, { close(): void }> })
+      .dirWatchers;
+    for (const w of dirWatchers.values()) w.close();
+    const tmp = path.join(h.dir, ".devwebui.tmp");
+    writeFileSync(tmp, projectJson(["web", "api"]));
+    renameSync(tmp, h.file);
+    await waitFor(idsAre(h, ["web", "api"]), 4000);
+    expect(h.processIds()).toEqual(["web", "api"]);
+  } finally {
+    h.dispose();
+  }
+});
+
 test("removing a process from the file removes it from the project", async () => {
   const h = harness(["web", "api"]);
   try {

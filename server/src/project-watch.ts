@@ -47,11 +47,18 @@
 //      event in a watched dir re-checks that dir's watched files. A spurious check
 //      costs one small read and changes nothing, because rule 4 byte-compares before
 //      doing any work, and rule 2 coalesces a burst into a single check.
+//   6. fs.watch IS A HINT, NOT THE SOURCE OF TRUTH. A directory watch can go quiet: on
+//      macOS CI (Bun 1.4.3, 2026-10-10) the SECOND atomic save of a run was never
+//      reported, and the project stayed stale until the daemon restarted. So each file's
+//      stat (inode, mtime, size) is also polled every POLL_MS. A rename changes the
+//      inode, so an atomic save is caught even when the event never arrives. A changed
+//      stat schedules the same debounced reload, and rule 4 makes an unchanged-content
+//      poll free. The poll is only a backstop: the event path stays the fast one.
 //
 // The watch set self-syncs off the manager's "projects" event — the same signal the
 // GUI listens to — so loading or removing a project adjusts the watchers with no call
 // sites to keep in step.
-import { type FSWatcher, readFileSync, watch } from "node:fs";
+import { type FSWatcher, readFileSync, statSync, watch } from "node:fs";
 import path from "node:path";
 import type { Manager } from "./manager";
 import { readDevWebUIFile } from "./projects";
@@ -60,9 +67,22 @@ import { readDevWebUIFile } from "./projects";
 // The cost of being too low is a wasted parse (harmless — see rule 3); the cost of
 // being too high is the GUI feeling laggy after a save.
 const DEBOUNCE_MS = 200;
+// How often each watched file's stat is re-checked as the backstop for a quiet fs.watch
+// (rule 6). A stat per file per second is negligible next to the event path.
+const POLL_MS = 1000;
 
 /** Case/separator-insensitive key, matching the registry's own path identity. */
 const keyOf = (filePath: string): string => path.resolve(filePath).toLowerCase();
+
+/** Inode + mtime + size: a rename changes the inode, a write changes mtime and size. */
+const statStamp = (filePath: string): string | null => {
+  try {
+    const s = statSync(filePath);
+    return `${s.ino}:${s.mtimeMs}:${s.size}`;
+  } catch {
+    return null; // mid-rename, or gone — transient, same as readRaw (rule 3)
+  }
+};
 
 export class ProjectWatcher {
   /** dir key → one non-recursive watcher covering every watched file in it. */
@@ -73,6 +93,9 @@ export class ProjectWatcher {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   /** file key → its real (non-lowercased) path, for reads and logs. */
   private realPath = new Map<string, string>();
+  /** file key → the stat stamp we last saw, compared by the poll (rule 6). */
+  private stamps = new Map<string, string | null>();
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
 
   constructor(private readonly manager: Manager) {}
@@ -81,18 +104,23 @@ export class ProjectWatcher {
   start(): void {
     this.sync();
     this.manager.on("projects", this.sync);
+    this.pollTimer = setInterval(this.poll, POLL_MS);
+    this.pollTimer.unref();
   }
 
   /** Close every watcher and cancel pending reloads (daemon shutdown). */
   stop(): void {
     this.stopped = true;
     this.manager.off("projects", this.sync);
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    this.pollTimer = null;
     for (const t of this.timers.values()) clearTimeout(t);
     this.timers.clear();
     for (const w of this.dirWatchers.values()) w.close();
     this.dirWatchers.clear();
     this.lastText.clear();
     this.realPath.clear();
+    this.stamps.clear();
   }
 
   /** Files currently watched — exposed for tests/diagnostics. */
@@ -110,6 +138,9 @@ export class ProjectWatcher {
     for (const [k, file] of desired) {
       if (this.lastText.has(k)) continue;
       this.realPath.set(k, file);
+      // Stamp BEFORE reading: a write landing between the two is then seen by the poll
+      // (stamp changed) rather than lost. Rule 4 makes the extra reload a no-op.
+      this.stamps.set(k, statStamp(file));
       // Prime with the current text so the initial sync doesn't reconcile state the
       // manager just loaded. An unreadable file primes null and reloads on first event.
       this.lastText.set(k, this.readRaw(file));
@@ -118,6 +149,7 @@ export class ProjectWatcher {
       if (desired.has(k)) continue;
       this.lastText.delete(k);
       this.realPath.delete(k);
+      this.stamps.delete(k);
       const t = this.timers.get(k);
       if (t) {
         clearTimeout(t);
@@ -125,6 +157,18 @@ export class ProjectWatcher {
       }
     }
     this.syncDirs();
+  };
+
+  // The backstop for a quiet fs.watch (rule 6): any watched file whose stat changed since
+  // we last looked gets the same debounced reload an event would have scheduled.
+  private poll = (): void => {
+    if (this.stopped) return;
+    for (const [k, file] of this.realPath) {
+      const stamp = statStamp(file);
+      if (stamp === null || stamp === this.stamps.get(k)) continue;
+      this.stamps.set(k, stamp);
+      this.schedule(k);
+    }
   };
 
   // One watcher per distinct parent dir of a watched file; drop dirs that no longer host one.
