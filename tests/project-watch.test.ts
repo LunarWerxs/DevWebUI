@@ -14,7 +14,7 @@
 // ───────────────────────────────────────────────────────────────────────────────
 import "./isolate"; // CWD-proof data-dir isolation — must load before any server/src import
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Manager } from "../server/src/manager";
@@ -171,6 +171,25 @@ test("a DEAF directory watch still reloads: the stat poll is the backstop", asyn
     writeFileSync(tmp, projectJson(["web", "api"]));
     renameSync(tmp, h.file);
     await waitFor(idsAre(h, ["web", "api"]), 4000);
+    expect(h.processIds()).toEqual(["web", "api"]);
+  } finally {
+    h.dispose();
+  }
+});
+
+test("a project folder removed and restored still reloads (rule 7: the dead watch storms on Windows)", async () => {
+  // A branch switch or re-clone removes the folder and puts it back. On Windows its watch then
+  // reports the folder gone hundreds of times a second, which held the debounce (and with it a
+  // debounced poll) off forever: this case fails on the Windows leg without rule 7 and the
+  // poll's direct reload. On Linux and macOS the dead watch is silent and it passes either way.
+  const h = harness(["web"]);
+  try {
+    rmSync(h.dir, { recursive: true, force: true });
+    await settle(); // the reload the removal set off runs while the file is gone: a no-op
+    expect(h.processIds()).toEqual(["web"]);
+    mkdirSync(h.dir);
+    writeFileSync(h.file, projectJson(["web", "api"]));
+    await reloaded(idsAre(h, ["web", "api"]));
     expect(h.processIds()).toEqual(["web", "api"]);
   } finally {
     h.dispose();

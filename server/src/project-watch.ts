@@ -52,13 +52,20 @@
 //      reported, and the project stayed stale until the daemon restarted. So each file's
 //      stat (inode, mtime, size) is also polled every POLL_MS. A rename changes the
 //      inode, so an atomic save is caught even when the event never arrives. A changed
-//      stat schedules the same debounced reload, and rule 4 makes an unchanged-content
-//      poll free. The poll is only a backstop: the event path stays the fast one.
+//      stat reloads AT ONCE, not through the debounce: a stream of events (rule 7) kept
+//      re-arming the debounce, so a debounced backstop never fired. Rule 4 makes an
+//      unchanged-content poll free. Each tick also re-arms a watch whose directory has
+//      come back. The poll is only a backstop: the event path stays the fast one.
+//   7. A WATCH ON A DELETED DIRECTORY DOES NOT DIE ON WINDOWS. It reports the directory
+//      gone hundreds of times a second under Bun 1.4.3 (over 100,000 under Node 25;
+//      measured 2026-10-10), so removing a project folder (a branch switch, a re-clone)
+//      burned a core and held the debounce off forever. The first event that finds its
+//      directory gone closes that watch; the poll re-arms one when the directory is back.
 //
 // The watch set self-syncs off the manager's "projects" event — the same signal the
 // GUI listens to — so loading or removing a project adjusts the watchers with no call
 // sites to keep in step.
-import { type FSWatcher, readFileSync, statSync, watch } from "node:fs";
+import { existsSync, type FSWatcher, readFileSync, statSync, watch } from "node:fs";
 import path from "node:path";
 import type { Manager } from "./manager";
 import { readDevWebUIFile } from "./projects";
@@ -140,10 +147,13 @@ export class ProjectWatcher {
       this.realPath.set(k, file);
       // Stamp BEFORE reading: a write landing between the two is then seen by the poll
       // (stamp changed) rather than lost. Rule 4 makes the extra reload a no-op.
-      this.stamps.set(k, statStamp(file));
+      const stamp = statStamp(file);
       // Prime with the current text so the initial sync doesn't reconcile state the
-      // manager just loaded. An unreadable file primes null and reloads on first event.
-      this.lastText.set(k, this.readRaw(file));
+      // manager just loaded. An unreadable file primes null and reloads on first event,
+      // and primes no stamp, so the poll picks it up once it reads.
+      const text = this.readRaw(file);
+      this.stamps.set(k, text === null ? null : stamp);
+      this.lastText.set(k, text);
     }
     for (const k of [...this.lastText.keys()]) {
       if (desired.has(k)) continue;
@@ -160,15 +170,18 @@ export class ProjectWatcher {
   };
 
   // The backstop for a quiet fs.watch (rule 6): any watched file whose stat changed since
-  // we last looked gets the same debounced reload an event would have scheduled.
+  // we last looked is reloaded now. A file that is gone keeps its old stamp, so its return
+  // reads as a change, and so does one that could not be read yet (mid-rename, a sharing
+  // violation): with a deaf watch no event would ever retry it. Then any directory that lost
+  // its watch (rule 7) and exists again gets one back.
   private poll = (): void => {
     if (this.stopped) return;
     for (const [k, file] of this.realPath) {
       const stamp = statStamp(file);
       if (stamp === null || stamp === this.stamps.get(k)) continue;
-      this.stamps.set(k, stamp);
-      this.schedule(k);
+      if (this.reload(k)) this.stamps.set(k, stamp);
     }
+    this.syncDirs();
   };
 
   // One watcher per distinct parent dir of a watched file; drop dirs that no longer host one.
@@ -190,6 +203,14 @@ export class ProjectWatcher {
         // re-check (see rule 5). Every event in a watched dir re-checks that dir's
         // watched files.
         const w = watch(dir, { persistent: false }, () => {
+          if (this.stopped) return; // an event queued before stop() closed this watch
+          // Rule 7: the directory itself is gone, so this watch only storms. The poll
+          // re-arms one when it is back.
+          if (!existsSync(dir)) {
+            w.close();
+            if (this.dirWatchers.get(dirKey) === w) this.dirWatchers.delete(dirKey);
+            return;
+          }
           for (const [k, f] of this.realPath) {
             if (keyOf(path.dirname(f)) === dirKey) this.schedule(k);
           }
@@ -198,7 +219,9 @@ export class ProjectWatcher {
         // than let an unhandled 'error' event take the daemon down with it.
         w.on("error", () => {
           w.close();
-          this.dirWatchers.delete(dirKey);
+          // Only if it is still the dir's watcher: a late error from one rule 7 closed must
+          // not drop the fresh one the poll armed since.
+          if (this.dirWatchers.get(dirKey) === w) this.dirWatchers.delete(dirKey);
         });
         this.dirWatchers.set(dirKey, w);
       } catch {
@@ -229,16 +252,18 @@ export class ProjectWatcher {
     }
   }
 
-  private reload(fileKey: string): void {
-    if (this.stopped) return;
+  /** Re-reads a file and applies it. False only when it could not be read, so the poll retries. */
+  private reload(fileKey: string): boolean {
+    if (this.stopped) return true;
     const file = this.realPath.get(fileKey);
-    if (!file) return;
+    if (!file) return true;
 
     const raw = this.readRaw(file);
     // Unreadable, or byte-identical to what's already applied: nothing to do. Leaving
     // lastText untouched on a failed read is what makes the retry work — the next write
     // differs from the last APPLIED text, so it still reconciles.
-    if (raw == null || raw === this.lastText.get(fileKey)) return;
+    if (raw == null) return false;
+    if (raw === this.lastText.get(fileKey)) return true;
 
     let loaded: ReturnType<typeof readDevWebUIFile>;
     try {
@@ -249,7 +274,7 @@ export class ProjectWatcher {
       // and keep the last good state loaded rather than tearing the project down.
       this.lastText.set(fileKey, raw);
       console.error(`[devwebui] ${file}: ${(e as Error).message}`);
-      return;
+      return true;
     }
     this.lastText.set(fileKey, raw);
     try {
@@ -259,6 +284,7 @@ export class ProjectWatcher {
     } catch (e) {
       console.error(`[devwebui] reload failed for ${file}: ${(e as Error).message}`);
     }
+    return true;
   }
 }
 
