@@ -28,7 +28,7 @@ process.on("exit", () => {
   } catch {}
 });
 
-let child: any = undefined;
+let child: Subprocess | undefined;
 try {
   mkdirSync(join(scratch, "cwd"));
   const port = await freePort();

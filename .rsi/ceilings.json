@@ -1,14 +1,14 @@
 {
- "server.source_bytes": {
-  "at": "2026-10-07T10:43:12+00:00",
-  "commit": "479c784f198599618869e6b1a2b8993ad32d225b",
-  "trial": "20261007-server-source-bytes-c437",
-  "value": 741390
- },
- "web.shipped_bytes": {
-  "at": "2026-10-06T08:53:32+00:00",
-  "commit": "3e4986ba87e9987236c7396076b929f420b46550",
-  "trial": "20261006-web-shipped-bytes-e262",
-  "value": 675748
- }
+  "server.source_bytes": {
+    "at": "2026-10-07T10:43:12+00:00",
+    "commit": "479c784f198599618869e6b1a2b8993ad32d225b",
+    "trial": "20261007-server-source-bytes-c437",
+    "value": 741390
+  },
+  "web.shipped_bytes": {
+    "at": "2026-10-06T08:53:32+00:00",
+    "commit": "3e4986ba87e9987236c7396076b929f420b46550",
+    "trial": "20261006-web-shipped-bytes-e262",
+    "value": 675748
+  }
 }
