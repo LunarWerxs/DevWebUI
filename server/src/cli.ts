@@ -61,7 +61,11 @@ function findRepoRoot(): string {
   throw new Error(`Could not find repo root from ${HERE}`);
 }
 
-const REPO_ROOT = findRepoRoot();
+// Found on first use, never at load: inside a compiled binary HERE is Bun's virtual B:\~BUN\root,
+// which has no marker above it, so an eager lookup threw before any verb ran (`devwebui.exe
+// --version` included). Only a checkout asks for it (daemonCwd).
+let repoRoot: string | undefined;
+const REPO_ROOT = (): string => (repoRoot ??= findRepoRoot());
 
 // ── tiny arg parser (positionals + --flags; --key=val or --key val or bare boolean) ──────────
 interface Args {
@@ -139,12 +143,12 @@ const jsonPost = (body: unknown): RequestInit => ({
 
 /**
  * Working directory for a spawned daemon. A checkout runs from the repo root; the
- * compiled binary has no repo (REPO_ROOT resolves into Bun's virtual filesystem and
- * does not exist on disk), and spawn() throws outright on a missing cwd — so fall
+ * compiled binary has no repo (REPO_ROOT() would walk Bun's virtual filesystem and
+ * throw), and spawn() throws outright on a missing cwd — so fall
  * back to the directory the exe actually lives in.
  */
 function daemonCwd(): string {
-  return isCompiledBinary() ? path.dirname(process.execPath) : REPO_ROOT;
+  return isCompiledBinary() ? path.dirname(process.execPath) : REPO_ROOT();
 }
 
 /** Poll until a daemon answers /api/health, or the deadline passes. */

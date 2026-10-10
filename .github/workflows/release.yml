@@ -73,7 +73,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          bun-version: "1.4.0"
+          bun-version: "1.4.3"
       - run: bun install --frozen-lockfile # root workspace install covers web/ too
       - run: bun run dist # scripts/build.ts — web build + `bun build --compile`
       - name: Smoke-test the actual release executable
