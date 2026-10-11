@@ -46,6 +46,16 @@ export interface UpdateApplyError extends Error {
   output: string[];
 }
 
+/** What an UpdaterOptions `run` answers for one command. */
+export interface UpdaterRunResult {
+  /** The exit code; null when the command could not be started or did not exit on its own. */
+  code: number | null;
+  stdout: string;
+  stderr: string;
+  /** It ran past `timeoutMs` and was ended. */
+  timedOut: boolean;
+}
+
 export interface UpdaterOptions {
   /** Checkout root (each app resolves its own import.meta path and passes it in). */
   appRoot: string;
@@ -64,6 +74,14 @@ export interface UpdaterOptions {
    *  adopted as soon as it is seen. Not a defence against a compromised push: the committer date is
    *  set by whoever pushes and can be backdated past the cooldown. */
   cooldownDays?: number;
+  /** Runs each command the engine needs (git, install, build) in place of its own node:child_process
+   *  spawn, which retries a Windows `.cmd` shim through a shell. An app whose daemon serves every
+   *  route on one thread passes a runner that starts processes off that thread. It gets the argv, the
+   *  checkout root, the environment (GIT_TERMINAL_PROMPT=0 set) and the step's deadline. */
+  run?: (
+    args: string[],
+    opts: { cwd: string; env: Record<string, string | undefined>; timeoutMs: number },
+  ) => Promise<UpdaterRunResult>;
 }
 
 export interface Updater {

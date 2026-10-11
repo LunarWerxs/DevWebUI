@@ -164,6 +164,51 @@ test("checkForUpdate + applyUpdate happy path: pulls, installs, builds, HEAD adv
   // (2026-10-03). See REAL_GIT_TEST_MS. (Push upstream to the kit source.)
 }, REAL_GIT_TEST_MS);
 
+// An app whose daemon serves every route on one thread passes `run`, its own off-thread runner
+// (AgentHydra: Bun.spawn held that thread for seconds per git call under load). Every step of a check
+// and an apply must go through it, in the checkout with prompts off, and its answers decide the
+// outcome: a step spawned around it would hold the app's thread again.
+test("run: an app's runner carries every git, install and build step, and its answers decide the apply", async () => {
+  const remote = await remoteRepo();
+  const local = await cloneRepo(remote);
+  await advanceRemote(remote, "0.2.0");
+  const scratch = scratchDir("ue-scratch-");
+  const log = join(scratch, "steps.log");
+  const installCmd = loggingCmd(log, "install");
+  const buildCmd = loggingCmd(log, "build");
+  const calls: { args: string[]; cwd: string; prompt: string | undefined }[] = [];
+  const updater = createUpdater({
+    appRoot: local,
+    serviceName: "testsvc",
+    appLabel: "TestSvc",
+    updateRepoEnvVar: "UE_TEST_UPDATE_REPO_UNUSED",
+    installCmd,
+    buildCmd,
+    run: async (args, { cwd, env }) => {
+      calls.push({ args, cwd, prompt: env.GIT_TERMINAL_PROMPT });
+      const p = Bun.spawn(args, { cwd, env, stdout: "pipe", stderr: "pipe", windowsHide: true });
+      const [stdout, stderr, code] = await Promise.all([
+        new Response(p.stdout).text(),
+        new Response(p.stderr).text(),
+        p.exited,
+      ]);
+      return { code, stdout, stderr, timedOut: false };
+    },
+  });
+
+  expect((await updater.checkForUpdate()).updateAvailable).toBe(true);
+  const result = await updater.applyUpdate();
+  expect(result.ok).toBe(true);
+  expect(readFileSync(join(local, "marker.txt"), "utf8").trim()).toBe("0.2.0");
+  expect(readFileSync(log, "utf8").trim().split("\n")).toEqual(["install", "build"]);
+  const ran = calls.map((c) => c.args);
+  expect(ran.some((a) => a[0] === "git" && a[1] === "ls-remote")).toBe(true);
+  expect(ran.some((a) => a[0] === "git" && a[1] === "pull")).toBe(true);
+  expect(ran).toContainEqual(installCmd);
+  expect(ran).toContainEqual(buildCmd);
+  expect(calls.every((c) => c.cwd === local && c.prompt === "0")).toBe(true);
+}, REAL_GIT_TEST_MS);
+
 test("applyUpdate rolls back the checkout when build fails after the code swap", async () => {
   const remote = await remoteRepo();
   const local = await cloneRepo(remote);

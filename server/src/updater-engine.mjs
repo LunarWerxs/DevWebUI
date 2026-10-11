@@ -11,6 +11,8 @@
  *   installCmd        install step, e.g. ["bun", "install"]
  *   buildCmd          build step, e.g. ["bun", "run", "--cwd", "web", "build"]
  *   cooldownDays      optional; when > 0, only commits at least this many days old are adopted
+ *   run               optional; runs each command instead of the engine's own spawn (an app whose
+ *                     daemon serves every route on one thread passes an off-thread runner)
  *
  * runtime-agnostic (Bun + Node): node:child_process spawn runs in both. Part of the
  * shared kit, keep it app-agnostic.
@@ -25,7 +27,7 @@ const BUILD_TIMEOUT_MS = 240_000;
 
 const DAY_SECONDS = 86_400;
 
-export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar, installCmd, buildCmd, cooldownDays = 0 }) {
+export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar, installCmd, buildCmd, cooldownDays = 0, run = null }) {
   // Normalized once so a string or negative option is never echoed back in status or reasons.
   const cooldownDaysN = Math.max(0, Number(cooldownDays) || 0);
   const cooldownSeconds = cooldownDaysN * DAY_SECONDS;
@@ -46,6 +48,7 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
   // which is exactly the `.cmd`-shim case. Every arg here is a fixed literal or a git URL (no
   // spaces or shell metacharacters), so the shell's arg concatenation is safe.
   function runCommand(args, timeoutMs) {
+    if (run) return runThrough(args, timeoutMs);
     return new Promise((resolve) => {
       let settled = false;
       const finish = (r) => {
@@ -96,6 +99,17 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
       };
       attempt(false);
     });
+  }
+
+  // The app's own runner (`run`): the same argv, root, environment and deadline, its answer read
+  // the way the spawn above reads a child. One that throws is a failed step, never an unhandled one.
+  async function runThrough(args, timeoutMs) {
+    try {
+      const r = await run(args, { cwd: appRoot, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }, timeoutMs });
+      return { ok: r.code === 0 && !r.timedOut, code: r.code, stdout: r.stdout, stderr: r.stderr, timedOut: r.timedOut };
+    } catch (err) {
+      return { ok: false, code: null, stdout: "", stderr: err?.message ?? String(err), timedOut: false };
+    }
   }
 
   const git = (args, timeoutMs = CHECK_TIMEOUT_MS) => runCommand(["git", ...args], timeoutMs);
