@@ -113,10 +113,13 @@ function failsOnCallsCmd(
 // clone, fetch, pull, install, build, reset, stash). 30s was a race, not a bound: run 1 of five
 // back-to-back runs under the fair-job wrapper (BelowNormal priority, other suites beside it) spent
 // 109.55s on this file and the stash test timed out at 30536ms (2026-10-03), while the same test
-// passes in a few seconds on an idle machine. 120s is the engine's own per-step bound
-// (APPLY_TIMEOUT_MS), so a slow machine reaches the engine's error before bun's, and a real hang
-// still fails in bounded time.
-const REAL_GIT_TEST_MS = 120_000;
+// passes in a few seconds on an idle machine. 120s was a race too: beside a full app suite run four
+// files at a time, on a box at ~90% CPU from other work (2026-10-11), every git or bun spawn took
+// 0.5-3.4 s, twelve runs of the cooldown test (19 s alone) took 62-194 s, each checkForUpdate in them
+// 15-54 s and each applyUpdate 21-96 s, and three tests were cut at 120 s in one suite run. A test is
+// many engine steps, so the engine's own per-step bound (APPLY_TIMEOUT_MS, 120 s) never bounds a
+// whole test. 400s is about twice the slowest measured run, and a real hang still fails in bounded time.
+const REAL_GIT_TEST_MS = 400_000;
 
 function updaterFor(appRoot: string, installCmd: string[], buildCmd: string[]) {
   return createUpdater({
