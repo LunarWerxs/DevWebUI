@@ -28,13 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +37,7 @@ import { storeToRefs } from "pinia";
 import ProcessCard from "./ProcessCard.vue";
 import ProcessTable from "./ProcessTable.vue";
 import IconButton from "./IconButton.vue";
+import LazyDropdownMenu from "./LazyDropdownMenu.vue";
 import TakeoverStep from "./add-project-dialog/TakeoverStep.vue";
 import { disableProject, enableProject, startProject, stopProject } from "@/api";
 import type { AutostartTrigger, TakeOverResult } from "@/api";
@@ -259,14 +254,11 @@ async function checkAutostart() {
           <IconButton v-if="open" :tooltip="t('projectPanel.stopAll')" @click="runAction(() => stopProject(project.id))">
             <Square class="size-4" />
           </IconButton>
-          <DropdownMenu>
-            <DropdownMenuTrigger as-child>
-              <Button variant="ghost" size="icon-sm" :aria-label="t('projectPanel.moreActions')">
-                <EllipsisVertical class="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="max-w-44">
-              <DropdownMenuItem @select="openEditDialog">
+          <LazyDropdownMenu :label="t('projectPanel.moreActions')" content-class="max-w-44">
+            <template #icon>
+              <EllipsisVertical class="size-4" />
+            </template>
+            <DropdownMenuItem @select="openEditDialog">
                 <Pencil class="size-4" /> {{ t("projectPanel.editProject") }}
               </DropdownMenuItem>
               <DropdownMenuItem @select="emit('addProcess', project.id)">
@@ -282,8 +274,7 @@ async function checkAutostart() {
               <DropdownMenuItem variant="destructive" @select="removeDialogOpen = true">
                 <Trash2 class="size-4" /> {{ t("projectPanel.removeProject") }}
               </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          </LazyDropdownMenu>
         </div>
       </div>
 

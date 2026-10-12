@@ -13,6 +13,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A long process list is no longer laggy.** Every row mounted its tooltips and ⋮ menus up front, though
+  none shows until someone hovers or opens it. Each now mounts on first use, so a list with many rows
+  does far less work on load.
 - **A project folder that is deleted and restored no longer leaves its settings stale.** On Windows
   a watch on a deleted folder reports it gone hundreds of times a second and never stops, which held
   back every reload of `.devwebui` and used a CPU core. That watch now closes the moment its folder

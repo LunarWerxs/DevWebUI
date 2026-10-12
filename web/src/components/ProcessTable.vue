@@ -36,14 +36,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import Hint from "./Hint.vue";
+import LazyDropdownMenu from "./LazyDropdownMenu.vue";
 import IconButton from "./IconButton.vue";
 import { disableProcess, enableProcess, restart, start, stop } from "@/api";
 import { useAppStore } from "@/store";
@@ -372,14 +367,11 @@ function onStop(p: ProcessView) {
               <IconButton v-else :tooltip="t('processTable.actionStop')" @click="onStop(p)">
                 <Square class="size-4 text-destructive" />
               </IconButton>
-              <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                  <Button variant="ghost" size="icon-sm" :aria-label="t('processTable.moreActions')">
-                    <EllipsisVertical class="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" class="max-w-44">
-                  <DropdownMenuItem @select="store.toggleStar(p)">
+              <LazyDropdownMenu :label="t('processTable.moreActions')" content-class="max-w-44">
+                <template #icon>
+                  <EllipsisVertical class="size-4" />
+                </template>
+                <DropdownMenuItem @select="store.toggleStar(p)">
                     <Star class="size-4" :class="p.starred ? 'fill-warning text-warning' : ''" />
                     {{ p.starred ? t("processTable.unstar") : t("processTable.star") }}
                   </DropdownMenuItem>
@@ -401,8 +393,7 @@ function onStop(p: ProcessView) {
                   <DropdownMenuItem @select="addProcessShortcut(p.id)">
                     <MonitorDown class="size-4" /> {{ t("shortcut.addToDesktop") }}
                   </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              </LazyDropdownMenu>
             </div>
           </TableCell>
         </TableRow>

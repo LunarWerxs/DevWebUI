@@ -20,14 +20,10 @@ import {
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import Hint from "./Hint.vue";
+import LazyDropdownMenu from "./LazyDropdownMenu.vue";
 import IconButton from "./IconButton.vue";
 import { storeToRefs } from "pinia";
 import { disableProcess, enableProcess, restart, start, stop } from "@/api";
@@ -338,18 +334,14 @@ function onStop() {
                overflow adds beyond them — keeping the two layouts at feature parity.
                Dropped in compact: its only item is "add desktop shortcut", and you are
                already looking at the window a desktop shortcut opened. -->
-          <DropdownMenu v-if="!compact">
-            <DropdownMenuTrigger as-child>
-              <Button variant="ghost" size="icon-sm" :aria-label="t('processCard.moreActions')">
-                <EllipsisVertical class="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="max-w-56">
-              <DropdownMenuItem @select="addProcessShortcut(process.id)">
-                <MonitorDown class="size-4" /> {{ t("shortcut.addToDesktop") }}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <LazyDropdownMenu v-if="!compact" :label="t('processCard.moreActions')" content-class="max-w-56">
+            <template #icon>
+              <EllipsisVertical class="size-4" />
+            </template>
+            <DropdownMenuItem @select="addProcessShortcut(process.id)">
+              <MonitorDown class="size-4" /> {{ t("shortcut.addToDesktop") }}
+            </DropdownMenuItem>
+          </LazyDropdownMenu>
         </div>
       </div>
     </Card>
