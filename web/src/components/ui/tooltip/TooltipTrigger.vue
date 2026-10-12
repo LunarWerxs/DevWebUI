@@ -2,7 +2,9 @@
 import type { TooltipTriggerProps } from "reka-ui"
 import { reactiveOmit } from "@vueuse/core"
 import { TooltipTrigger } from "reka-ui"
-import { computed, inject, onBeforeUnmount } from "vue"
+import type { FunctionalComponent, VNode } from "vue"
+import { cloneVNode, Comment, computed, Fragment, h, inject, onBeforeUnmount, onMounted, useAttrs, useTemplateRef } from "vue"
+import { TOOLTIP_LAZY_KEY } from "./lazy"
 import type { TooltipTouchMode } from "./touch"
 import {
   LONG_PRESS_MS,
@@ -28,8 +30,14 @@ const props = withDefaults(
   { touch: "long-press" },
 )
 
+const attrs = useAttrs()
 const touchCtx = inject(TOOLTIP_TOUCH_KEY, null)
 const providerDisabled = inject(TOOLTIP_DISABLED_KEY, null)
+// Under a LazyTooltip that has not armed yet there is no reka root to trigger from. The gesture still runs here,
+// and a long press (or a tap, in tap mode) arms the LazyTooltip, which reveals the text once it has mounted.
+const lazy = inject(TOOLTIP_LAZY_KEY, null)
+const lazyClosed = computed(() => lazy?.closed.value === true)
+const trigger = useTemplateRef<{ $el: HTMLElement }>("trigger")
 
 // A touchscreen laptop keeps full hover behaviour — every gesture below is gated on the event's own
 // pointerType, not on this. It only decides whether to suppress the OS long-press artefacts
@@ -37,7 +45,7 @@ const providerDisabled = inject(TOOLTIP_DISABLED_KEY, null)
 const coarsePointer = useCoarsePointer()
 const suppressNativeHold = computed(() => props.touch !== "off" && coarsePointer.value)
 
-const active = computed(() => props.touch !== "off" && touchCtx !== null && !providerDisabled?.value)
+const active = computed(() => props.touch !== "off" && (touchCtx !== null || lazy !== null) && !providerDisabled?.value)
 
 /** The in-flight gesture: `pointerId` is null between gestures. */
 let pointerId: number | null = null
@@ -69,6 +77,10 @@ function reveal(): void {
   // switch to have been turned off with the other hand.
   if (!active.value) return
   revealed = true
+  if (lazyClosed.value) {
+    lazy?.arm(true)
+    return
+  }
   touchCtx?.revealByTouch(element)
 }
 
@@ -125,13 +137,74 @@ function onContextMenu(event: Event): void {
   if (pointerId !== null) event.preventDefault()
 }
 
+// The LazyTooltip that armed on this long press has just mounted this trigger. The finger is still on the
+// node the gesture started on (now gone), so the reveal and the hold are settled here, on the new node.
+onMounted(() => {
+  if (!lazy?.takeReveal()) return
+  const el = trigger.value?.$el
+  if (!(el instanceof HTMLElement)) return
+  touchCtx?.revealByTouch(el)
+  touchCtx?.endHold()
+  swallowNextClick(el)
+})
+
 onBeforeUnmount(endGesture)
 
 const forwarded = reactiveOmit(props, "touch")
+
+/** The first real element the slot renders, looking through fragments and comments the way reka's as-child does. */
+function firstElement(nodes: VNode[]): VNode | undefined {
+  for (const node of nodes) {
+    if (node.type === Comment) continue
+    if (node.type === Fragment && Array.isArray(node.children)) {
+      const inner = firstElement(node.children as VNode[])
+      if (inner) return inner
+      continue
+    }
+    return node
+  }
+  return undefined
+}
+
+/**
+ * The trigger before its LazyTooltip arms: the slot's own element, carrying what reka's trigger would put on it, so the
+ * bare icon reads and behaves like a closed trigger (data-state, touch gesture) with no reka root behind it.
+ */
+const BareTrigger: FunctionalComponent<{ attrs: Record<string, unknown>, asChild: boolean, tag: string }> = (bare, { slots }) => {
+  const nodes = slots.default?.() ?? []
+  // Without as-child reka renders its own element around the slot; the bare trigger does the same, so nothing shifts on arming.
+  if (!bare.asChild) return h(bare.tag, bare.tag === "button" ? { type: "button", ...bare.attrs } : bare.attrs, nodes)
+  const target = firstElement(nodes)
+  return target ? cloneVNode(target, bare.attrs) : nodes
+}
+// Declared, so the template's kebab-case `as-child` reaches `bare.asChild` and the rest do not fall through as attributes.
+BareTrigger.props = ["attrs", "asChild", "tag"]
+
+// `as-child` as written on the tag: a bare attribute reads "" and counts as true, like reka's own boolean prop.
+const bareAsChild = computed(() => {
+  const value: unknown = props.asChild ?? attrs.asChild ?? attrs["as-child"]
+  return value === true || value === ""
+})
+
+const bareAttrs = computed(() => ({
+  "data-slot": "tooltip-trigger",
+  "data-state": "closed",
+  class: { "select-none [-webkit-touch-callout:none]": suppressNativeHold.value },
+  onPointerdown: onPointerDown,
+  onPointermove: onPointerMove,
+  onPointerup: onPointerUp,
+  onPointercancel: endGesture,
+  onContextmenu: onContextMenu,
+}))
 </script>
 
 <template>
+  <BareTrigger v-if="lazyClosed" :attrs="bareAttrs" :as-child="bareAsChild" :tag="typeof props.as === 'string' ? props.as : 'button'">
+    <slot />
+  </BareTrigger>
   <TooltipTrigger
+    v-else
+    ref="trigger"
     data-slot="tooltip-trigger"
     v-bind="forwarded"
     :class="{ 'select-none [-webkit-touch-callout:none]': suppressNativeHold }"

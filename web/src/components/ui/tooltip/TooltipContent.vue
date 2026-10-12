@@ -3,7 +3,9 @@ import type { TooltipContentEmits, TooltipContentProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
 import { TooltipArrow, TooltipContent, TooltipPortal, useForwardPropsEmits } from "reka-ui"
+import { computed, inject } from "vue"
 import { cn } from "@/lib/utils"
+import { TOOLTIP_LAZY_KEY } from "./lazy"
 
 defineOptions({
   inheritAttrs: false,
@@ -17,10 +19,12 @@ const emits = defineEmits<TooltipContentEmits>()
 
 const delegatedProps = reactiveOmit(props, "class", "elevated")
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
+// Under an unarmed LazyTooltip the content has no root to portal from, and nothing shows until it is armed anyway.
+const lazyClosed = computed(() => inject(TOOLTIP_LAZY_KEY, null)?.closed.value === true)
 </script>
 
 <template>
-  <TooltipPortal>
+  <TooltipPortal v-if="!lazyClosed">
     <TooltipContent
       data-slot="tooltip-content"
       v-bind="{ ...forwarded, ...$attrs }"

@@ -4,19 +4,21 @@
 // tucked behind the icon. Pass `text`, or default-slot content for richer bodies. Needs a
 // <TooltipProvider> ancestor (mounted once at the App root).
 import { InfoIcon } from '@lucide/vue';
-import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { LazyTooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 defineProps<{ text?: string }>();
 </script>
 
 <template>
-  <!-- Nested always-enabled provider: the app-wide "show tooltips" switch must never silence
+  <!-- LazyTooltip: the icon renders bare until the first hover, focus or press, so a settings list of N hints mounts
+       no tooltip roots. A tap (touch) arms and reveals in one go.
+       Nested always-enabled provider: the app-wide "show tooltips" switch must never silence
        InfoHints — their disclosed text has no other surface, so it would strand the info.
        ignore-non-keyboard-focus: dialogs/panels autofocus their first focusable on open, and
        when that is an InfoHint the tooltip popped instantly (seen in RepoYeti's settings
        sidebar). Programmatic focus must not disclose; hover and keyboard Tab still do. -->
   <TooltipProvider v-if="text || $slots.default" :disabled="false" ignore-non-keyboard-focus>
-    <Tooltip>
+    <LazyTooltip>
       <!-- touch="tap": the icon does nothing when clicked, so a single tap can safely BE the
            disclosure (tap again, or anywhere outside, to dismiss). Every other trigger keeps the
            default long press, which leaves one-tap actions alone. Without this the text is simply
@@ -33,6 +35,6 @@ defineProps<{ text?: string }>();
         </button>
       </TooltipTrigger>
       <TooltipContent><span class="leading-snug"><slot>{{ text }}</slot></span></TooltipContent>
-    </Tooltip>
+    </LazyTooltip>
   </TooltipProvider>
 </template>
