@@ -18,7 +18,7 @@
 # The old Find-Daemon accepted any responder that didn't contradict us --
 #   if (-not $svc -or $svc -eq $AppName) { return ... }
 # -- so a health body with no `service` field counted as this app. Vite dev servers answer
-# /api/health with the SPA fallback (200 OK, text/html, an index.html body), so one of Michael's
+# /api/health with the SPA fallback (200 OK, text/html, an index.html body), so one of the other owner's
 # Connections dev planes on port 4273 was mistaken for redesign; this script read THAT stranger's
 # start time, found it older than the stamp, and reported "STALE DAEMON: you are still being served
 # the OLD code" while the real redesign daemon was up on port 5178 serving the fresh build.

@@ -81,7 +81,7 @@ param(
   [string]$Root = '',
   # Stop the daemon but don't relaunch the app afterwards.
   [switch]$NoLaunch,
-  # DEPLOY WITHOUT TOUCHING THE APP (owner directive, Michael, 2026-08-29: "You also keep
+  # DEPLOY WITHOUT TOUCHING THE APP (owner directive, 2026-08-29: "You also keep
   # launching agent Hydra when it's open. Probably should have a check to stop doing that.").
   #
   # The full restart is deliberately ruthless because a rebuild must never leave you on old
