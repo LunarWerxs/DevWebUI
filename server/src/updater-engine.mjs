@@ -17,7 +17,7 @@
  * runtime-agnostic (Bun + Node): node:child_process spawn runs in both. Part of the
  * shared kit, keep it app-agnostic.
  */
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
 
@@ -148,6 +148,72 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     if (!existsSync(join(appRoot, ".git"))) return false;
     return (await gitText(["rev-parse", "--is-inside-work-tree"])) === "true";
   }
+
+  // A deployed checkout patched by hand, whose patch was then landed upstream: every local edit is
+  // already the update target's content (AgentHydra, 2026-10-15: a chat fixed a running feature by
+  // editing the deployed checkout, its edits were landed, and the checkout stayed dirty, so it took
+  // no update at all). Such edits do not block the update; any other local edit still does. Only
+  // unstaged edits and untracked files qualify: a staged, renamed or unmerged path is someone's git
+  // work in progress.
+  const LANDED_MAX = 200;
+
+  /** The checkout's local edits ({ path from the top level, deleted }), or null when one is staged,
+   *  renamed, unmerged or a type change, there are more than LANDED_MAX, or status cannot be read. */
+  async function localEdits() {
+    const r = await git(["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
+    if (!r.ok) return null;
+    const edits = [];
+    for (const entry of r.stdout.split("\0").filter(Boolean)) {
+      const [x, y, path] = [entry[0], entry[1], entry.slice(3)];
+      if (x === "?" && y === "?") edits.push({ path, deleted: false, untracked: true });
+      else if (x !== " ") return null;
+      else if (y === "M") edits.push({ path, deleted: false, untracked: false });
+      else if (y === "D") edits.push({ path, deleted: true, untracked: false });
+      else return null;
+    }
+    return edits.length <= LANDED_MAX ? edits : null;
+  }
+
+  /** The local edits when every one is already `target`'s content (a deleted file is gone there
+   *  too), else null. Compared as git blobs, so line-ending conversion on checkout is no difference. */
+  async function editsAlreadyIn(target) {
+    if (!target) return null;
+    const edits = await localEdits();
+    const top = edits?.length ? await gitText(["rev-parse", "--show-toplevel"]) : null;
+    // Status paths are from the top level and every later pathspec is from appRoot: they must be one folder.
+    if (!top || !sameFolder(top, appRoot)) return null;
+    for (const e of edits) {
+      const want = await gitText(["rev-parse", "--verify", "--quiet", `${target}:${e.path}`]);
+      if (e.deleted ? want : !want || (await gitText(["hash-object", "--", join(top, e.path)])) !== want) return null;
+    }
+    // A mode change (chmod +x) is an edit as well: a modified file's mode must be the target's too.
+    const modified = edits.filter((e) => !e.deleted && !e.untracked).map((e) => e.path);
+    if (modified.length) {
+      const raw = await git(["--literal-pathspecs", "diff", "--raw", "-z", "--", ...modified]);
+      const tree = await git(["--literal-pathspecs", "ls-tree", "-z", target, "--", ...modified]);
+      if (!raw.ok || !tree.ok) return null;
+      const targetMode = new Map(
+        tree.stdout.split("\0").filter(Boolean).map((line) => [line.slice(line.indexOf("\t") + 1), line.split(" ")[0]]),
+      );
+      const parts = raw.stdout.split("\0").filter(Boolean);
+      for (let i = 0; i + 1 < parts.length; i += 2) {
+        if (targetMode.get(parts[i + 1]) !== parts[i].slice(1).split(" ")[1]) return null;
+      }
+    }
+    return edits;
+  }
+
+  // Through realpath, so a junction or a short name to the checkout still matches git's own top level.
+  const sameFolder = (a, b) => {
+    const norm = (p) => {
+      try {
+        return realpathSync.native(p).replace(/[\\/]+$/, "");
+      } catch {
+        return resolve(p).replace(/[\\/]+$/, "");
+      }
+    };
+    return process.platform === "win32" ? norm(a).toLowerCase() === norm(b).toLowerCase() : norm(a) === norm(b);
+  };
 
   async function gatherLocalStatus(base) {
     const currentCommit = await gitText(["rev-parse", "HEAD"]);
@@ -306,10 +372,12 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     const newer = !!(target && target !== status.currentCommit && !remoteIsAncestor);
     status.updateAvailable = newer;
     status.diverged = newer && fastForward === "no";
-    status.canApply = newer && fastForward === "yes" && !status.dirty && !!resolved.remoteBranch;
+    status.localEditsLanded = newer && status.dirty && !!(await editsAlreadyIn(target));
+    const blocked = status.dirty && !status.localEditsLanded;
+    status.canApply = newer && fastForward === "yes" && !blocked && !!resolved.remoteBranch;
     status.reason = reasonForStatus({
       newer,
-      dirty: status.dirty,
+      dirty: blocked,
       fastForward,
       remoteBranch: resolved.remoteBranch,
       remoteCommit: target,
@@ -379,12 +447,37 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     return stashName;
   }
 
-  async function resetAndRebuild(currentCommit, output) {
+  // Puts edits the update had taken as its own back the way they were before it (unstaged, deleted
+  // files deleted again), so a rolled-back checkout runs what it ran before the update.
+  async function restoreLandedEdits(landed, target, output) {
+    const kept = landed.filter((e) => !e.deleted).map((e) => e.path);
+    if (kept.length) {
+      for (const args of [
+        ["git", "--literal-pathspecs", "checkout", target, "--", ...kept],
+        ["git", "--literal-pathspecs", "reset", "-q", "--", ...kept],
+      ]) {
+        const r = await runCommand(args, APPLY_TIMEOUT_MS);
+        output.push(commandSummary(args, r));
+        if (!r.ok) return;
+      }
+    }
+    const top = await gitText(["rev-parse", "--show-toplevel"]);
+    for (const e of landed.filter((e) => e.deleted)) {
+      try {
+        if (top) unlinkSync(join(top, e.path));
+      } catch {
+        // already gone
+      }
+    }
+  }
+
+  async function resetAndRebuild(currentCommit, output, landed = null, target = null) {
     const resetArgs = ["git", "reset", "--hard", currentCommit];
     const reset = await runCommand(resetArgs, APPLY_TIMEOUT_MS);
     output.push(commandSummary(resetArgs, reset));
     let restored = false;
     if (reset.ok) {
+      if (landed?.length && target) await restoreLandedEdits(landed, target, output);
       restored = true;
       for (const cmd of [installCmd, buildCmd]) {
         const r = await runCommand(cmd, BUILD_TIMEOUT_MS);
@@ -418,8 +511,9 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
   // them without a trace. So the tree is re-read here: anything that changed since is
   // moved into a named git stash BEFORE the reset, and the message says so. If the tree
   // cannot be inspected, or the stash fails, the reset does NOT run - a half-updated
-  // checkout is recoverable by hand; a deleted edit is not. Always throws.
-  async function rollbackAfterFailedUpdate(err, before, output) {
+  // checkout is recoverable by hand; a deleted edit is not. Edits the update had taken as its
+  // own (`landed`, already the target's) are put back unstaged after the reset. Always throws.
+  async function rollbackAfterFailedUpdate(err, before, output, landed = null) {
     const msg = err instanceof Error ? err.message : String(err);
     const statusArgs = ["git", "status", "--porcelain"];
     const statusNow = await runCommand(statusArgs, CHECK_TIMEOUT_MS);
@@ -431,7 +525,7 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     }
     const changedDuring = statusNow.stdout.split(/\r?\n/).filter(Boolean);
     const stashName = await stashChangedFiles(changedDuring, msg, output);
-    const { reset, restored } = await resetAndRebuild(before.currentCommit, output);
+    const { reset, restored } = await resetAndRebuild(before.currentCommit, output, landed, before.remoteCommit);
     throw new Error(buildRollbackMessage(msg, reset, restored, stashName, changedDuring.length));
   }
 
@@ -556,7 +650,9 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
         output,
       };
     }
-    if (before.dirty) throw new Error("Commit or stash local changes before applying an update.");
+    // Edits that are already the target's are staged for the advance (below); any other edit blocks it.
+    const landed = before.dirty && before.localEditsLanded ? await editsAlreadyIn(before.remoteCommit) : null;
+    if (before.dirty && !landed) throw new Error("Commit or stash local changes before applying an update.");
     // Diverged, unverifiable, or no pullable branch: the check already said why. Running the pull
     // anyway is exactly the fail-every-cycle loop this guard exists to end.
     if (!before.canApply) throw new Error(before.reason ?? "The update cannot be applied to this checkout.");
@@ -570,23 +666,43 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     const branch = before.remoteBranch || upstream.remoteBranch || before.branch;
     if (!remote.remoteArg || !branch) throw new Error("No update remote/branch is configured.");
 
-    // Windows: a running program file cannot be overwritten by the advance, so move the ones it changes aside first.
-    // The target is the commit check already fetched: FETCH_HEAD, or the cooldown's aged commit.
-    if (process.platform === "win32") {
-      await moveAsideRunningPrograms(before.latestRemoteCommit ? before.remoteCommit : "FETCH_HEAD", output);
-    }
-
     // Under a cooldown the target is an aged commit, not the tip a pull would take; the check just
     // fetched it, so fast-forward to exactly that commit instead.
     const advance = before.latestRemoteCommit
       ? ["git", "merge", "--ff-only", before.remoteCommit]
       : ["git", "pull", "--ff-only", remote.remoteArg, branch];
-    await runStep(advance, APPLY_TIMEOUT_MS, output);
+    // Staged, an edit that is the target's content is the fast-forward's own (git's two-way merge keeps
+    // an index entry equal to the new tree). The staged entries must then be exactly the target's, mode
+    // included: an edit written after the check is not, so nothing is advanced. Any failure from here
+    // to the advance unstages the paths again; their files are never touched.
+    const landedPaths = (landed ?? []).map((e) => e.path);
+    try {
+      if (landedPaths.length) {
+        await runStep(["git", "--literal-pathspecs", "add", "-A", "--", ...landedPaths], APPLY_TIMEOUT_MS, output);
+        const same = ["git", "--literal-pathspecs", "diff", "--cached", "--quiet", before.remoteCommit, "--", ...landedPaths];
+        const compared = await runCommand(same, APPLY_TIMEOUT_MS);
+        output.push(commandSummary(same, compared));
+        if (!compared.ok)
+          throw new Error("A local edit changed after the update check, so nothing was updated; it is left as it was.");
+      }
+      // Windows: a running program file cannot be overwritten by the advance, so move the ones it changes aside
+      // first. The target is the commit check already fetched: FETCH_HEAD, or the cooldown's aged commit.
+      if (process.platform === "win32") {
+        await moveAsideRunningPrograms(before.latestRemoteCommit ? before.remoteCommit : "FETCH_HEAD", output);
+      }
+      await runStep(advance, APPLY_TIMEOUT_MS, output);
+    } catch (err) {
+      if (landedPaths.length) {
+        const unstage = ["git", "--literal-pathspecs", "reset", "-q", "--", ...landedPaths];
+        output.push(commandSummary(unstage, await runCommand(unstage, APPLY_TIMEOUT_MS)));
+      }
+      throw err;
+    }
     try {
       await runStep(installCmd, BUILD_TIMEOUT_MS, output);
       await runStep(buildCmd, BUILD_TIMEOUT_MS, output);
     } catch (err) {
-      await rollbackAfterFailedUpdate(err, before, output);
+      await rollbackAfterFailedUpdate(err, before, output, landed);
     }
 
     return {

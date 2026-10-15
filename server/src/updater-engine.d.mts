@@ -12,6 +12,10 @@ export interface UpdateStatus {
   canApply: boolean;
   checkedAt: number;
   reason: string | null;
+  /** True when the checkout is dirty but every local edit is already the update target's content
+   *  (a hand patch since landed upstream): it does not block the update. OPTIONAL: set by the
+   *  git-checkout engine only. */
+  localEditsLanded?: boolean;
   /** The remote branch an apply would pull: the tracked/local branch when the remote has it, else
    *  the remote's HEAD branch the check fell back to. OPTIONAL: set by the git-checkout engine only. */
   remoteBranch?: string | null;
