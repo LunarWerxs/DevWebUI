@@ -97,6 +97,10 @@ fn app() -> &'static App {
 struct Ui {
     nid: NOTIFYICONDATAW,
     mutex: HANDLE,
+    /// What the watchdog's last probe read; the tooltip is built from it.
+    health: Option<daemon::Health>,
+    /// The tooltip text last written into `nid`, so an unchanged one costs no shell call.
+    tip: String,
 }
 thread_local! {
     static UI: RefCell<Option<Ui>> = const { RefCell::new(None) };
@@ -261,22 +265,53 @@ fn restart_in_mode(hwnd: HWND, safe: bool) {
         return;
     }
     daemon::SAFE_MODE.store(safe, Ordering::Relaxed);
-    let name = &a.cfg.display_name;
-    let tip = if safe {
-        format!("{name} (Safe Mode)")
-    } else {
-        name.clone()
+    let health = UI.with(|ui| ui.borrow().as_ref().and_then(|ui| ui.health.clone()));
+    set_tip(health);
+    start_worker(hwnd, false);
+}
+
+/// The tooltip: the display name, then the running version and distribution when the daemon's
+/// health names one (Safe Mode replaces the distribution). Without a version it is the plain name,
+/// with " (Safe Mode)" added in safe mode.
+fn tip_text(name: &str, health: Option<&daemon::Health>, safe: bool) -> String {
+    let Some(version) = health.and_then(|h| h.version.as_deref()) else {
+        return if safe {
+            format!("{name} (Safe Mode)")
+        } else {
+            name.to_string()
+        };
     };
+    let mode = if safe {
+        Some("Safe Mode")
+    } else {
+        health.and_then(|h| h.distribution.as_deref())
+    };
+    match mode {
+        Some(mode) => format!("{name} {version} ({mode})"),
+        None => format!("{name} {version}"),
+    }
+}
+
+/// Stores the health behind the tooltip and rewrites it. NIM_MODIFY is sent only while the icon is
+/// shown and the text changed; a hidden icon takes the new text on its next NIM_ADD.
+fn set_tip(health: Option<daemon::Health>) {
+    let safe = daemon::SAFE_MODE.load(Ordering::Relaxed);
+    let name = app().cfg.display_name.clone();
     UI.with(|ui| {
         let mut slot = ui.borrow_mut();
         let Some(ui) = slot.as_mut() else { return };
+        let tip = tip_text(&name, health.as_ref(), safe);
+        ui.health = health;
+        if tip == ui.tip {
+            return;
+        }
         fill(&mut ui.nid.szTip, &tip);
+        ui.tip = tip;
         if ICON_SHOWN.load(Ordering::Relaxed) {
             ui.nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
             unsafe { Shell_NotifyIconW(NIM_MODIFY, &mut ui.nid) };
         }
     });
-    start_worker(hwnd, false);
 }
 
 /// Fire the app-action POST on a background thread.
@@ -603,7 +638,9 @@ fn health_tick() {
     }
     // Probe BEFORE any guard, so a guard that stands the watchdog down still knows the daemon is
     // dead and can say so. The guards used to return ahead of the probe, silently.
-    let url = daemon::live_url(&a.cfg, daemon::PROBE_POLL);
+    let probe = daemon::live_probe(&a.cfg, daemon::PROBE_POLL);
+    let health = probe.as_ref().map(|(_, health)| health.clone());
+    let url = probe.map(|(url, _)| url);
     let busy = a.busy.load(Ordering::Relaxed);
     // Ownership gate: for token apps, leave a daemon another session owns alone. An app can opt out
     // (watchdogRequiresOwnership = false) to revive whatever is there, which is what AgentHydra
@@ -618,6 +655,11 @@ fn health_tick() {
     };
     if let Some(line) = line {
         daemon::tray_log(&a.cfg, &line);
+    }
+    // One missed probe is a hiccup, and the tip keeps what it said. Every other verdict follows the
+    // probe, so a daemon that died (or is not ours) stops showing its old version.
+    if verdict != Verdict::Hiccup {
+        set_tip(health);
     }
 
     match verdict {
@@ -717,6 +759,19 @@ fn quit_app(hwnd: HWND) {
         let _ = std::fs::remove_file(path);
     }
     a.cancel.store(true, Ordering::Relaxed);
+
+    // What else goes with the app (AgentHydra: its Desk window and Desk's server). First, so it runs
+    // beside the daemon's stop instead of after it, and not waited on: it is its own process and
+    // outlives this one.
+    if let Some(q) = a.cfg.quit_command.as_ref().filter(|q| q.ready()) {
+        let url = get_url().unwrap_or_default();
+        if !win::spawn_in(&q.exe, &q.args_for(&url), &q.cwd) {
+            daemon::tray_log(
+                &a.cfg,
+                &format!("quit command {} could not be started", q.exe.display()),
+            );
+        }
+    }
 
     let use_token = !a.token.is_empty();
     let owned = a.started_by_us.load(Ordering::Relaxed);
@@ -1037,7 +1092,14 @@ unsafe fn create_tray_window(display_name: &str, icon_file: &Path, mutex: HANDLE
     nid.hIcon = hicon;
     fill(&mut nid.szTip, display_name);
 
-    UI.with(|ui| *ui.borrow_mut() = Some(Ui { nid, mutex }));
+    UI.with(|ui| {
+        *ui.borrow_mut() = Some(Ui {
+            nid,
+            mutex,
+            health: None,
+            tip: display_name.to_string(),
+        })
+    });
     // The ADD itself: ICON_SHOWN starts false, so this is the initial add as well as the
     // hide-gate. If it fails, the health tick retries every 5s and TaskbarCreated re-fires it.
     sync_icon_visibility();

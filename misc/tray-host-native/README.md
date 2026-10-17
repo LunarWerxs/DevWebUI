@@ -90,9 +90,18 @@ URL instead, checked at each Open. Name it whenever the window can be missing fr
 `wscript //B` on a missing script fails without a word, so Open would do nothing. A command that
 cannot be started falls back to the URL. A malformed `openCommand` is ignored.
 
+**`quitCommand`** has the same shape and runs on Quit and on the web UI's Shut down, for a window
+that would otherwise outlive the daemon (AgentHydra runs Desk 2's `stop.ps1 -Window`, which closes the
+window and stops its server). It is started before the daemon is stopped and never waited on, so
+Quit is as quick as before; while its `requires` file is absent, Quit stops only the daemon.
+
 **`--background`** (`<App>-Tray.exe <App>-Tray.json --background`) starts the tray without
 opening anything, and exits quietly when the tray is already running. It is for an app's own window
 launcher, which starts the tray beside the window it is opening anyway.
+
+**The tooltip names the running version** when the app's `/api/health` carries `version` (and
+`distribution`), read from the watchdog's own probe, so it costs no extra request. Without a version
+it is the plain name. In Safe Mode it is `<name> (Safe Mode)`, or `<name> <version> (Safe Mode)` with a version: Safe Mode takes the distribution's place.
 
 ## What the watchdog writes to `misc/Tray.log`
 

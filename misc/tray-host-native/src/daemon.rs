@@ -81,26 +81,25 @@ pub const PROBE_FAST: Duration = Duration::from_millis(15);
 /// The probe used once we are already waiting, where correctness beats another 10 ms.
 pub const PROBE_POLL: Duration = Duration::from_millis(400);
 
-/// One `GET /api/health`, over a raw socket.
-///
-/// The identity rule is the PowerShell host's, unchanged and load-bearing: a responder is ours only
-/// when the body carries `"ok":true` AND a `"service"` equal to ours. Silence is not identity and
-/// neither is a 200 - a Vite dev server on a neighbouring port answers /api/health with its SPA
-/// fallback, which is how a sibling app once latched onto a stranger and reported the wrong thing
-/// in both directions.
-pub fn health_ok(host: &str, port: u16, service: &str, timeout: Duration) -> bool {
-    let Some(addr) = resolve(host, port) else {
-        return false;
-    };
-    let Ok(mut sock) = TcpStream::connect_timeout(&addr, timeout) else {
-        return false;
-    };
+/// What a responder that passed the identity rule says about itself. A field is None when the body
+/// does not carry it (an older build, or a sibling app whose health has no version).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Health {
+    pub version: Option<String>,
+    pub distribution: Option<String>,
+}
+
+/// One `GET /api/health`, over a raw socket: the whole response (headers and body), or None when
+/// nothing answered.
+pub fn health_response(host: &str, port: u16, timeout: Duration) -> Option<String> {
+    let addr = resolve(host, port)?;
+    let mut sock = TcpStream::connect_timeout(&addr, timeout).ok()?;
     let _ = sock.set_read_timeout(Some(timeout));
     let _ = sock.set_write_timeout(Some(timeout));
     let req =
         format!("GET /api/health HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n");
     if sock.write_all(req.as_bytes()).is_err() {
-        return false;
+        return None;
     }
     let mut body = String::new();
     let mut buf = [0u8; 4096];
@@ -117,7 +116,42 @@ pub fn health_ok(host: &str, port: u16, service: &str, timeout: Duration) -> boo
         }
     }
     let _ = sock.shutdown(Shutdown::Both);
-    body.contains("\"ok\":true") && body.contains(&format!("\"service\":\"{service}\""))
+    Some(body)
+}
+
+/// Identity and version from one health response.
+///
+/// The identity rule is the PowerShell host's, unchanged and load-bearing: a responder is ours only
+/// when the body carries `"ok":true` AND a `"service"` equal to ours. Silence is not identity and
+/// neither is a 200 - a Vite dev server on a neighbouring port answers /api/health with its SPA
+/// fallback, which is how a sibling app once latched onto a stranger and reported the wrong thing
+/// in both directions. Only a responder that passes it is read for `version` and `distribution`.
+pub fn health_of(response: &str, service: &str) -> Option<Health> {
+    if !(response.contains("\"ok\":true")
+        && response.contains(&format!("\"service\":\"{service}\"")))
+    {
+        return None;
+    }
+    let body = response.split_once("\r\n\r\n").map_or("", |(_, body)| body);
+    let json = crate::json::parse(body);
+    let field = |key: &str| {
+        json.as_ref()
+            .and_then(|v| v.str_at(key))
+            .map(str::to_string)
+    };
+    Some(Health {
+        version: field("version"),
+        distribution: field("distribution"),
+    })
+}
+
+/// Whether the responder at host:port is ours (the identity rule of `health_of`).
+pub fn health_ok(host: &str, port: u16, service: &str, timeout: Duration) -> bool {
+    probe(host, port, service, timeout).is_some()
+}
+
+fn probe(host: &str, port: u16, service: &str, timeout: Duration) -> Option<Health> {
+    health_response(host, port, timeout).and_then(|r| health_of(&r, service))
 }
 
 fn resolve(host: &str, port: u16) -> Option<SocketAddr> {
@@ -148,14 +182,20 @@ pub fn port_of(url: &str) -> Option<u16> {
 /// The configured host and preferred port remain the fallback for the window before the pointer
 /// exists. Identity is validated either way; a pointer is never trusted on its own.
 pub fn live_url(cfg: &Config, timeout: Duration) -> Option<String> {
+    live_probe(cfg, timeout).map(|(url, _)| url)
+}
+
+/// `live_url` with the health the probe read alongside it. The watchdog's tick takes both from this
+/// one request, so the tray's tooltip shows the version without a second probe.
+pub fn live_probe(cfg: &Config, timeout: Duration) -> Option<(String, Health)> {
     let pointer = std::fs::read_to_string(&cfg.info_file)
         .ok()
         .and_then(|s| crate::json::parse(&s));
 
     if let Some(url) = pointer.as_ref().and_then(|v| v.str_at("url")) {
         if let Some((host, port)) = split_url(url) {
-            if health_ok(&host, port, &cfg.service_name, timeout) {
-                return Some(url.to_string());
+            if let Some(health) = probe(&host, port, &cfg.service_name, timeout) {
+                return Some((url.to_string(), health));
             }
         }
     }
@@ -165,12 +205,16 @@ pub fn live_url(cfg: &Config, timeout: Duration) -> Option<String> {
         .and_then(|v| v.num_at("port"))
         .map(|p| p as u16)
     {
-        if port != 0 && health_ok("127.0.0.1", port, &cfg.service_name, timeout) {
-            return Some(format!("http://127.0.0.1:{port}"));
+        if port != 0 {
+            if let Some(health) = probe("127.0.0.1", port, &cfg.service_name, timeout) {
+                return Some((format!("http://127.0.0.1:{port}"), health));
+            }
         }
     }
-    if cfg.port != 0 && health_ok(&cfg.url_host, cfg.port, &cfg.service_name, timeout) {
-        return Some(format!("http://{}:{}", cfg.url_host, cfg.port));
+    if cfg.port != 0 {
+        if let Some(health) = probe(&cfg.url_host, cfg.port, &cfg.service_name, timeout) {
+            return Some((format!("http://{}:{}", cfg.url_host, cfg.port), health));
+        }
     }
     None
 }
@@ -680,6 +724,52 @@ fn kill_port_owners(cfg: &Config, url: &str) {
         for pid in port_pids(port) {
             taskkill(pid);
         }
+    }
+}
+
+#[cfg(test)]
+mod health_of_tests {
+    use super::*;
+
+    fn http_200(content_type: &str, body: &str) -> String {
+        format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\n\r\n{body}")
+    }
+
+    /// Contract: a version reaches the tooltip only from a responder that passes the identity rule.
+    /// A neighbour's daemon (same body, other service) and a SPA fallback give None; ours without a
+    /// version is still alive, with version None. Regression: the split must not change health_ok's
+    /// identity rule, and a healthy daemon without `version` must not read as dead.
+    #[test]
+    fn a_version_is_read_only_from_a_responder_that_passes_the_identity_rule() {
+        let ours = http_200(
+            "application/json",
+            r#"{"ok":true,"service":"agenthydra","version":"2.0.4","distribution":"release"}"#,
+        );
+        assert_eq!(
+            health_of(&ours, "agenthydra"),
+            Some(Health {
+                version: Some("2.0.4".into()),
+                distribution: Some("release".into()),
+            })
+        );
+
+        let neighbour = http_200(
+            "application/json",
+            r#"{"ok":true,"service":"devwebui","version":"9.9.9","distribution":"release"}"#,
+        );
+        assert_eq!(health_of(&neighbour, "agenthydra"), None);
+
+        let spa = http_200("text/html", "<!doctype html><html></html>");
+        assert_eq!(health_of(&spa, "agenthydra"), None);
+
+        let no_version = http_200("application/json", r#"{"ok":true,"service":"agenthydra"}"#);
+        assert_eq!(
+            health_of(&no_version, "agenthydra"),
+            Some(Health {
+                version: None,
+                distribution: None,
+            })
+        );
     }
 }
 

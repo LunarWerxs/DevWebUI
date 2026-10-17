@@ -79,6 +79,10 @@ pub struct Config {
     /// What Open runs instead of opening the daemon's URL, for an app whose window is its own
     /// native host rather than a browser page (AgentHydra opens Hydra Desk 2 this way).
     pub open_command: Option<OpenCommand>,
+    /// What Quit (and the web UI's "Shut down") also starts, for an app whose window outlives the
+    /// daemon: AgentHydra closes its Desk window and stops Desk's server this way. Started, never
+    /// waited on, so Quit stays as quick as it was. Same shape as `openCommand`.
+    pub quit_command: Option<OpenCommand>,
 
     /// Optional EXTRA menu item that POSTs to the live daemon. For apps that supervise work the
     /// daemon owns (DevWebUI's managed dev servers) rather than just the daemon itself: Restart and
@@ -112,7 +116,7 @@ pub struct FirstRunStep {
 /// same thing as the config's own relative paths), and `{URL}` in an arg is the daemon's live URL.
 /// `"requires": "launch.vbs"` (resolved the same way) names a file the command needs: while it is
 /// absent, Open shows the daemon's URL instead (a bundle that does not ship the window yet, where
-/// `wscript //B` on a missing script would fail without a word).
+/// `wscript //B` on a missing script would fail without a word). `quitCommand` has the same shape.
 #[derive(Debug, Clone)]
 pub struct OpenCommand {
     pub exe: PathBuf,
@@ -273,10 +277,11 @@ fn resolve_is_dev_tree(v: &Json) -> bool {
     }
 }
 
-/// A malformed value (no `exe`, a non-string arg) degrades to "feature off": Open then shows the
-/// daemon's URL as it always has, never a half-built command.
-fn resolve_open_command(v: &Json, script_dir: &Path) -> Option<OpenCommand> {
-    let spec = v.get("openCommand")?;
+/// `openCommand` or `quitCommand`. A malformed value (no `exe`, a non-string arg) degrades to
+/// "feature off": Open then shows the daemon's URL as it always has, and Quit stops only the
+/// daemon, never a half-built command.
+fn resolve_command(v: &Json, key: &str, script_dir: &Path) -> Option<OpenCommand> {
+    let spec = v.get(key)?;
     let exe = PathBuf::from(expand(spec.str_at("exe").filter(|s| !s.is_empty())?));
     let args = match spec.get("args") {
         None => Vec::new(),
@@ -370,7 +375,8 @@ impl Config {
 
         let size = resolve_window_size(v);
         let start_env = resolve_start_env(v);
-        let open_command = resolve_open_command(v, &script_dir);
+        let open_command = resolve_command(v, "openCommand", &script_dir);
+        let quit_command = resolve_command(v, "quitCommand", &script_dir);
 
         Ok(Config {
             display_name: need("displayName")?,
@@ -424,6 +430,7 @@ impl Config {
             portable_window_size: size,
             portable_window_size_hint: v.flag_at("portableWindowSizeHint"),
             open_command,
+            quit_command,
             action_path: opt_string(v.str_at("actionPath")),
             action_label: v.str_at("actionLabel").unwrap_or("Run action").to_string(),
             action_ok_text: v.str_at("actionOkText").unwrap_or("Done.").to_string(),
@@ -578,6 +585,40 @@ mod tests {
             .open_command
             .expect("set");
         assert!(none.ready(), "no requires: always ready");
+    }
+
+    #[test]
+    fn quit_runs_its_own_command_from_the_config_folder_and_none_is_no_command() {
+        let cfg = config_at(
+            r"C:\apps\demo\misc\demo-tray.json",
+            r#", "openCommand": { "exe": "open.exe" }, "quitCommand": { "exe": "%SystemRoot|C:\\Windows%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "args": ["-File", "..\\desk\\stop.ps1", "-Window"], "requires": "..\\desk\\stop.ps1" }"#,
+        );
+        let quit = cfg.quit_command.expect("quitCommand is set");
+        assert!(
+            quit.exe.ends_with(r"WindowsPowerShell\v1.0\powershell.exe"),
+            "exe: {}",
+            quit.exe.display()
+        );
+        assert_eq!(quit.cwd, PathBuf::from(r"C:\apps\demo\misc"));
+        assert_eq!(quit.args_for(""), ["-File", r"..\desk\stop.ps1", "-Window"]);
+        assert_eq!(
+            quit.requires,
+            Some(PathBuf::from(r"C:\apps\demo\misc\..\desk\stop.ps1"))
+        );
+        // Open is its own setting, untouched by the quit one.
+        assert_eq!(
+            cfg.open_command.expect("openCommand is set").exe,
+            PathBuf::from(r"C:\apps\demo\misc\open.exe")
+        );
+
+        for extra in [
+            "",
+            r#", "quitCommand": { "args": ["x"] }"#,
+            r#", "quitCommand": { "exe": "a.exe", "args": "x" }"#,
+        ] {
+            let cfg = config_at(r"C:\apps\demo\misc\demo-tray.json", extra);
+            assert!(cfg.quit_command.is_none(), "{extra}");
+        }
     }
 
     #[test]

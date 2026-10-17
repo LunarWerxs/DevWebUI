@@ -174,6 +174,27 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     return edits.length <= LANDED_MAX ? edits : null;
   }
 
+  /** The target's mode per modified path, or null when the ls-tree fails. */
+  async function targetModes(target, modified) {
+    const tree = await git(["--literal-pathspecs", "ls-tree", "-z", target, "--", ...modified]);
+    if (!tree.ok) return null;
+    return new Map(
+      tree.stdout.split("\0").filter(Boolean).map((line) => [line.slice(line.indexOf("\t") + 1), line.split(" ")[0]]),
+    );
+  }
+
+  /** A mode change (chmod +x) is an edit as well: a modified file's mode must be the target's too. */
+  async function modesMatch(modified, modes) {
+    if (!modified.length) return true;
+    const raw = await git(["--literal-pathspecs", "diff", "--raw", "-z", "--", ...modified]);
+    if (!raw.ok) return false;
+    const parts = raw.stdout.split("\0").filter(Boolean);
+    for (let i = 0; i + 1 < parts.length; i += 2) {
+      if (modes.get(parts[i + 1]) !== parts[i].slice(1).split(" ")[1]) return false;
+    }
+    return true;
+  }
+
   /** The local edits when every one is already `target`'s content (a deleted file is gone there
    *  too), else null. Compared as git blobs, so line-ending conversion on checkout is no difference. */
   async function editsAlreadyIn(target) {
@@ -182,25 +203,50 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     const top = edits?.length ? await gitText(["rev-parse", "--show-toplevel"]) : null;
     // Status paths are from the top level and every later pathspec is from appRoot: they must be one folder.
     if (!top || !sameFolder(top, appRoot)) return null;
+    // Batched: one ls-tree answers every edit's presence, oid and mode in the target and one
+    // hash-object hashes every working file, where the old loop spent up to two spawns per edit
+    // (2026-10-16). A batch that fails, or whose answer doesn't map one-to-one onto the edits,
+    // falls back to the per-edit loop, so failure handling stays exactly as it was.
+    const wanted = new Set(edits.map((e) => e.path));
+    const tree = await git(["--literal-pathspecs", "ls-tree", "-z", target, "--", ...wanted]);
+    const inTarget = new Map(); // path -> [mode, type, oid] in the target; absent when gone there
+    let batched = tree.ok;
+    if (tree.ok)
+      for (const line of tree.stdout.split("\0").filter(Boolean)) {
+        // "<mode> <type> <oid>\t<path>": the path follows a TAB; the three fields before it are spaced.
+        const tab = line.indexOf("\t");
+        const path = line.slice(tab + 1);
+        if (!wanted.has(path)) {
+          batched = false; // a pathspec matched a child: not one-to-one with the edits
+          break;
+        }
+        inTarget.set(path, line.slice(0, tab).split(" "));
+      }
+    if (batched) {
+      const present = edits.filter((e) => !e.deleted);
+      const hashed = present.length
+        ? await git(["hash-object", "--", ...present.map((e) => join(top, e.path))])
+        : { ok: true, stdout: "" };
+      const lines = hashed.ok ? hashed.stdout.split("\n").filter(Boolean) : null;
+      if (lines?.length === present.length) {
+        const hash = new Map(present.map((e, i) => [e.path, lines[i]]));
+        for (const e of edits) {
+          const want = inTarget.get(e.path)?.[2] ?? null;
+          // A deleted edit must be gone in the target; every other must hash to the target's blob.
+          if (e.deleted ? want : hash.get(e.path) !== want) return null;
+        }
+        const modified = edits.filter((e) => !e.deleted && !e.untracked).map((e) => e.path);
+        return (await modesMatch(modified, new Map([...inTarget].map(([p, m]) => [p, m[0]])))) ? edits : null;
+      }
+    }
+    // The per-edit fallback: one rev-parse per edit and one hash-object per working file.
     for (const e of edits) {
       const want = await gitText(["rev-parse", "--verify", "--quiet", `${target}:${e.path}`]);
       if (e.deleted ? want : !want || (await gitText(["hash-object", "--", join(top, e.path)])) !== want) return null;
     }
-    // A mode change (chmod +x) is an edit as well: a modified file's mode must be the target's too.
     const modified = edits.filter((e) => !e.deleted && !e.untracked).map((e) => e.path);
-    if (modified.length) {
-      const raw = await git(["--literal-pathspecs", "diff", "--raw", "-z", "--", ...modified]);
-      const tree = await git(["--literal-pathspecs", "ls-tree", "-z", target, "--", ...modified]);
-      if (!raw.ok || !tree.ok) return null;
-      const targetMode = new Map(
-        tree.stdout.split("\0").filter(Boolean).map((line) => [line.slice(line.indexOf("\t") + 1), line.split(" ")[0]]),
-      );
-      const parts = raw.stdout.split("\0").filter(Boolean);
-      for (let i = 0; i + 1 < parts.length; i += 2) {
-        if (targetMode.get(parts[i + 1]) !== parts[i].slice(1).split(" ")[1]) return null;
-      }
-    }
-    return edits;
+    const modes = modified.length ? await targetModes(target, modified) : new Map();
+    return modes && (await modesMatch(modified, modes)) ? edits : null;
   }
 
   // Through realpath, so a junction or a short name to the checkout still matches git's own top level.
