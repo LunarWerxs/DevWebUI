@@ -1,0 +1,20 @@
+schema: hydra-rsi/1
+# Committed bytes at HEAD of the product code: the web UI that the browser loads, and the daemon/CLI/MCP server code with the shared types.
+# Smaller means a lighter download and less code to maintain; both are exact, read from git, independent of the working tree.
+metrics:
+  - id: web.shipped_bytes
+    kind: size
+    better: lower
+    unit: bytes
+    measure: "python scripts/rsi/shipped_bytes.py"
+    pick: 'web_bytes=(\d+)'
+    gate: exact
+    light: true
+  - id: server.source_bytes
+    kind: size
+    better: lower
+    unit: bytes
+    measure: "python scripts/rsi/shipped_bytes.py"
+    pick: 'server_bytes=(\d+)'
+    gate: exact
+    light: true

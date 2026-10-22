@@ -1,0 +1,53 @@
+name: Commercial licence request
+description: Using DevWebUI for a business, or building it into a paid product or service.
+title: "Commercial licence request: "
+labels: ["licensing"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DevWebUI is free for noncommercial use under the PolyForm Noncommercial License 1.0.0.
+        Commercial use, such as running it for a for-profit business or building it into a paid
+        product or service, needs a separate licence from LunarWerx. Tell us how you would use it
+        and we will reply with terms.
+
+        Only what you type here becomes public; if you would rather not post a company name, say
+        so and we will move the conversation to email.
+  - type: textarea
+    id: use
+    attributes:
+      label: How would you use DevWebUI?
+      description: The company setting, how many people would use it, and whether it runs on your own machines or on machines you provide to others.
+    validations:
+      required: true
+  - type: input
+    id: installations
+    attributes:
+      label: How many installations?
+    validations:
+      required: true
+  - type: dropdown
+    id: payment
+    attributes:
+      label: Payment method
+      options:
+        - Card
+        - Purchase order / invoice
+        - Bank transfer
+        - Not sure yet
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Anything else?
+      description: Timeline, support needs, or questions about the terms.
+    validations:
+      required: false
+  - type: input
+    id: contact
+    attributes:
+      label: Where should we reply?
+      description: An email address or a Discord handle.
+    validations:
+      required: true

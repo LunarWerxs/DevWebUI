@@ -1,0 +1,8 @@
+export { default as LazyTooltip } from "./LazyTooltip.vue"
+export { default as Tip } from "./Tip.vue"
+export { default as Tooltip } from "./Tooltip.vue"
+export { default as TooltipContent } from "./TooltipContent.vue"
+export { default as TooltipProvider } from "./TooltipProvider.vue"
+export { default as TooltipTrigger } from "./TooltipTrigger.vue"
+export { TOOLTIPS_STORAGE_KEY, useTooltipConfig } from "./tooltip-config"
+export type { TooltipTouchMode } from "./touch"

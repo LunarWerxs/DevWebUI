@@ -1,0 +1,38 @@
+name: Feature idea
+description: An idea for DevWebUI, or a problem it does not solve yet.
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome. Tell us the situation you are in first; the solution can come second.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation, not the solution.
+      placeholder: "I run six dev servers across three repos and want to..."
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: Your idea for how DevWebUI could help. A rough sketch is fine.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DevWebUI version
+      description: Optional. The release you are running, if it matters to the idea.
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Links, screenshots or examples from other tools. Remove private data first.
+    validations:
+      required: false

@@ -1,0 +1,69 @@
+name: Bug report
+description: Something in DevWebUI crashes, breaks, or does not do what it says.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. The exact steps and your version are the fastest route to a fix.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of DevWebUI?
+      options:
+        - Starting, stopping or restarting a process
+        - Logs, status, CPU or memory
+        - Projects and .devwebui files
+        - Port conflicts or localhost names
+        - MCP server (an AI agent driving it)
+        - CLI
+        - Install, updater or tray
+        - Settings or settings sync
+        - Something else, or not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DevWebUI version
+      description: The release you installed (for example 1.2.0 from the releases page), or the version field in package.json if you run from a clone.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: For example Windows 11, macOS on Apple Silicon, or Linux with the distro name.
+    validations:
+      required: true
+  - type: input
+    id: other
+    attributes:
+      label: The dev server involved, and its tooling
+      description: 'For example "Vite 6 started with bun run dev" or "Next.js 15 under Node 22". Leave blank if none.'
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Logs or screenshots help. Remove private data first (tokens, API keys, project names, file paths).
+    validations:
+      required: false

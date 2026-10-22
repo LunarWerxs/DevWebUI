@@ -1,0 +1,61 @@
+<script setup lang="ts">
+import type { DialogContentEmits, DialogContentProps } from "reka-ui"
+import type { HTMLAttributes } from "vue"
+import { computed } from "vue"
+import {
+  DialogClose,
+  DialogContent,
+  DialogPortal,
+  useForwardPropsEmits,
+} from "reka-ui"
+import { cn } from "@ui-skin/cn"
+import * as skin from "@ui-skin/sheet"
+import { Button } from "../button"
+import { useContentFrame } from "../core/content-frame"
+import SheetOverlay from "./SheetOverlay.vue"
+
+defineOptions({
+  inheritAttrs: false,
+})
+
+const props = withDefaults(defineProps<DialogContentProps & { class?: HTMLAttributes["class"], side?: "top" | "right" | "bottom" | "left", showCloseButton?: boolean, showOverlay?: boolean, rightOffsetPx?: number }>(), {
+  side: "right",
+  showCloseButton: true,
+  showOverlay: true,
+  rightOffsetPx: 0,
+})
+const emits = defineEmits<DialogContentEmits>()
+
+const { delegatedProps, portalTo } = useContentFrame(props, "class", "side", "showCloseButton", "showOverlay", "rightOffsetPx")
+const forwarded = useForwardPropsEmits(delegatedProps, emits)
+const labels = skin.useLabels()
+
+// Read only by the data-[side=right] class, so the offset never touches another side.
+const rightOffset = computed(() => `${Math.max(props.rightOffsetPx, 0)}px`)
+</script>
+
+<template>
+  <DialogPortal :to="portalTo">
+    <SheetOverlay v-if="showOverlay" />
+    <DialogContent
+      data-slot="sheet-content"
+      :data-side="side"
+      :class="cn('fixed z-50 flex flex-col bg-clip-padding shadow-lg transition duration-200 ease-in-out data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-e data-[side=right]:inset-y-0 data-[side=right]:right-(--sheet-right-offset) data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-s data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[side=bottom]:data-[state=open]:slide-in-from-bottom-10 data-[side=left]:data-[state=open]:slide-in-from-left-10 data-[side=right]:data-[state=open]:slide-in-from-right-10 data-[side=top]:data-[state=open]:slide-in-from-top-10 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[side=bottom]:data-[state=closed]:slide-out-to-bottom-10 data-[side=left]:data-[state=closed]:slide-out-to-left-10 data-[side=right]:data-[state=closed]:slide-out-to-right-10 data-[side=top]:data-[state=closed]:slide-out-to-top-10', skin.content, props.class)"
+      :style="{ '--sheet-right-offset': rightOffset }"
+      v-bind="{ ...$attrs, ...forwarded }"
+    >
+      <slot />
+
+      <DialogClose
+        v-if="showCloseButton"
+        data-slot="sheet-close"
+        as-child
+      >
+        <Button variant="ghost" class="absolute top-4 right-4" size="icon-sm" :title="labels.close" :aria-label="labels.close">
+          <skin.CloseIcon />
+          <span class="sr-only">{{ labels.close }}</span>
+        </Button>
+      </DialogClose>
+    </DialogContent>
+  </DialogPortal>
+</template>

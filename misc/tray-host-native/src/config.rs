@@ -1,0 +1,673 @@
+//! The per-app config, a direct translation of `$TrayConfig` from Tray-Host.ps1.
+//!
+//! Same shape, same defaults, same names (camelCased), so a reader can hold the PowerShell header
+//! comment and this file side by side. Everything app-specific lives here; the host itself stays
+//! generic, which is the property that let one engine serve four apps and needs to survive.
+
+use crate::json::{self, Json};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StrayPolicy {
+    /// Adopt a daemon that is already serving and host a tray for it (RepoYeti/DevWebUI/AgentHydra).
+    Attach,
+    /// Refuse: a live daemon with no tray is a headless orphan the user must stop (ReDesign).
+    Warn,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WindowSize {
+    pub width: i32,
+    pub height: i32,
+}
+
+pub struct Config {
+    pub display_name: String,
+    pub service_name: String,
+    pub mutex_name: String,
+    pub icon_file: PathBuf,
+    pub app_root: PathBuf,
+    pub script_dir: PathBuf,
+
+    pub start_command: String,
+    pub start_env: BTreeMap<String, String>,
+    pub port_env_var: Option<String>,
+    pub port: u16,
+    pub url_host: String,
+    pub info_file: PathBuf,
+
+    /// Seconds to wait for a freshly-spawned daemon to bind. PowerShell default: 15.
+    pub startup_wait_secs: u64,
+    /// The same, for the restart/rebuild worker. PowerShell default: 12; AgentHydra pins 15.
+    pub worker_wait_secs: u64,
+    /// Extra restart attempts the worker makes when the daemon does not come back. ReDesign: 1.
+    pub restart_retries: u32,
+    /// Wait for the listen socket to actually free before re-spawning (force-kill apps).
+    pub use_port_free_wait: bool,
+
+    pub menu_open_label: String,
+    pub rebuild_command: Option<String>,
+    pub rebuild_log_name: String,
+    /// The tray's OWN log, beside the rebuild log: every daemon birth and death it witnesses.
+    /// Separate from the daemon's `logs/daemon.log`, deliberately - the deaths worth recording here
+    /// are the ones the daemon could not write down itself.
+    pub tray_log_name: String,
+    /// "Rebuild & Restart" is dev-only: a distributed build ships no source to rebuild.
+    pub is_dev_tree: bool,
+
+    pub shutdown_token_env_var: Option<String>,
+    pub shutdown_header_prefix: String,
+    /// Dropped by the daemon when the user picks "Shut down" in the web UI: the tray must then tear
+    /// the WHOLE app down rather than reviving it.
+    pub sentinel_file: Option<PathBuf>,
+    /// Where the daemon's crash sentinel (server-lib crash-sentinel.mjs) writes its run_* files.
+    /// Setting it is the app's statement that its daemon honours LUNARWERX_SAFE_MODE: without it the
+    /// tray never offers "Restart in Safe Mode". Read at cold start to offer it after an unclean
+    /// exit, and cleared after the tray itself force-stops the daemon so that stop is not reported
+    /// as a crash.
+    pub crash_sentinel_dir: Option<PathBuf>,
+
+    pub on_stray_daemon: StrayPolicy,
+    /// When false the watchdog revives even a daemon this tray did not start. AgentHydra sets this
+    /// to keep parity with its pre-kit launcher, which had no ownership gate at all.
+    pub watchdog_requires_ownership: bool,
+
+    pub portable_window_size: Option<WindowSize>,
+    /// Additionally append `?window-size=WxH`, for apps whose web build applies it via resizeTo.
+    pub portable_window_size_hint: bool,
+    /// What Open runs instead of opening the daemon's URL, for an app whose window is its own
+    /// native host rather than a browser page (AgentHydra opens its window this way).
+    pub open_command: Option<OpenCommand>,
+    /// What Quit (and the web UI's "Shut down") also starts, for an app whose window outlives the
+    /// daemon: AgentHydra closes its window and stops the window server this way. Started, never
+    /// waited on, so Quit stays as quick as it was. Same shape as `openCommand`.
+    pub quit_command: Option<OpenCommand>,
+
+    /// Optional EXTRA menu item that POSTs to the live daemon. For apps that supervise work the
+    /// daemon owns (DevWebUI's managed dev servers) rather than just the daemon itself: Restart and
+    /// Quit act on the daemon, this acts on what the daemon is running.
+    pub action_path: Option<String>,
+    pub action_label: String,
+    pub action_ok_text: String,
+    pub action_fail_text: String,
+    pub action_timeout_secs: u64,
+
+    /// Shown when the daemon starts but never serves. One app's overwhelmingly likely cause is a
+    /// missing configuration step, and a tray icon that silently does nothing is a worse answer
+    /// than telling the user which command to run.
+    pub not_serving_hint: Option<String>,
+
+    /// First-run bootstrap: `[{ "missing": "node_modules", "run": "bun install" }, ...]`. Each
+    /// entry runs (blocking, once) only when its path is absent from the app root. The tray icon is
+    /// already up by then, so a fresh checkout looks like it is working rather than hung.
+    pub first_run: Vec<FirstRunStep>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FirstRunStep {
+    pub missing: String,
+    pub run: String,
+}
+
+/// `"openCommand": { "exe": "%SystemRoot%\\System32\\wscript.exe", "args": ["//B", "launch.vbs"] }`.
+/// `exe` and each arg are expanded like every other value, a relative `exe` resolves against the
+/// config's folder, the command runs IN that folder (so a relative script path in `args` means the
+/// same thing as the config's own relative paths), and `{URL}` in an arg is the daemon's live URL.
+/// `"requires": "launch.vbs"` (resolved the same way) names a file the command needs: while it is
+/// absent, Open shows the daemon's URL instead (a bundle that does not ship the window yet, where
+/// `wscript //B` on a missing script would fail without a word). `quitCommand` has the same shape.
+#[derive(Debug, Clone)]
+pub struct OpenCommand {
+    pub exe: PathBuf,
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
+    pub requires: Option<PathBuf>,
+}
+
+impl OpenCommand {
+    pub fn args_for(&self, url: &str) -> Vec<String> {
+        self.args.iter().map(|a| a.replace("{URL}", url)).collect()
+    }
+
+    /// Whether Open runs this command now, rather than showing the URL: asked at each Open, so a
+    /// window installed after the tray started is used from then on.
+    pub fn ready(&self) -> bool {
+        self.requires.as_ref().is_none_or(|p| p.exists())
+    }
+}
+
+fn opt_string(v: Option<&str>) -> Option<String> {
+    v.map(str::to_string).filter(|s| !s.is_empty())
+}
+
+/// Expand `%VAR%`, `%VAR|fallback%` and a leading `~` in a config value.
+///
+/// This exists so ONE static config file serves both a dev checkout and an extracted release zip,
+/// with no setup step to run first. The PowerShell adapter resolved these at launch in script; the
+/// alternative here would be generating a config per machine, which is a step someone has to
+/// remember and which silently goes stale.
+pub fn expand(raw: &str) -> String {
+    let mut out = String::new();
+    let mut rest = raw;
+    if let Some(tail) = rest.strip_prefix('~') {
+        if let Some(home) = std::env::var_os("USERPROFILE") {
+            out.push_str(&home.to_string_lossy());
+            rest = tail;
+        }
+    }
+    while let Some(start) = rest.find('%') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('%') else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let token = &after[..end];
+        let (name, fallback) = match token.split_once('|') {
+            Some((n, f)) => (n, f),
+            None => (token, ""),
+        };
+        match std::env::var(name) {
+            Ok(v) if !v.is_empty() => out.push_str(&v),
+            // The fallback can itself need expanding (`~/.agenthydra`), so recurse.
+            _ => out.push_str(&expand(fallback)),
+        }
+        rest = &after[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `..` in the middle of a path confuses later `join`s and anything that logs it, so this
+/// canonicalizes when it can and falls back to the joined (uncanonicalized) path otherwise.
+/// Split out of `Config::from_json` along with its siblings below so that function reads as the
+/// field list and each non-trivial field's own resolution logic lives in its own named function.
+fn resolve_app_root(raw_root: &str, script_dir: &Path) -> PathBuf {
+    let p = PathBuf::from(raw_root);
+    let joined = if p.is_absolute() {
+        p
+    } else {
+        script_dir.join(p)
+    };
+    plain_path(joined.canonicalize().unwrap_or(joined))
+}
+
+/// Drop the `\\?\` verbatim prefix `canonicalize()` puts on every Windows path.
+///
+/// The app root ends up inside command lines handed to `cmd.exe /c` (the compiled exe's own path,
+/// `cd /d "<root>"` for a rebuild or a first-run step), and cmd.exe cannot run a program named by a
+/// verbatim path: it answers "The system cannot find the path specified." and exits 1 at once.
+/// AgentHydra, 2026-10-05: its daemon died, the watchdog revived it four times in 85 s, every
+/// wrapper ended `exit code 1, up 0.0s`, the crash-loop guard paused, and the app stayed down for
+/// 35 minutes until it was opened by hand from Explorer, which uses the plain path. A source
+/// checkout never showed it, because its start command names the interpreter, not the root.
+fn plain_path(p: PathBuf) -> PathBuf {
+    let plain = p.to_str().and_then(|s| match s.strip_prefix(r"\\?\UNC\") {
+        Some(share) => Some(format!(r"\\{share}")),
+        None => s.strip_prefix(r"\\?\").map(str::to_string),
+    });
+    plain.map(PathBuf::from).unwrap_or(p)
+}
+
+/// Resolve the real interpreter rather than letting cmd.exe pick it off PATH: an `npm i -g bun`
+/// install puts a .cmd shim ahead of the binary, and that shim re-launches through another cmd
+/// layer (~245 ms against ~65 ms measured for the binary directly).
+fn resolve_runtime(v: &Json) -> String {
+    match v.get("runtimeCandidates") {
+        Some(Json::Arr(items)) => items
+            .iter()
+            .filter_map(Json::as_str)
+            .map(|c| PathBuf::from(expand(c)))
+            .find(|p| p.exists())
+            .map(|p| format!("\"{}\"", p.display())),
+        _ => None,
+    }
+    .unwrap_or_else(|| v.str_at("runtimeFallback").unwrap_or("bun").to_string())
+}
+
+/// A malformed value degrades to "feature off", never to a junk --window-size.
+fn resolve_window_size(v: &Json) -> Option<WindowSize> {
+    v.get("portableWindowSize").and_then(|s| {
+        let w = s.num_at("width")? as i32;
+        let h = s.num_at("height")? as i32;
+        (w > 0 && h > 0).then_some(WindowSize {
+            width: w,
+            height: h,
+        })
+    })
+}
+
+fn resolve_start_env(v: &Json) -> BTreeMap<String, String> {
+    let mut start_env = BTreeMap::new();
+    if let Some(Json::Obj(map)) = v.get("startEnv") {
+        for (k, val) in map {
+            if let Some(s) = val.as_str() {
+                start_env.insert(k.clone(), s.to_string());
+            }
+        }
+    }
+    start_env
+}
+
+/// {ROOTHASH} = the first 16 uppercase hex chars of SHA-256 over the lowercased resolved root,
+/// which is how one app gives a second checkout on the same machine its own tray host instead of
+/// colliding on a fixed global name. Computed here so the name matches the PowerShell host's byte
+/// for byte.
+fn resolve_mutex_name(raw: String, app_root: &Path) -> String {
+    if !raw.contains("{ROOTHASH}") {
+        return raw;
+    }
+    let id = app_root.to_string_lossy().to_lowercase();
+    // canonicalize() yields a \?\ extended-length prefix; PowerShell's Resolve-Path does not,
+    // and hashing the two would disagree.
+    let id = id.strip_prefix(r"\?\").unwrap_or(&id).to_string();
+    let hash = crate::sha256::hex(id.as_bytes())[..16].to_uppercase();
+    raw.replace("{ROOTHASH}", &hash)
+}
+
+/// A STRING here is expanded first, so an app can gate the dev-only menu on an env var
+/// ("%APP_DEV%") exactly as the PowerShell adapter did, rather than needing a different config
+/// file for a dev checkout.
+fn resolve_is_dev_tree(v: &Json) -> bool {
+    match v.get("isDevTree") {
+        Some(Json::Str(s)) => Json::Str(expand(s)).truthy(),
+        Some(other) => other.truthy(),
+        None => false,
+    }
+}
+
+/// `openCommand` or `quitCommand`. A malformed value (no `exe`, a non-string arg) degrades to
+/// "feature off": Open then shows the daemon's URL as it always has, and Quit stops only the
+/// daemon, never a half-built command.
+fn resolve_command(v: &Json, key: &str, script_dir: &Path) -> Option<OpenCommand> {
+    let spec = v.get(key)?;
+    let exe = PathBuf::from(expand(spec.str_at("exe").filter(|s| !s.is_empty())?));
+    let args = match spec.get("args") {
+        None => Vec::new(),
+        Some(Json::Arr(items)) => items
+            .iter()
+            .map(|a| a.as_str().map(expand))
+            .collect::<Option<Vec<_>>>()?,
+        Some(_) => return None,
+    };
+    let in_dir = |p: PathBuf| {
+        if p.is_absolute() {
+            p
+        } else {
+            script_dir.join(p)
+        }
+    };
+    let requires = match spec.get("requires") {
+        None => None,
+        Some(r) => Some(in_dir(PathBuf::from(expand(
+            r.as_str().filter(|s| !s.is_empty())?,
+        )))),
+    };
+    Some(OpenCommand {
+        exe: in_dir(exe),
+        args,
+        cwd: script_dir.to_path_buf(),
+        requires,
+    })
+}
+
+/// A COMPILED tree has no first run. The steps bootstrap a source checkout (`bun install`, `bun
+/// run build`); a release bundle ships the built artifacts and no interpreter, so every step's
+/// `missing` path is absent there and all of them would fire — spawning bun commands that can
+/// only fail, on the one layout guaranteed not to have bun. The PowerShell adapters gated this
+/// per app (`FirstRun = if ($isCompiledTree) { $null }`); the JSON config has no place to express
+/// that, so the gate belongs here, where the compiled exe was just resolved.
+fn resolve_first_run(v: &Json, compiled: &Option<PathBuf>) -> Vec<FirstRunStep> {
+    match v.get("firstRun").filter(|_| compiled.is_none()) {
+        Some(Json::Arr(items)) => items
+            .iter()
+            .filter_map(|it| {
+                Some(FirstRunStep {
+                    missing: it.str_at("missing")?.to_string(),
+                    run: it.str_at("run")?.to_string(),
+                })
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+impl Config {
+    pub fn load(path: &Path) -> Result<Config, String> {
+        let src = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        let v = json::parse(&src).ok_or_else(|| format!("{} is not valid JSON", path.display()))?;
+        Config::from_json(&v, path)
+    }
+
+    fn from_json(v: &Json, path: &Path) -> Result<Config, String> {
+        let need = |k: &str| -> Result<String, String> {
+            v.str_at(k)
+                .map(str::to_string)
+                .ok_or_else(|| format!("{} is missing \"{k}\"", path.display()))
+        };
+        // The config sits in the app's misc/ dir, which is also where the icon and the launcher
+        // live, so relative paths resolve against the CONFIG, never the cwd (a shortcut can be
+        // launched with any working directory at all).
+        let script_dir = path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let raw_root = expand(&need("appRoot")?);
+        let app_root = resolve_app_root(&raw_root, &script_dir);
+
+        // Compiled release vs source checkout, decided the way the adapter decided it: a compiled
+        // exe sitting at the app root means run THAT, and the interpreter is not needed at all.
+        let compiled = v
+            .str_at("compiledExe")
+            .map(|rel| app_root.join(expand(rel)))
+            .filter(|p| p.exists());
+        let runtime = resolve_runtime(v);
+
+        let start_command = match &compiled {
+            Some(exe) => v
+                .str_at("startCommandCompiled")
+                .unwrap_or("\"{COMPILED}\"")
+                .replace("{COMPILED}", &exe.display().to_string()),
+            None => need("startCommand")?.replace("{RUNTIME}", &runtime),
+        };
+
+        let size = resolve_window_size(v);
+        let start_env = resolve_start_env(v);
+        let open_command = resolve_command(v, "openCommand", &script_dir);
+        let quit_command = resolve_command(v, "quitCommand", &script_dir);
+
+        Ok(Config {
+            display_name: need("displayName")?,
+            service_name: need("serviceName")?,
+            // {ROOTHASH} = the first 16 uppercase hex chars of SHA-256 over the lowercased
+            // resolved root, which is how one app gives a second checkout on the same machine its
+            // own tray host instead of colliding on a fixed global name. Computed here so the name
+            // matches the PowerShell host's byte for byte.
+            mutex_name: resolve_mutex_name(need("mutexName")?, &app_root),
+            icon_file: script_dir.join(expand(v.str_at("iconFile").unwrap_or("app.ico"))),
+            script_dir,
+            start_command,
+            start_env,
+            port_env_var: opt_string(v.str_at("portEnvVar")).or_else(|| Some("PORT".into())),
+            port: v.num_at("port").unwrap_or(0.0) as u16,
+            url_host: v.str_at("urlHost").unwrap_or("127.0.0.1").to_string(),
+            info_file: PathBuf::from(expand(&need("infoFile")?)),
+            startup_wait_secs: v.num_at("startupWaitSec").unwrap_or(15.0) as u64,
+            worker_wait_secs: v.num_at("workerWaitSec").unwrap_or(12.0) as u64,
+            restart_retries: v.num_at("restartRetries").unwrap_or(0.0) as u32,
+            use_port_free_wait: v.flag_at("usePortFreeWait"),
+            menu_open_label: v
+                .str_at("menuOpenLabel")
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("Open {}", v.str_at("displayName").unwrap_or("app"))),
+            rebuild_command: opt_string(v.str_at("rebuildCommand")),
+            rebuild_log_name: v
+                .str_at("rebuildLogName")
+                .unwrap_or("Rebuild.log")
+                .to_string(),
+            tray_log_name: v.str_at("trayLogName").unwrap_or("Tray.log").to_string(),
+            is_dev_tree: resolve_is_dev_tree(v),
+            shutdown_token_env_var: opt_string(v.str_at("shutdownTokenEnvVar")),
+            shutdown_header_prefix: v
+                .str_at("shutdownHeaderPrefix")
+                .unwrap_or("x-app")
+                .to_string(),
+            sentinel_file: opt_string(v.str_at("sentinelFile")).map(|s| PathBuf::from(expand(&s))),
+            crash_sentinel_dir: opt_string(v.str_at("crashSentinelDir"))
+                .map(|s| PathBuf::from(expand(&s))),
+            on_stray_daemon: match v.str_at("onStrayDaemon") {
+                Some("warn") => StrayPolicy::Warn,
+                _ => StrayPolicy::Attach,
+            },
+            // Defaults to TRUE, matching the engine: an attached instance another session owns is
+            // left alone unless the app opts out.
+            watchdog_requires_ownership: v
+                .get("watchdogRequiresOwnership")
+                .map(Json::truthy)
+                .unwrap_or(true),
+            portable_window_size: size,
+            portable_window_size_hint: v.flag_at("portableWindowSizeHint"),
+            open_command,
+            quit_command,
+            action_path: opt_string(v.str_at("actionPath")),
+            action_label: v.str_at("actionLabel").unwrap_or("Run action").to_string(),
+            action_ok_text: v.str_at("actionOkText").unwrap_or("Done.").to_string(),
+            action_fail_text: v
+                .str_at("actionFailText")
+                .unwrap_or("{APP} didn't accept that. Open it to check.")
+                .to_string(),
+            action_timeout_secs: v.num_at("actionTimeoutSec").unwrap_or(60.0) as u64,
+            not_serving_hint: opt_string(v.str_at("notServingHint")),
+            first_run: resolve_first_run(v, &compiled),
+            app_root,
+        })
+    }
+
+    /// `{PORT}` / `{TOKEN}` substitution, computed once and reused by cold start, the worker and
+    /// the watchdog, so every launch path is byte-identical.
+    pub fn resolved_start_command(&self, token: &str) -> String {
+        self.start_command
+            .replace("{PORT}", &self.port.to_string())
+            .replace("{TOKEN}", token)
+    }
+
+    pub fn resolved_start_env(&self, token: &str) -> BTreeMap<String, String> {
+        let mut out = BTreeMap::new();
+        for (k, v) in &self.start_env {
+            out.insert(
+                k.clone(),
+                v.replace("{PORT}", &self.port.to_string())
+                    .replace("{TOKEN}", token),
+            );
+        }
+        if let Some(port_var) = &self.port_env_var {
+            out.insert(port_var.clone(), self.port.to_string());
+        }
+        if let Some(token_var) = &self.shutdown_token_env_var {
+            out.insert(token_var.clone(), token.to_string());
+        }
+        out
+    }
+
+    pub fn shutdown_header(&self, suffix: &str) -> String {
+        format!("{}-{suffix}", self.shutdown_header_prefix)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A config whose `appRoot` is this crate dir, so `compiledExe` can point at a file that really
+    /// exists (the resolver filters on `.exists()`) without any temp-file dance.
+    fn config_with(compiled_exe: &str) -> Config {
+        let crate_dir = env!("CARGO_MANIFEST_DIR");
+        let src = format!(
+            r#"{{
+                "displayName": "Test", "serviceName": "test", "mutexName": "TestTray",
+                "appRoot": "{}", "infoFile": "runtime.json",
+                "startCommand": "{{RUNTIME}} server/src/index.ts",
+                "compiledExe": "{compiled_exe}",
+                "firstRun": [
+                    {{ "missing": "node_modules", "run": "bun install" }},
+                    {{ "missing": "web\\dist", "run": "bun run build" }}
+                ]
+            }}"#,
+            crate_dir.replace('\\', "\\\\")
+        );
+        let v = json::parse(&src).expect("valid json");
+        Config::from_json(&v, Path::new("test-tray.json")).expect("valid config")
+    }
+
+    /// A config at `cfg_path` carrying `extra` (a JSON fragment of further keys).
+    fn config_at(cfg_path: &str, extra: &str) -> Config {
+        let src = format!(
+            r#"{{
+                "displayName": "Test", "serviceName": "test", "mutexName": "TestTray",
+                "appRoot": "{}", "infoFile": "runtime.json",
+                "startCommand": "bun server/src/index.ts"{extra}
+            }}"#,
+            env!("CARGO_MANIFEST_DIR").replace('\\', "\\\\")
+        );
+        let v = json::parse(&src).expect("valid json");
+        Config::from_json(&v, Path::new(cfg_path)).expect("valid config")
+    }
+
+    #[test]
+    fn open_runs_the_configured_command_from_the_config_folder() {
+        let cfg = config_at(
+            r"C:\apps\demo\misc\demo-tray.json",
+            r#", "openCommand": { "exe": "launch.exe", "args": ["//B", "..\\desk\\start.vbs", "--url={URL}"] }"#,
+        );
+        let open = cfg.open_command.expect("openCommand is set");
+        assert_eq!(open.exe, PathBuf::from(r"C:\apps\demo\misc\launch.exe"));
+        assert_eq!(open.cwd, PathBuf::from(r"C:\apps\demo\misc"));
+        assert_eq!(
+            open.args_for("http://127.0.0.1:7787"),
+            ["//B", r"..\desk\start.vbs", "--url=http://127.0.0.1:7787"]
+        );
+    }
+
+    #[test]
+    fn an_open_command_exe_is_expanded_and_an_absolute_one_kept() {
+        let cfg = config_at(
+            r"C:\apps\demo\misc\demo-tray.json",
+            r#", "openCommand": { "exe": "%SystemRoot|C:\\Windows%\\System32\\wscript.exe" }"#,
+        );
+        let open = cfg.open_command.expect("openCommand is set");
+        assert!(open.exe.is_absolute(), "exe: {}", open.exe.display());
+        assert!(
+            open.exe.ends_with(r"System32\wscript.exe"),
+            "exe: {}",
+            open.exe.display()
+        );
+        assert!(open.args.is_empty());
+    }
+
+    #[test]
+    fn no_or_a_malformed_open_command_keeps_open_on_the_url() {
+        for extra in [
+            "",
+            r#", "openCommand": { "args": ["x"] }"#,
+            r#", "openCommand": { "exe": "" }"#,
+            r#", "openCommand": { "exe": "a.exe", "args": [1] }"#,
+            r#", "openCommand": { "exe": "a.exe", "args": "x" }"#,
+            r#", "openCommand": { "exe": "a.exe", "requires": 1 }"#,
+            r#", "openCommand": { "exe": "a.exe", "requires": "" }"#,
+        ] {
+            let cfg = config_at(r"C:\apps\demo\misc\demo-tray.json", extra);
+            assert!(cfg.open_command.is_none(), "{extra}");
+        }
+    }
+
+    #[test]
+    fn open_runs_the_command_only_while_the_file_it_requires_is_there() {
+        // The crate's own Cargo.toml exists; a sibling that never will does not.
+        let cfg_path = format!(r"{}\demo-tray.json", env!("CARGO_MANIFEST_DIR"));
+        let with = |requires: &str| {
+            config_at(
+                &cfg_path,
+                &format!(r#", "openCommand": {{ "exe": "a.exe", "requires": "{requires}" }}"#),
+            )
+            .open_command
+            .expect("openCommand is set")
+        };
+        let present = with("Cargo.toml");
+        assert_eq!(
+            present.requires,
+            Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
+        );
+        assert!(present.ready());
+        assert!(!with("not-shipped-yet.vbs").ready());
+        let none = config_at(&cfg_path, r#", "openCommand": { "exe": "a.exe" }"#)
+            .open_command
+            .expect("set");
+        assert!(none.ready(), "no requires: always ready");
+    }
+
+    #[test]
+    fn quit_runs_its_own_command_from_the_config_folder_and_none_is_no_command() {
+        let cfg = config_at(
+            r"C:\apps\demo\misc\demo-tray.json",
+            r#", "openCommand": { "exe": "open.exe" }, "quitCommand": { "exe": "%SystemRoot|C:\\Windows%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "args": ["-File", "..\\desk\\stop.ps1", "-Window"], "requires": "..\\desk\\stop.ps1" }"#,
+        );
+        let quit = cfg.quit_command.expect("quitCommand is set");
+        assert!(
+            quit.exe.ends_with(r"WindowsPowerShell\v1.0\powershell.exe"),
+            "exe: {}",
+            quit.exe.display()
+        );
+        assert_eq!(quit.cwd, PathBuf::from(r"C:\apps\demo\misc"));
+        assert_eq!(quit.args_for(""), ["-File", r"..\desk\stop.ps1", "-Window"]);
+        assert_eq!(
+            quit.requires,
+            Some(PathBuf::from(r"C:\apps\demo\misc\..\desk\stop.ps1"))
+        );
+        // Open is its own setting, untouched by the quit one.
+        assert_eq!(
+            cfg.open_command.expect("openCommand is set").exe,
+            PathBuf::from(r"C:\apps\demo\misc\open.exe")
+        );
+
+        for extra in [
+            "",
+            r#", "quitCommand": { "args": ["x"] }"#,
+            r#", "quitCommand": { "exe": "a.exe", "args": "x" }"#,
+        ] {
+            let cfg = config_at(r"C:\apps\demo\misc\demo-tray.json", extra);
+            assert!(cfg.quit_command.is_none(), "{extra}");
+        }
+    }
+
+    #[test]
+    fn a_source_checkout_keeps_its_first_run_steps() {
+        // No compiled exe at the root ⇒ this is a checkout, and bootstrapping is exactly right.
+        let cfg = config_with("definitely-not-here.exe");
+        assert_eq!(cfg.first_run.len(), 2);
+    }
+
+    #[test]
+    fn a_compiled_release_has_no_first_run() {
+        // The release layout ships built artifacts and NO interpreter, so every `missing` path is
+        // absent and every step would fire `bun ...` on the one tree guaranteed to lack bun.
+        let cfg = config_with("Cargo.toml");
+        assert!(
+            cfg.first_run.is_empty(),
+            "a compiled tree must not bootstrap: {:?}",
+            cfg.first_run
+        );
+    }
+
+    #[test]
+    fn a_compiled_start_command_names_the_exe_by_a_plain_path() {
+        // The root is canonicalized, and cmd.exe refuses a program named by a \\?\ path, so the
+        // prefix must be gone from the root and from the command built on it.
+        let cfg = config_with("Cargo.toml");
+        assert!(
+            !cfg.app_root.to_string_lossy().starts_with(r"\\?\"),
+            "app root: {}",
+            cfg.app_root.display()
+        );
+        assert!(
+            !cfg.start_command.contains(r"\\?\"),
+            "start command: {}",
+            cfg.start_command
+        );
+        assert!(
+            cfg.start_command.ends_with("Cargo.toml\""),
+            "start command: {}",
+            cfg.start_command
+        );
+    }
+
+    #[test]
+    fn a_verbatim_prefix_is_dropped_and_any_other_path_is_left_alone() {
+        let plain = |s: &str| plain_path(PathBuf::from(s)).to_string_lossy().into_owned();
+        assert_eq!(plain(r"\\?\C:\Apps\My App"), r"C:\Apps\My App");
+        assert_eq!(plain(r"\\?\UNC\server\share\app"), r"\\server\share\app");
+        assert_eq!(plain(r"C:\Apps\My App"), r"C:\Apps\My App");
+        assert_eq!(plain(r"\\server\share\app"), r"\\server\share\app");
+    }
+}
