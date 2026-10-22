@@ -5,17 +5,17 @@
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "dependencies": {
-    "hono": "^4.13.7",
+    "hono": "^4.13.13",
     "jsonc-parser": "^3.3.1",
-    "package-manager-detector": "^1.8.0",
-    "pidusage": "^4.0.1",
+    "package-manager-detector": "^1.9.0",
+    "pidusage": "^4.1.0",
     "tinyglobby": "^0.2.17",
     "tree-kill": "^1.2.2",
     "yaml": "^2.9.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.5",
     "@types/pidusage": "^2.0.5"
   }
 }
