@@ -126,6 +126,7 @@
 
 /* Smooth crossfade when toggling light/dark. The theme composable adds
    `html.theme-transitioning` around the class swap, then removes it. */
+/* arkitect-allow: root-state-restyles-every-element - set once per light/dark toggle for the crossfade and removed after it; every element's colours change then anyway */
 html.theme-transitioning,
 html.theme-transitioning *,
 html.theme-transitioning *::before,
@@ -135,6 +136,7 @@ html.theme-transitioning *::after {
   transition-timing-function: var(--ease-soft) !important;
 }
 @media (prefers-reduced-motion: reduce) {
+  /* arkitect-allow: root-state-restyles-every-element - the same once-per-toggle crossfade, cut short under reduced motion */
   html.theme-transitioning,
   html.theme-transitioning *,
   html.theme-transitioning *::before,

@@ -21,6 +21,7 @@
   background-size: 200% 100%;
 }
 @utility animate-gemini-pan {
+  /* arkitect-allow: endless-animation-not-stepped - the Gemini gradient sweep glides by design; drawn only where a surface opts in, off under reduced motion */
   animation: gemini-pan var(--dur-pan) linear infinite;
   @media (prefers-reduced-motion: reduce) {
     animation: none;
