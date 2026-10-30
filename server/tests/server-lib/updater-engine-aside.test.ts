@@ -68,6 +68,10 @@ test.skipIf(process.platform !== "win32")(
 
       expect((await updater.applyUpdate()).ok).toBe(true);
       await expectAtRemoteHead(local, remote);
+      // The copy still ends in .exe: Windows draws the running program's taskbar icon from it.
+      expect(readdirSync(join(local, "bin")).filter((name) => name !== "tool.exe")).toEqual([
+        expect.stringMatching(/^tool\.exe\.replaced-\d{14}\.exe$/),
+      ]);
     } finally {
       await program.stop();
     }
@@ -93,7 +97,7 @@ test.skipIf(process.platform !== "win32")(
       await expectAtRemoteHead(local, remote);
       expect(readdirSync(join(local, "bin"))).toEqual(["tool.exe"]);
       expect(readdirSync(aside)).toHaveLength(1);
-      expect(readdirSync(aside)[0]).toStartWith("bin%2Ftool.exe.replaced-");
+      expect(readdirSync(aside)[0]).toMatch(/^bin%2Ftool\.exe\.replaced-\d{14}\.exe$/);
     } finally {
       await program.stop();
     }

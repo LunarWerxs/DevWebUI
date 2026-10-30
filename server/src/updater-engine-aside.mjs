@@ -4,12 +4,16 @@
  * Windows keeps a running program's image locked against overwrite, but lets it be renamed, and the
  * process keeps running from the renamed copy. So a fast-forward that changes a running program file
  * (AgentHydra's window host is one) fails partway with "unable to unlink old" and leaves a half-updated
- * checkout. Before advancing on Windows, each such file is moved aside to `<file>.replaced-<stamp>` and
+ * checkout. Before advancing on Windows, each such file is moved aside to `<file>.replaced-<stamp><ext>` and
  * put back at HEAD, so the checkout overwrites an unlocked copy instead of the running file.
+ *
+ * The copy keeps the program's extension last: Windows draws a running program's taskbar button from the
+ * file it runs from, and a name ending in the stamp is no program to it, so the button went blank until
+ * the program restarted (2026-10-30: AgentHydra's window, after every update that replaced its exe).
  */
 
 import { appendFile, copyFile, mkdir, readdir, readFile, rename, stat, unlink } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { CHECK_TIMEOUT_MS, commandSummary, oneAtATime, stepFailureMessage } from "./updater-engine-run.mjs";
 
 const PROGRAM_FILE = /\.(exe|dll|node)$/i;
@@ -85,7 +89,7 @@ export function createAsideMover({ appRoot, asideDir, git, gitText, runCommand }
     async function moveOneAside(path) {
       const full = join(appRoot, path);
       // One flat name per path that no other path can share (`a/b_c.exe` and `a_b/c.exe` stay apart).
-      const copy = join(asideDir, `${encodeURIComponent(path)}${REPLACED_COPY}${stamp}`);
+      const copy = join(asideDir, `${encodeURIComponent(path)}${REPLACED_COPY}${stamp}${extname(path)}`);
       await mkdir(asideDir, { recursive: true })
         .then(() => rename(full, copy))
         .catch((err) => {
@@ -104,7 +108,7 @@ export function createAsideMover({ appRoot, asideDir, git, gitText, runCommand }
   async function moveBesideAndCheckout(programs, stamp, output) {
     const tries = await oneAtATime(programs, (path) => {
       const full = join(appRoot, path);
-      const copy = `${full}${REPLACED_COPY}${stamp}`;
+      const copy = `${full}${REPLACED_COPY}${stamp}${extname(full)}`;
       return rename(full, copy).then(
         () => ({ path, full, copy, err: null }),
         (err) => ({ path, full, copy, err }),
