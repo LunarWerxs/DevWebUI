@@ -1,0 +1,9 @@
+{
+  "docs": {
+    "home": "cloud",
+    "since": "2026-10-31",
+    "repo": "lunarwerxs/devwebui",
+    "read": "docs tool: search, get",
+    "write": "docs tool: edit then put"
+  }
+}
