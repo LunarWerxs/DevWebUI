@@ -92,27 +92,29 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     };
   }
 
-  async function gatherLocalStatus(base) {
-    const currentCommit = await gitText(["rev-parse", "HEAD"]);
-    const branch = await gitText(["branch", "--show-current"]);
-    const upstream = await remotes.currentUpstream();
+  // `read` is the one status read of a checkout (remotes.readStatus); null sends each value through its own git call.
+  async function gatherLocalStatus(base, read) {
+    const currentCommit = read ? read.currentCommit : await gitText(["rev-parse", "HEAD"]);
+    const branch = read ? read.branch : await gitText(["branch", "--show-current"]);
+    const upstream = read ? read.upstream : await remotes.currentUpstream();
     const remote = await remotes.remoteForCheck(upstream.remoteName);
-    const dirty = !!(await gitText(["status", "--porcelain"]));
+    const dirty = read ? read.dirty : !!(await gitText(["status", "--porcelain"]));
     const status = { ...base, currentCommit, branch, upstream: upstream.upstream, remote: remote.remote, dirty };
     return { status, upstream, remote };
   }
 
   async function checkForUpdate() {
     const base = emptyStatus();
-    if (!(await remotes.isGitCheckout())) return { ...base, ok: false, reason: "not a git checkout" };
-    const { status, upstream, remote } = await gatherLocalStatus(base);
+    const read = await remotes.readStatus();
+    if (!read && !(await remotes.isGitCheckout())) return { ...base, ok: false, reason: "not a git checkout" };
+    const { status, upstream, remote } = await gatherLocalStatus(base, read);
     if (!status.currentCommit) return { ...status, ok: false, reason: "could not read current commit" };
     if (!remote.remoteArg) return { ...status, ok: false, reason: "no update remote configured" };
     const compareBranch = upstream.remoteBranch || status.branch;
     const resolved = await remotes.resolveRemoteCommit(remote.remoteArg, compareBranch, status.branch);
     // With a cooldown, `remoteCommit` is the aged commit an apply would move to; the tip it was
     // chosen from is reported beside it so a host can show what is being held back.
-    const { commit: target, cooldown } = await remotes.applyCooldown(
+    const { commit: target, cooldown, isAncestor } = await remotes.applyCooldown(
       resolved.remoteCommit,
       status.currentCommit,
       resolved.remoteBranch,
@@ -125,12 +127,16 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
       status.latestRemoteCommit = resolved.remoteCommit;
       status.cooldownDays = cooldownDaysN;
     }
+    // applyCooldown already asked whether the commit it chose is an ancestor of HEAD; that answer holds for
+    // the same commit after its fetch (HEAD does not move, and a commit HEAD lacks cannot be its ancestor).
+    const knownAncestor = target === resolved.remoteCommit ? isAncestor : null;
     const fastForward = await remotes.evaluateFastForward(
       target,
       status.currentCommit,
       resolved.remoteBranch,
       remote.remoteArg,
       cooldown !== "off",
+      knownAncestor,
     );
     return settleStatus(status, target, fastForward, cooldown);
   }

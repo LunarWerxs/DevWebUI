@@ -7,7 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $ } from "bun";
 import { createUpdater } from "../../src/updater-engine.mjs";
-import { advanceRemote, cleanScratchDirs, cloneRepo, loggingCmd, REAL_GIT_TEST_MS, remoteRepo, scratchDir, updaterFor } from "./updater-engine-fixture.ts";
+import { advanceRemote, cleanScratchDirs, cloneRepo, loggingCmd, patchByHand, REAL_GIT_TEST_MS, remoteRepo, scratchDir, spawnRunner, updaterFor } from "./updater-engine-fixture.ts";
 
 // 30s: the hook deletes every scratch git repo the file made (I/O time, not assertion time); see the fixture.
 afterEach(cleanScratchDirs, 30_000);
@@ -80,6 +80,7 @@ test("cooldownDays adopts the newest aged commit and holds back a younger tip", 
 
   const updater = createUpdater({
     appRoot: local,
+    run: spawnRunner(local),
     serviceName: "testsvc",
     appLabel: "TestSvc",
     updateRepoEnvVar: "UE_TEST_UPDATE_REPO_UNUSED",
@@ -102,3 +103,47 @@ test("cooldownDays adopts the newest aged commit and holds back a younger tip", 
   expect(after.updateAvailable).toBe(false);
   expect(after.reason).toContain("7-day update cooldown");
 }, REAL_GIT_TEST_MS); // real git+install+build - see the note on the tests above.
+
+// The state reads the check makes (HEAD, branch, upstream, dirty) are one `git status` now, not four calls. This
+// reads them the old way, call by call, and the check's result must carry the same answers on each checkout.
+async function oldReads(local: string) {
+  const read = async (args: string[]) => {
+    const r = await $`git -C ${local} ${args}`.nothrow().quiet();
+    return r.exitCode === 0 ? r.stdout.toString().trim() : null;
+  };
+  return {
+    currentCommit: await read(["rev-parse", "HEAD"]),
+    branch: await read(["branch", "--show-current"]),
+    upstream: (await read(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])) || null,
+    dirty: !!(await read(["status", "--porcelain"])),
+  };
+}
+
+test("the one status read gives the old per-call reads' answers on a dirty, an ahead, a behind, a diverged and a no-upstream checkout", async () => {
+  const commitLocal = async (local: string) => {
+    writeFileSync(join(local, "local.txt"), "mine\n");
+    await $`git -C ${local} add -A`.quiet();
+    await $`git -C ${local} commit -q -m local`.quiet();
+  };
+  const states: [string, (remote: string, local: string) => Promise<void>][] = [
+    ["dirty", async (_remote, local) => patchByHand(local)],
+    ["ahead", async (_remote, local) => commitLocal(local)],
+    ["behind", async (remote) => advanceRemote(remote, "0.2.0")],
+    ["diverged", async (remote, local) => {
+      await commitLocal(local);
+      await advanceRemote(remote, "0.2.0");
+    }],
+    ["no upstream", async (_remote, local) => {
+      await $`git -C ${local} branch --unset-upstream`.quiet();
+    }],
+  ];
+  for (const [state, change] of states) {
+    const remote = await remoteRepo();
+    const local = await cloneRepo(remote);
+    await change(remote, local);
+    const before = await oldReads(local);
+    const logPath = join(scratchDir("ue-log-"), "log.txt");
+    const status = await updaterFor(local, loggingCmd(logPath, "install"), loggingCmd(logPath, "build")).checkForUpdate();
+    expect({ state, currentCommit: status.currentCommit, branch: status.branch, upstream: status.upstream, dirty: status.dirty }).toEqual({ state, ...before });
+  }
+}, REAL_GIT_TEST_MS);

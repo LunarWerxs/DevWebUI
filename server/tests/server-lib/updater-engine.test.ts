@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { $ } from "bun";
 import type { UpdateApplyError } from "../../src/updater-engine.mjs";
 import { createUpdater } from "../../src/updater-engine.mjs";
-import { advanceRemote, cleanScratchDirs, cloneRepo, cwdCmd, failableCmd, failsOnCallsCmd, landFile, loggingCmd, REAL_GIT_TEST_MS, remoteRepo, scratchDir, updaterFor } from "./updater-engine-fixture.ts";
+import { advanceRemote, cleanScratchDirs, cloneRepo, cwdCmd, failableCmd, failsOnCallsCmd, landFile, loggingCmd, REAL_GIT_TEST_MS, remoteRepo, scratchDir, spawnRunner, updaterFor } from "./updater-engine-fixture.ts";
 
 // 30s: the hook deletes every scratch git repo the file made (I/O time, not assertion time); see the fixture.
 afterEach(cleanScratchDirs, 30_000);
@@ -290,6 +290,7 @@ test("a README-only update runs no install and restarts nothing: the steps and t
   await landFile(remote, "NOTES.md", "notes\n");
   const log = join(scratchDir("ue-scratch-"), "steps.log");
   const updater = createUpdater({
+    run: spawnRunner(local),
     appRoot: local,
     serviceName: "testsvc",
     appLabel: "TestSvc",
@@ -318,6 +319,7 @@ test("a file moved out of a daemon path counts as changed there, so the restart 
   await $`git -C ${remote} -c user.name=S -c user.email=s@s.io commit -q -m moved`.quiet();
   const seen: string[] = [];
   const updater = createUpdater({
+    run: spawnRunner(local),
     appRoot: local,
     serviceName: "testsvc",
     appLabel: "TestSvc",
@@ -341,6 +343,7 @@ test("a commit that moves HEAD without changing any path runs no step and restar
   await $`git -C ${remote} -c user.name=S -c user.email=s@s.io commit -q --allow-empty -m empty`.quiet();
   const log = join(scratchDir("ue-scratch-"), "steps.log");
   const updater = createUpdater({
+    run: spawnRunner(local),
     appRoot: local,
     serviceName: "testsvc",
     appLabel: "TestSvc",
@@ -365,6 +368,7 @@ test("a step runs in its own folder under the checkout", async () => {
   mkdirSync(join(local, "sub"));
   const log = join(scratchDir("ue-scratch-"), "steps.log");
   const updater = createUpdater({
+    run: spawnRunner(local),
     appRoot: local,
     serviceName: "testsvc",
     appLabel: "TestSvc",
@@ -387,6 +391,7 @@ test("a failed step rolls back, and the rollback reruns only the steps this upda
   const scratch = scratchDir("ue-scratch-");
   const log = join(scratch, "steps.log");
   const updater = createUpdater({
+    run: spawnRunner(local),
     appRoot: local,
     serviceName: "testsvc",
     appLabel: "TestSvc",

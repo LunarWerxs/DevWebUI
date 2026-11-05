@@ -23,7 +23,13 @@ pub(crate) fn health_tick() {
     let probe = daemon::live_probe(&a.cfg, daemon::PROBE_POLL);
     let health = probe.as_ref().map(|(_, health)| health.clone());
     let url = probe.map(|(url, _)| url);
-    let listening = url.is_none() && daemon::port_accepts(&a.cfg, daemon::PROBE_POLL);
+    let listening = url.is_none()
+        && port_is_held(daemon::port_accepts(&a.cfg, daemon::PROBE_POLL), || {
+            daemon::revive_ports(&a.cfg)
+                .into_iter()
+                .flat_map(daemon::port_pids)
+                .collect()
+        });
     let verdict = judge(a, url.is_some(), listening);
     // One missed probe is a hiccup, and the tip keeps what it said. Every other verdict follows the
     // probe, so a daemon that died (or is not ours) stops showing its old version.
@@ -31,6 +37,14 @@ pub(crate) fn health_tick() {
         set_tip(health);
     }
     act_on(a, verdict, url);
+}
+
+/// Whether a live process holds the daemon's port though it did not answer. A connect alone misses
+/// a frozen daemon whose accept backlog is full (the OS refuses while the socket still LISTENS), so
+/// a listening pid counts too: a slow answer is a busy daemon, never a free port. `owners` runs only
+/// when the connect failed.
+pub(crate) fn port_is_held(accepts: bool, owners: impl FnOnce() -> Vec<u32>) -> bool {
+    accepts || !owners().is_empty()
 }
 
 /// Runs the watchdog's policy on this tick's probe, and writes the tray-log line the verdict earns.

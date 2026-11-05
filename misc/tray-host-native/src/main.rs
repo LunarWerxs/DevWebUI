@@ -181,7 +181,7 @@ fn main() {
 #[cfg(test)]
 mod watchdog_tests {
     use super::*;
-    use crate::tray::health::reap_port_owners;
+    use crate::tray::health::{port_is_held, reap_port_owners};
     use crate::tray::watchdog::{
         StandDown, Verdict, BUSY_PATIENCE, CRASH_LOOP_MAX, CRASH_LOOP_WINDOW, REVIVE_AFTER_MISSES,
     };
@@ -202,6 +202,42 @@ mod watchdog_tests {
             || {},
         );
         assert!(left.is_empty());
+    }
+
+    /// AgentHydra, 2026-10-20: a probe that timed out under load read as dead and a second daemon
+    /// started. A timed-out probe with a live port owner (connect refused or not) never revives
+    /// inside the patience; with no owner it revives on the third miss.
+    #[test]
+    fn a_timed_out_probe_with_a_live_port_owner_does_not_launch_and_a_dead_owner_does() {
+        let tick = Duration::from_millis(HEALTH_INTERVAL_MS as u64);
+        let run = |accepts: bool, owners: Vec<u32>| {
+            let mut w = Watchdog::default();
+            let mut now = Instant::now();
+            w.tick(now, true, false, false, false);
+            let mut verdicts = Vec::new();
+            for _ in 0..8 {
+                now += tick;
+                let held = port_is_held(accepts, || owners.clone());
+                verdicts.push(w.tick(now, false, held, false, false));
+            }
+            verdicts
+        };
+        assert!(
+            !run(false, vec![7787]).contains(&Verdict::Revive),
+            "owner alive, backlog full"
+        );
+        assert!(
+            !run(true, vec![]).contains(&Verdict::Revive),
+            "owner alive, connect works"
+        );
+        assert!(
+            run(false, vec![]).contains(&Verdict::Revive),
+            "nobody holds the port"
+        );
+        assert!(
+            port_is_held(true, || unreachable!()),
+            "owners are not asked after a connect"
+        );
     }
 
     const TICK: Duration = Duration::from_millis(HEALTH_INTERVAL_MS as u64);

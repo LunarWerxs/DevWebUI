@@ -19,6 +19,42 @@ function parseLsRemoteCommit(stdout) {
   return stdout.match(/^([0-9a-f]{40})\s+/m)?.[1] ?? null;
 }
 
+// `upstream` is the configured one as git names it (`origin/main`); the remote and its branch are its two halves.
+function splitUpstream(upstream) {
+  if (!upstream) return { upstream: null, remoteName: null, remoteBranch: null };
+  const slash = upstream.indexOf("/");
+  if (slash <= 0) return { upstream, remoteName: null, remoteBranch: null };
+  return { upstream, remoteName: upstream.slice(0, slash), remoteBranch: upstream.slice(slash + 1) };
+}
+
+/** What `git status --porcelain=v2 --branch` says about the checkout, in the shape the reads it replaces give:
+ *  HEAD's commit (null when unborn), the branch ("" when detached, as `branch --show-current` answers), the
+ *  upstream (its split), and whether anything is changed or untracked. Header lines carry the first three;
+ *  every other line is an entry, and an entry is what `status --porcelain` lists. */
+export function parseStatusV2(stdout) {
+  const header = {};
+  let dirty = false;
+  for (const line of stdout.split("\n")) {
+    if (line.startsWith("# ")) {
+      const [, key, ...value] = line.split(" ");
+      header[key] = value.join(" ");
+    } else if (line) {
+      dirty = true;
+    }
+  }
+  const oid = header["branch.oid"];
+  const head = header["branch.head"];
+  // `branch.upstream` names a configured upstream even when its ref is gone; `branch.ab` is printed only when git
+  // can resolve it, which is the case `@{u}` answers. So the upstream counts only with `branch.ab`.
+  const resolved = header["branch.ab"] !== undefined;
+  return {
+    currentCommit: oid && oid !== "(initial)" ? oid : null,
+    branch: head === "(detached)" ? "" : (head ?? null),
+    upstream: splitUpstream(resolved ? header["branch.upstream"] || null : null),
+    dirty,
+  };
+}
+
 /** The status reason: why an update is blocked, or what the check found when there is none to apply. */
 export function reasonForStatus({ newer, dirty, fastForward, remoteBranch, remoteCommit, remoteIsAncestor, cooldown }, cooldownDays) {
   if (newer) return blockedReason(dirty, fastForward, remoteBranch);
@@ -44,11 +80,16 @@ export function createRemoteReader({ appRoot, git, gitText, updateRepoEnvVar, co
   }
 
   async function currentUpstream() {
-    const upstream = await gitText(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
-    if (!upstream) return { upstream: null, remoteName: null, remoteBranch: null };
-    const slash = upstream.indexOf("/");
-    if (slash <= 0) return { upstream, remoteName: null, remoteBranch: null };
-    return { upstream, remoteName: upstream.slice(0, slash), remoteBranch: upstream.slice(slash + 1) };
+    return splitUpstream(await gitText(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]));
+  }
+
+  // One `git status` answers what the check reads in four calls (the work-tree test, HEAD, the branch, the
+  // upstream and dirtiness). Null when it cannot (no .git here, or status failed): the caller reads them one
+  // by one, as it always did, so a checkout status cannot read is decided exactly as before.
+  async function readStatus() {
+    if (!existsSync(join(appRoot, ".git"))) return null;
+    const r = await git(["status", "--porcelain=v2", "--branch"]);
+    return r.ok ? parseStatusV2(r.stdout) : null;
   }
 
   async function remoteForCheck(remoteName) {
@@ -80,9 +121,10 @@ export function createRemoteReader({ appRoot, git, gitText, updateRepoEnvVar, co
   // ancestor, so the fast-forward is proven before it is advertised, by fetching just that branch
   // into FETCH_HEAD (nothing local moves). A failed fetch is its own reason, never a guess.
   // `alreadyFetched`: the cooldown path fetched already and picked an older commit than the tip.
-  async function evaluateFastForward(remoteCommit, currentCommit, remoteBranch, remoteArg, alreadyFetched = false) {
+  // `knownAncestor`: whether `remoteCommit` is an ancestor of HEAD, when applyCooldown already asked about this commit.
+  async function evaluateFastForward(remoteCommit, currentCommit, remoteBranch, remoteArg, alreadyFetched = false, knownAncestor = null) {
     if (!remoteCommit || remoteCommit === currentCommit) return { remoteIsAncestor: false, fastForward: "n/a" };
-    const remoteIsAncestor = (await git(["merge-base", "--is-ancestor", remoteCommit, "HEAD"])).ok;
+    const remoteIsAncestor = knownAncestor ?? (await git(["merge-base", "--is-ancestor", remoteCommit, "HEAD"])).ok;
     if (remoteIsAncestor || !remoteBranch) return { remoteIsAncestor, fastForward: "n/a" };
     if (!alreadyFetched) {
       const fetched = await git(["fetch", "--quiet", "--no-tags", remoteArg, remoteBranch], APPLY_TIMEOUT_MS);
@@ -102,10 +144,12 @@ export function createRemoteReader({ appRoot, git, gitText, updateRepoEnvVar, co
   // commit is the newest aged one, or null when none is aged yet), "unknown" (history unreadable).
   async function applyCooldown(remoteCommit, currentCommit, remoteBranch, remoteArg) {
     if (!cooldownSeconds || !remoteCommit || remoteCommit === currentCommit || !remoteBranch) {
-      return { commit: remoteCommit, cooldown: "off" };
+      return { commit: remoteCommit, cooldown: "off", isAncestor: null };
     }
-    // Local is already at or past the tip: there is nothing to hold back.
-    if ((await git(["merge-base", "--is-ancestor", remoteCommit, "HEAD"])).ok) return { commit: remoteCommit, cooldown: "off" };
+    // Local is already at or past the tip: there is nothing to hold back. `isAncestor` is the answer for
+    // `remoteCommit`, which is what evaluateFastForward asks again when the commit it gets is this one.
+    const isAncestor = (await git(["merge-base", "--is-ancestor", remoteCommit, "HEAD"])).ok;
+    if (isAncestor) return { commit: remoteCommit, cooldown: "off", isAncestor };
     const fetched = await git(["fetch", "--quiet", "--no-tags", remoteArg, remoteBranch], APPLY_TIMEOUT_MS);
     // --until with -1 asks git for just the newest aged first-parent commit, so the output stays
     // one line however long the history is.
@@ -113,11 +157,11 @@ export function createRemoteReader({ appRoot, git, gitText, updateRepoEnvVar, co
     const log = fetched.ok
       ? await git(["log", "--first-parent", `--until=@${cutoff}`, "-1", "--format=%H", "FETCH_HEAD"])
       : fetched;
-    if (!log.ok) return { commit: null, cooldown: "unknown" };
+    if (!log.ok) return { commit: null, cooldown: "unknown", isAncestor };
     const sha = log.stdout.trim();
-    if (sha) return { commit: sha, cooldown: sha === remoteCommit ? "clear" : "held" };
-    return { commit: null, cooldown: "held" };
+    if (sha) return { commit: sha, cooldown: sha === remoteCommit ? "clear" : "held", isAncestor };
+    return { commit: null, cooldown: "held", isAncestor };
   }
 
-  return { isGitCheckout, currentUpstream, remoteForCheck, resolveRemoteCommit, evaluateFastForward, applyCooldown };
+  return { isGitCheckout, readStatus, currentUpstream, remoteForCheck, resolveRemoteCommit, evaluateFastForward, applyCooldown };
 }

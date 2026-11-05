@@ -8,11 +8,12 @@
 // each call and can be made to fail on demand, so "did install/build actually run, how many times,
 // and in what order" is checkable after the fact. All git operations are local (file:// clones of
 // tmpdir repos) — no network — so the suite is hermetic and deterministic.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
 import { createUpdater } from "../../src/updater-engine.mjs";
+import { createRunner } from "../../src/updater-engine-run.mjs";
 
 // Every scratch dir (git remotes, clones, and per-test log/count dirs) is tracked here and
 // removed in afterEach — each run otherwise leaks 9 full git repos into the temp dir, which
@@ -41,8 +42,26 @@ export function cleanScratchDirs(): void {
   }
 }
 
+// Every command an updater here spawns (git, install, build) goes through `spawnRunner`, so a count of spawns is
+// exact. A count, not a time: the spawns are what make a test slow. UE_SPAWN_LOG names a file that gets this
+// process's total at exit, so a run can name one test at a time (`bun test -t`) and read that test's spawns.
+let spawns = 0;
+export function spawnCount(): number {
+  return spawns;
+}
+export function spawnRunner(appRoot: string) {
+  const { runCommand } = createRunner({ appRoot });
+  return (args: string[], opts: { cwd: string; timeoutMs: number }) => {
+    spawns++;
+    return runCommand(args, opts.timeoutMs, opts.cwd);
+  };
+}
+
 // The backstop for a test file that registers no afterEach: whatever is left goes when the process exits.
-process.on("exit", cleanScratchDirs);
+process.on("exit", () => {
+  if (process.env.UE_SPAWN_LOG) appendFileSync(process.env.UE_SPAWN_LOG, `${spawns}\n`);
+  cleanScratchDirs();
+});
 
 export async function remoteRepo(): Promise<string> {
   const dir = scratchDir("ue-remote-");
@@ -143,6 +162,7 @@ export function updaterFor(appRoot: string, installCmd: string[], buildCmd: stri
     installCmd,
     buildCmd,
     asideDir,
+    run: spawnRunner(appRoot),
   });
 }
 
