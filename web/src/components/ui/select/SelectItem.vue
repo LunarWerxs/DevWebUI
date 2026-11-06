@@ -26,12 +26,12 @@ const forwardedProps = useForwardProps(delegatedProps)
     :class="
       cn(
         skin.item,
-        'min-h-7 gap-2 rounded-md pl-2 pr-8 py-1 [&_svg:not([class*=size-])]:size-3.5 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2 relative flex w-full cursor-default items-center outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0',
+        'min-h-7 gap-2 rounded-md ps-2 pe-8 py-1[&_svg:not([class*=size-])]:size-3.5 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2 relative flex w-full cursor-default items-center outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0',
         props.class,
       )
     "
   >
-    <span class="pointer-events-none absolute right-2 flex items-center justify-center">
+    <span class="pointer-events-none absolute end-2 flex items-center justify-center">
       <SelectItemIndicator>
         <slot name="indicator-icon">
           <skin.CheckIcon class="pointer-events-none" />

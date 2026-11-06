@@ -30,7 +30,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
     )"
   >
     <span
-      class="absolute right-2 flex items-center justify-center pointer-events-none"
+      class="absolute end-2 flex items-center justify-center pointer-events-none"
       data-slot="dropdown-menu-radio-item-indicator"
     >
       <DropdownMenuItemIndicator>
