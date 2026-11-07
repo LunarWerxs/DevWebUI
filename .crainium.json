@@ -5,5 +5,13 @@
     "repo": "lunarwerxs/devwebui",
     "read": "docs tool: search, get",
     "write": "docs tool: edit then put"
+  },
+  "architect": {
+    "home": "cloud",
+    "since": "2026-11-07",
+    "repo": "lunarwerx/architect",
+    "profile": "profiles/devwebui.md",
+    "read": "the Architect reads this computer's copy at the start of a run",
+    "write": "docs tool on repo lunarwerx/architect: edit then put"
   }
 }
