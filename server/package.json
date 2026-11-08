@@ -5,7 +5,7 @@
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "dependencies": {
-    "hono": "^4.13.13",
+    "hono": "^4.13.16",
     "jsonc-parser": "^3.3.1",
     "package-manager-detector": "^1.9.0",
     "pidusage": "^4.1.0",
@@ -15,7 +15,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "@types/pidusage": "^2.0.5"
   }
 }

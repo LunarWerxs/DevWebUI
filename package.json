@@ -60,7 +60,7 @@
     "@cnct/connect": "^1.8.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.15",
+    "@biomejs/biome": "^2.6.5",
     "typescript": "^6.0.3"
   }
 }
