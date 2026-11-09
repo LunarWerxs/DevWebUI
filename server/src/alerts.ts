@@ -240,8 +240,15 @@ export class AlertStore {
       const j = JSON.parse(readFileSync(rulesFile(), "utf8"));
       const arr = Array.isArray(j?.rules) ? j.rules : [];
       for (const r of arr) {
+        // Same clamps as addRule/updateRule: a hand-edited or older file must not smuggle in a
+        // NaN/negative/huge forMs or threshold (a missing forMs would fire on the first sample).
         if (r && typeof r.id === "string" && typeof r.processId === "string")
-          this.rules.set(r.id, r);
+          this.rules.set(r.id, {
+            ...r,
+            threshold: clampThreshold(r.threshold),
+            forMs: clampForMs(r.forMs),
+            enabled: r.enabled ?? true,
+          });
       }
     } catch {
       /* no rules file yet */

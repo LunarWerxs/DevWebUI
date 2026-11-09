@@ -101,8 +101,8 @@ const WORKING_SET_OFFSET = 16;
 // bytes (8-byte alignment around the ULONG_PTR th32DefaultHeapID field). dwSize@0
 // MUST equal this exact size or Process32First fails with ERROR_BAD_LENGTH.
 const PE32_SIZE = 304;
-const PE32_PID_OFFSET = 8;
-const PE32_PARENT_OFFSET = 32;
+export const PE32_PID_OFFSET = 8;
+export const PE32_PARENT_OFFSET = 32;
 const TH32CS_SNAPPROCESS = 0x00000002;
 
 async function openKernel32() {
@@ -130,7 +130,7 @@ type Kernel32 = Awaited<ReturnType<typeof openKernel32>>;
 
 /** Scratch buffers reused across samples — the manager serialises sampling (its metricsRunning
  *  guard), so there's never an overlapping read into these. */
-function createWin32Buffers() {
+export function createWin32Buffers() {
   const creation = new Uint8Array(8);
   const exit = new Uint8Array(8);
   const kernel = new Uint8Array(8);
@@ -189,61 +189,80 @@ function snapshotWin32Children(k: Kernel32, buf: Win32Buffers): Map<number, numb
   return children;
 }
 
-/** Sample one root pid's whole descendant tree; returns null if nothing was actually measured
- *  (caller then keeps the last-known value instead of flashing 0% / 0 B). */
-function sampleWin32Root(
+/** One pid's reading for this batch. `any` = at least one real CPU/memory value was read. */
+type Win32Reading = { cpu: number; memory: number; any: boolean };
+
+/** Read ONE pid (CPU% from its delta since the last batch, plus its working set). Called at most
+ *  once per pid per batch: roots that share a descendant must not each re-read it, or the second
+ *  read sees a zero wall-clock delta and that pid's CPU drops out of that root's total. Returns
+ *  null when the process is gone or cannot be opened. */
+function readWin32Pid(
   k: Kernel32,
   buf: Win32Buffers,
-  root: number,
-  children: Map<number, number[]>,
+  pid: number,
   t: number,
   last: Map<number, { cpu100ns: number; t: number }>,
   seen: Set<number>,
+): Win32Reading | null {
+  const h = k.symbols.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+  if (!h) return null; // process gone or access denied — leave it out of the sum
+  // Opened OK → keep this pid's CPU history even if a read below transiently
+  // fails, so a one-off GetProcessTimes failure can't evict it and force a
+  // spurious 0% on the next cycle (the cleanup loop prunes only truly-gone pids).
+  seen.add(pid);
+  const r: Win32Reading = { cpu: 0, memory: 0, any: false };
+  try {
+    if (
+      k.symbols.GetProcessTimes(
+        h,
+        k.ptr(buf.creation),
+        k.ptr(buf.exit),
+        k.ptr(buf.kernel),
+        k.ptr(buf.user),
+      )
+    ) {
+      r.any = true;
+      const cpu100ns = win32U64(buf.dvK, 0) + win32U64(buf.dvU, 0); // kernel + user, in 100-ns ticks
+      const prev = last.get(pid);
+      last.set(pid, { cpu100ns, t });
+      if (prev) {
+        const cpuMs = (cpu100ns - prev.cpu100ns) / 1e4; // 100-ns ticks → ms
+        const wallMs = t - prev.t;
+        if (wallMs > 0) r.cpu = Math.max(0, (cpuMs / wallMs) * 100);
+      }
+    }
+    if (k.symbols.K32GetProcessMemoryInfo(h, k.ptr(buf.mem), PMC_SIZE)) {
+      r.any = true;
+      r.memory = win32U64(buf.dvM, WORKING_SET_OFFSET);
+    }
+  } finally {
+    k.symbols.CloseHandle(h);
+  }
+  return r;
+}
+
+/** Sum one root's descendant tree from per-pid readings; null if nothing was actually measured
+ *  (caller then keeps the last-known value instead of flashing 0% / 0 B). */
+function sumWin32Tree(
+  pids: number[],
+  readOnce: (pid: number) => Win32Reading | null,
 ): Sample | null {
   let cpu = 0;
   let memory = 0;
-  let any = false; // got at least one real CPU/memory reading?
-  for (const pid of descendants(root, children)) {
-    const h = k.symbols.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-    if (!h) continue; // process gone or access denied — leave it out of the sum
-    // Opened OK → keep this pid's CPU history even if a read below transiently
-    // fails, so a one-off GetProcessTimes failure can't evict it and force a
-    // spurious 0% on the next cycle (the cleanup loop prunes only truly-gone pids).
-    seen.add(pid);
-    try {
-      if (
-        k.symbols.GetProcessTimes(
-          h,
-          k.ptr(buf.creation),
-          k.ptr(buf.exit),
-          k.ptr(buf.kernel),
-          k.ptr(buf.user),
-        )
-      ) {
-        any = true;
-        const cpu100ns = win32U64(buf.dvK, 0) + win32U64(buf.dvU, 0); // kernel + user, in 100-ns ticks
-        const prev = last.get(pid);
-        last.set(pid, { cpu100ns, t });
-        if (prev) {
-          const cpuMs = (cpu100ns - prev.cpu100ns) / 1e4; // 100-ns ticks → ms
-          const wallMs = t - prev.t;
-          if (wallMs > 0) cpu += Math.max(0, (cpuMs / wallMs) * 100);
-        }
-      }
-      if (k.symbols.K32GetProcessMemoryInfo(h, k.ptr(buf.mem), PMC_SIZE)) {
-        any = true;
-        memory += win32U64(buf.dvM, WORKING_SET_OFFSET);
-      }
-    } finally {
-      k.symbols.CloseHandle(h);
-    }
+  let any = false;
+  for (const pid of pids) {
+    const r = readOnce(pid);
+    if (!r) continue;
+    cpu += r.cpu;
+    memory += r.memory;
+    any ||= r.any;
   }
   return any ? { cpu, memory } : null;
 }
 
 /** Sample CPU+memory for a batch of root pids (each summed over its whole descendant tree),
  *  using already-open kernel32 handles + scratch buffers. */
-async function sampleWin32Pids(
+export async function sampleWin32Pids(
   pids: number[],
   k: Kernel32,
   buf: Win32Buffers,
@@ -255,8 +274,14 @@ async function sampleWin32Pids(
   const children = snapshotWin32Children(k, buf);
   const t = performance.now();
   const seen = new Set<number>();
+  // Each pid is read once per batch, however many roots' trees it sits in (see readWin32Pid).
+  const readings = new Map<number, Win32Reading | null>();
+  const readOnce = (pid: number): Win32Reading | null => {
+    if (!readings.has(pid)) readings.set(pid, readWin32Pid(k, buf, pid, t, last, seen));
+    return readings.get(pid) ?? null;
+  };
   for (const root of pids) {
-    const sample = sampleWin32Root(k, buf, root, children, t, last, seen);
+    const sample = sumWin32Tree(descendants(root, children), readOnce);
     if (sample) out[root] = sample;
   }
   // Drop history for pids we no longer track so the map can't grow without bound.

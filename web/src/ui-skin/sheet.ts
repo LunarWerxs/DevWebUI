@@ -2,10 +2,5 @@
 export { XIcon as CloseIcon } from "@lucide/vue"
 
 export const content = "bg-popover text-popover-foreground text-xs/relaxed"
-export const title = "text-sm"
 export const description = "text-muted-foreground text-xs/relaxed"
-
-/** The words the sheet says, in this app's language. */
-export function useLabels() {
-  return { close: "Close" }
-}
+export { title, useLabels } from "./overlay-labels"

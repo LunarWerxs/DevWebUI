@@ -263,15 +263,26 @@ export function updateProcessInFile(
   if (i < 0) throw new Error(`Process "${localId}" not found.`);
   if (proc.id !== localId && raw.processes.some((p) => p.id === proc.id))
     throw new Error(`A process with id "${proc.id}" already exists in this project.`);
-  const parsed = ProcessSchema.parse(proc);
+  // JSON has no `undefined`, so over HTTP a caller clears an optional field by sending `null`
+  // for it. Strip those keys before the schema (which rejects null) and let mergeOmitted see
+  // them as sent: a sent key the parse dropped is a clear, not a keep.
+  const forParse: Record<string, unknown> = { ...proc };
+  for (const key of MERGEABLE_KEYS) {
+    if ((proc as Record<string, unknown>)[key] === null) delete forParse[key];
+  }
+  const parsed = ProcessSchema.parse(forParse);
   raw.processes[i] = clean(mergeOmitted(proc, parsed, raw.processes[i]));
-  // An id rename would dangle every sibling's link to the old id — follow the rename.
+  // An id rename would dangle every sibling's link to the old id — follow the rename, in both
+  // `links` and a sibling's string `waitForPort` (which names a sibling process id too).
   if (proc.id !== localId) {
-    raw.processes = raw.processes.map((p) =>
-      p.links?.includes(localId)
-        ? clean({ ...p, links: p.links.map((l) => (l === localId ? proc.id : l)) })
-        : p,
-    );
+    raw.processes = raw.processes.map((p) => {
+      const links = p.links?.includes(localId)
+        ? p.links.map((l) => (l === localId ? proc.id : l))
+        : p.links;
+      const waitForPort = p.waitForPort === localId ? proc.id : p.waitForPort;
+      if (links === p.links && waitForPort === p.waitForPort) return p;
+      return clean({ ...p, links, waitForPort });
+    });
     // Extras are keyed by in-file id, so a rename has to carry them across or the
     // user's hand-added keys would be dropped by the very next write.
     const carried = raw.extras.byProcessId.get(localId);
@@ -285,14 +296,20 @@ export function updateProcessInFile(
 
 export function removeProcessFromFile(filePath: string, localId: string): void {
   const raw = readRaw(filePath);
+  if (!raw.processes.some((p) => p.id === localId))
+    throw new Error(`Process "${localId}" not found.`);
   if (raw.processes.length <= 1)
     throw new Error("A project needs at least one process — remove the whole project instead.");
   raw.processes = raw.processes
     .filter((p) => p.id !== localId)
-    // Prune links that pointed at the removed process (clean() drops emptied arrays).
-    .map((p) =>
-      p.links?.includes(localId) ? clean({ ...p, links: p.links.filter((l) => l !== localId) }) : p,
-    );
+    // Prune links and a string waitForPort that pointed at the removed process (clean() drops
+    // emptied arrays and an undefined waitForPort).
+    .map((p) => {
+      const links = p.links?.includes(localId) ? p.links.filter((l) => l !== localId) : p.links;
+      const waitForPort = p.waitForPort === localId ? undefined : p.waitForPort;
+      if (links === p.links && waitForPort === p.waitForPort) return p;
+      return clean({ ...p, links, waitForPort });
+    });
   writeRaw(filePath, raw);
 }
 

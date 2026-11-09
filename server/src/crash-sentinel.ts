@@ -58,6 +58,13 @@ export function osBootTime(): number {
   return Date.now() - os.uptime() * 1000;
 }
 
+/** Epoch ms of a run file's startedAt: this module writes a number, the kit's .mjs an ISO string. */
+function startedAtMs(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return Date.parse(value);
+  return Number.NaN;
+}
+
 /**
  * Arm this launch's sentinel and report the newest run that ended without a clean shutdown (or
  * null). Leftovers from dead runs are consumed so one crash triggers safe mode once, not forever.
@@ -85,6 +92,9 @@ export function armCrashSentinel(opts?: {
         const startedAt = statSync(file, { throwIfNoEntry: false })?.mtimeMs ?? 0;
         run = { id: name.slice(RUN_PREFIX.length), pid: 0, startedAt };
       }
+      // A run file the kit's crash-sentinel.mjs wrote carries startedAt as an ISO string; compare
+      // epoch ms, or the string-vs-number test is always false and a reboot leftover reads as a crash.
+      run = { ...run, startedAt: startedAtMs(run.startedAt) };
       if (run.startedAt < bootTime) {
         rmSync(file, { force: true }); // ended by a reboot or logoff, not a crash
         continue;

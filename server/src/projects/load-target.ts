@@ -48,8 +48,7 @@ export async function resolveLoadTarget(input: string): Promise<LoadTarget> {
     };
 
   const proposal = await detectProject(dir);
-  if (proposal)
-    return { kind: "scaffold", dir, fileName: suggestFileName(proposal.name, dir), proposal };
+  if (proposal) return { kind: "scaffold", dir, fileName: DEVWEBUI_FILE_NAME, proposal };
 
   return {
     kind: "none",
@@ -57,12 +56,10 @@ export async function resolveLoadTarget(input: string): Promise<LoadTarget> {
   };
 }
 
-function suggestFileName(_name: string, _dir: string): string {
-  // One canonical, repo-rooted dotfile per codebase — like .gitignore. We OWN
-  // this file (DevWebUI's source of truth), so it's always just `.devwebui`,
-  // never `<name>.devwebui`.
-  return ".devwebui";
-}
+// One canonical, repo-rooted dotfile per codebase — like .gitignore. We OWN
+// this file (DevWebUI's source of truth), so it's always just `.devwebui`,
+// never `<name>.devwebui`.
+const DEVWEBUI_FILE_NAME = ".devwebui";
 
 /** Validate a proposed project and write it as `<dir>/<fileName>` (never overwrites). */
 export function scaffoldDevWebUIFile(dir: string, fileName: string, data: unknown): string {

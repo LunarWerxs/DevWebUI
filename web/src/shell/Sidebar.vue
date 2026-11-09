@@ -12,7 +12,10 @@ import {
 } from "reka-ui";
 import { X } from "@lucide/vue";
 import { cn } from "../lib/utils";
+import { useLabels } from "../ui-skin/overlay-labels";
 import { type PushPanelSide, DEFAULT_PANEL_WIDTH, maxOpenPushPanelWidth } from "./usePushPanel";
+
+const labels = useLabels();
 
 /**
  * Sidebar, the ONE slide-in panel every LunarWerx app uses (settings, drawers,
@@ -141,8 +144,8 @@ if (import.meta.env.DEV) {
 
         <DialogClose
           class="ring-offset-background focus:ring-ring absolute top-3 right-3 z-20 rounded-sm p-1 opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:outline-hidden"
-          aria-label="Close"
-          title="Close"
+          :aria-label="labels.close"
+          :title="labels.close"
         >
           <X class="size-4" />
         </DialogClose>

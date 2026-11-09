@@ -152,7 +152,7 @@ function persist(): void {
 
 // The SDK's persistence rides THIS module's state file (one 0600 JSON for everything), via a
 // ConnectStore adapter over the in-memory `state` — every set/remove goes through persist().
-const TOKEN_KEY = `cnx.connect.tokens.${OAUTH.clientId}`;
+export const TOKEN_KEY = `cnx.connect.tokens.${OAUTH.clientId}`;
 const stateStore: ConnectStore = {
   get: (key) => state.sdk?.[key] ?? null,
   set: (key, value) => {
@@ -225,6 +225,10 @@ export function initConnections(): void {
     const seed: TokenSet = { accessToken: "", refreshToken: state.refreshToken, expiresAt: 0 };
     state.sdk ??= {};
     state.sdk[TOKEN_KEY] = seal(JSON.stringify(seed)); // seal the seeded token at rest (Windows)
+  }
+  // The plaintext legacy token must go whenever it is still on disk, even when an SDK entry
+  // already exists (a partial migration or a hand-edit): the sealed SDK entry is the copy to keep.
+  if (state.refreshToken) {
     delete state.refreshToken;
     persist();
   }

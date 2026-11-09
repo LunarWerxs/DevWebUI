@@ -177,14 +177,24 @@ async function awaitLive(timeoutMs: number): Promise<InstanceInfo | null> {
  */
 const BOOT_LOCK_STALE_MS = 60_000;
 
-async function bootDaemonShared(env: NodeJS.ProcessEnv): Promise<InstanceInfo | null> {
+/** Atomically take the boot lock; null when another launcher already holds it. */
+function tryCreateBootLock(lockFile: string): number | null {
+  try {
+    return openSync(lockFile, "wx");
+  } catch {
+    return null;
+  }
+}
+
+export async function bootDaemonShared(
+  env: NodeJS.ProcessEnv,
+  spawnFn: typeof spawn = spawn,
+): Promise<InstanceInfo | null> {
   const lockFile = path.join(dataDir(), "boot.lock");
   mkdirSync(dataDir(), { recursive: true });
 
-  let fd: number;
-  try {
-    fd = openSync(lockFile, "wx");
-  } catch {
+  let fd = tryCreateBootLock(lockFile);
+  if (fd === null) {
     // Someone else holds it. If it's stale, take it over; otherwise wait for their boot.
     let stale = false;
     try {
@@ -201,11 +211,15 @@ async function bootDaemonShared(env: NodeJS.ProcessEnv): Promise<InstanceInfo | 
     } catch {
       /* another launcher cleaned up first */
     }
-    return bootDaemonDetached(env);
+    // Re-take the lock before spawning, so a second launcher that reached this same path
+    // cannot also spawn. If it won the race, wait for its boot instead.
+    fd = tryCreateBootLock(lockFile);
+    if (fd === null) return awaitLive(25_000);
+    // Holding the lock here: the spawn below is the one boot this launcher is allowed.
   }
 
   try {
-    return await bootDaemonDetached(env);
+    return await bootDaemonDetached(env, 20_000, spawnFn);
   } finally {
     try {
       closeSync(fd);
@@ -224,9 +238,10 @@ async function bootDaemonShared(env: NodeJS.ProcessEnv): Promise<InstanceInfo | 
 async function bootDaemonDetached(
   env: NodeJS.ProcessEnv,
   timeoutMs = 20_000,
+  spawnFn: typeof spawn = spawn,
 ): Promise<InstanceInfo | null> {
   const [exe, ...rest] = daemonLaunchVector();
-  const child = spawn(exe!, rest, {
+  const child = spawnFn(exe!, rest, {
     cwd: daemonCwd(),
     env,
     stdio: "ignore",
@@ -399,8 +414,10 @@ async function alertsAdd(rest: string[], args: Args): Promise<void> {
       enabled: args.disabled ? false : undefined,
     }),
   );
+  // Print the rule the daemon stored: it clamps the threshold (>= 0) and the hold time, so the
+  // typed values can differ from what will actually fire.
   console.log(
-    `Added alert rule ${rule.id}: ${processId} ${metric} > ${fmtThreshold(metric, threshold)} for ${forSecs}s.`,
+    `Added alert rule ${rule.id}: ${processId} ${metric} > ${fmtThreshold(metric, rule.threshold)} for ${rule.forMs / 1000}s.`,
   );
 }
 
