@@ -15,7 +15,6 @@ No more `bun run dev` babysitting across a dozen terminal tabs.
 
 [![Website](https://img.shields.io/badge/website-devwebui.github.io-6366f1?style=flat-square)](https://devwebui.github.io)
 [![CI](https://img.shields.io/github/actions/workflow/status/LunarWerxs/devwebui/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/LunarWerxs/devwebui/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/LunarWerxs/devwebui?style=flat-square&color=6366f1)](https://github.com/LunarWerxs/devwebui/releases)
 [![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm_Noncommercial-blue?style=flat-square)](LICENSING.md)
 [![Discord](https://img.shields.io/badge/Discord-join_the_community-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/PsWpeNUzhk)
 
@@ -49,20 +48,13 @@ automate, and everyone works off a single source of truth.
 
 ## Quick start
 
-**Prebuilt Windows app**: download `devwebui-windows-x64.exe` from
-[Releases](https://github.com/LunarWerxs/DevWebUI/releases) and run it directly. It is an
-icon-bearing GUI executable with the dashboard embedded and no console window or sidecar folders.
-The plain ZIP beside it is reserved for automatic updates. To adopt only releases that have been
-public for a while, set **Settings -> App updates -> Update cooldown** to a number of days: a
-release younger than that is neither offered nor installed, so a bad release has time to be caught
-and pulled first (0, the default, offers the newest release at once).
+**Prebuilt Windows app**: not published yet. There are no GitHub Releases for this repository, so
+install from source (below). When a release with `devwebui-windows-x64.exe` is published, this section
+will link it again.
 
-The tray icon comes with both downloads. It comes from a small separate launcher
-(`misc\DevWebUI-Tray.exe`); the zip ships it beside the exe, and since 0.8.8 the single-file
-`devwebui.exe` carries it inside the binary and writes it out beside its own state on first run, so
-either download gets you the icon, Quit and the auto-restart supervisor. (Before 0.8.8 the bare exe
-had none, and this line said so as though it were a decision.) `misc\Create-Shortcut.ps1` still
-makes a shortcut that launches through the tray host directly.
+The tray icon and its Quit and auto-restart supervisor come from a small launcher
+(`misc\DevWebUI-Tray.exe`). `misc\Create-Shortcut.ps1` makes a shortcut that launches through the
+tray host directly.
 
 **Windows source checkout**: double-click the **`DevWebUI`** shortcut. It runs hidden with a tray
 icon: right-click for **Open / Rebuild & Restart / Restart / Stop all processes / Quit**
@@ -251,8 +243,8 @@ anonymous install ping (disable with `DEVWEBUI_NO_PING=1`) sends a random instal
 and OS family, but never your IP address, hostname, username, or file paths.
 
 **What are the system requirements?**
-On Windows, download the prebuilt `devwebui-windows-x64.exe` and run it directly, no dependencies.
-On any OS, run it from source with Bun installed: `bun install` then `bun run dev` starts the
+There is no prebuilt download yet (no GitHub Release is published), so run it from source with Bun
+installed on any OS: `bun install` then `bun run dev` starts the
 daemon on port 4000 and the GUI on port 4010. macOS and Linux tray support is on the roadmap.
 
 **How is DevWebUI different from PM2's web UI, hotel, or exo?**
