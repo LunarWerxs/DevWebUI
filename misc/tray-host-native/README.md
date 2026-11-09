@@ -6,10 +6,10 @@ PowerShell tray host itself?**
 Answer, measured on the author's machine against AgentHydra, alternating runs back to back so both
 paths saw identical conditions:
 
-|                                      | daemon process starts | app serving                                                                              |
-| ------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------- |
-| `Tray-Launch.vbs` -> `Tray-Host.ps1` | +475 ms               | +745-1115 ms                                                                             |
-| native host (`<App>-Tray.exe`)       | **+25-27 ms**         | **+274 ms** (clean port) / +439-452 ms (same kill-race harness as the PowerShell column) |
+| | daemon process starts | app serving |
+|---|---|---|
+| `Tray-Launch.vbs` -> `Tray-Host.ps1` | +475 ms | +745-1115 ms |
+| native host (`<App>-Tray.exe`) | **+25-27 ms** | **+274 ms** (clean port) / +439-452 ms (same kill-race harness as the PowerShell column) |
 
 Where the PowerShell time goes, measured in isolation (5 runs each):
 
@@ -147,7 +147,7 @@ happened":
    success while the daemon never runs.
 3. A child **inherits the parent's stdio**. A tray launched from a terminal handed the daemon that
    terminal's pipe; nothing drained it, the buffer filled, and the daemon blocked on a console write
-   _before binding its port_: a live process with no listening socket and no runtime pointer. The
+   *before binding its port*: a live process with no listening socket and no runtime pointer. The
    daemon now gets `NUL` for stdin and stdout (it already tees its output to `logs/daemon.log`) and
    a file for stderr, `logs/daemon-stderr.log`, which nothing has to drain.
 4. `cmd.exe` **cannot run a program named by a `\\?\` path**. `canonicalize()` puts that verbatim
