@@ -44,6 +44,6 @@ content - to this project, **you agree to all of the following:**
    or use any contribution. A pull request may be closed without merging, and the
    maintainer may implement the same fix or feature independently instead.
 
-This agreement is about the *rights* to use and relicense your contribution - **not**
+This agreement is about the _rights_ to use and relicense your contribution - **not**
 about erasing authorship. Where your contribution is merged, your authorship remains
 visible in the project's Git history and commit attribution.

@@ -125,7 +125,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   revoked with `devwebui pairing clients|revoke`. The cookie file is written on every boot, so
   turning enforcement on later needs no other setup.
 
-- **Update cooldown for the prebuilt app.** Settings -> App updates -> *Update cooldown (days)*
+- **Update cooldown for the prebuilt app.** Settings -> App updates -> _Update cooldown (days)_
   (`updateCooldownDays`, 0-90, default 0 = off) makes the release updater offer and install only
   a GitHub Release published at least that many days ago. When the latest release is too young it
   falls back to the newest release that is old enough, and if the release list cannot be read it
@@ -188,8 +188,6 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   Both fixes live in the shared kit (`server/src/tray-bootstrap.mjs`), because AgentHydra, RepoYeti
   and ReDesign shipped the identical hole.
-
-
 
 ### Added
 
@@ -514,15 +512,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.5.2] - 2026-07-16
 
 ### Fixed
+
 - **Resizing a launcher window now sticks.** Chromium stores a saved placement whose key
-  contains a dot - every focus window's does, the process id is `<projectId>.<localId>` - 
+  contains a dot - every focus window's does, the process id is `<projectId>.<localId>` -
   as nested dicts, not under the flat key, so the kit's "has the user sized this window?"
   probe never saw launcher placements and `--window-size` kept overriding the user's
   resize on every fresh launch. The probe now reads both storage forms (and ignores
   degenerate zero-area rects), and the size hint carries the user's saved size to
   forwarded launches, so a resized launcher keeps its size in every launch path.
 - **A maximized window stays maximized.** Chromium stores `maximized: true` on the saved
-  placement with the rect holding the pre-maximize *restore* bounds; the size hint would
+  placement with the rect holding the pre-maximize _restore_ bounds; the size hint would
   have resized a deliberately maximized window back down to those bounds on its next
   open. A maximized placement now sends no hint at all - fresh launches restore the
   maximized state natively.
@@ -536,6 +535,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.5.1] - 2026-07-16
 
 ### Fixed
+
 - **The launcher's "Open dashboard" button opens a real dashboard window, not a 440x220 one.**
   It used to navigate the launcher window itself to `/`, cramming the full dashboard into the
   launcher's mini-viewer geometry with zero room for any rows. It now asks the daemon to open `/`
@@ -557,6 +557,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.5.0] - 2026-07-16
 
 ### Added
+
 - **Desktop shortcuts for one server (or a whole repo).** The process ⋮ menu gains **Add desktop
   shortcut**; the project ⋮ menu gains the same for every process in the codebase. Double-clicking
   the `.lnk` boots the daemon if it isn't running, loads the project if it isn't registered, starts
@@ -574,11 +575,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `open-project`, are what the shortcuts run.
 
 ### Fixed
+
 - **A managed server no longer pops a console window.** Every dev server is spawned through
   `cmd` (`shell: true`) but without `windowsHide`, so whether a console appeared depended on the
   console the daemon itself happened to own - invisible under the tray (which starts the daemon
   with `CreateNoWindow`, and children inherit that headless console), but a desktop shortcut boots
-  the daemon detached with *no* console, and Windows then gave each dev server a brand-new console
+  the daemon detached with _no_ console, and Windows then gave each dev server a brand-new console
   of its own. With Windows Terminal set as the default terminal that surfaced as a real window that
   stayed up for the life of the server. The spawn now sets `windowsHide` so the result is the same
   on every launch path. `cli.ts`'s daemon boot states it too, so "no window" survives someone
@@ -600,14 +602,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a path that doesn't exist outside a checkout. Daemon launches now resolve the right vector for the
   build they're running in.
 - **Restarting the daemon no longer hops it off its own port.** The chromeless window the shortcut
-  opens was launched via `cmd /c start ""`, whose `CreateProcess` inherits the parent's handles - 
+  opens was launched via `cmd /c start ""`, whose `CreateProcess` inherits the parent's handles -
   including the daemon's listening socket. The browser then pinned the daemon's port for as long as
   its window stayed open, so a restart (or auto-update relaunch) found the port still held by the
   dead daemon's ghost socket and moved to the next one. The launch now goes through WMI
-  (`Win32_Process.Create`), where the service creates the process and it inherits nothing of ours - 
+  (`Win32_Process.Create`), where the service creates the process and it inherits nothing of ours -
   still fully detached from the daemon's tree, but no longer holding its socket.
 
 ### Changed
+
 - **The focus view moved from `/?process=<id>` to `/focus/<id>`.** Chromium keys a saved app-window
   placement by host + path only - the query string isn't part of it - so every focus window and the
   dashboard shared one `localhost_/` geometry slot: no focus window could keep its own size, and
@@ -618,6 +621,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.4.0] - 2026-07-13
 
 ### Added
+
 - **Edit project (rename + accent color).** The project ⋮ menu gains an **Edit project** action that
   opens a small dialog to rename the project and pick an accent color - shown as a tint on the
   project's stacked-servers icon in the panel header. Project color is a new optional top-level
@@ -635,6 +639,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.3.0] - 2026-07-13
 
 ### Changed
+
 - **Brand tray/taskbar icon regenerated** from the current stacked-servers vector (the shipped
   `misc/DevWebUI.ico` had drifted to a generic placeholder). A new `misc/Make-Icon.ps1` rebuilds
   it from the committed `misc/DevWebUI-icon.png` master (re-rendered from `web/public/icon.svg`),
@@ -647,6 +652,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   form at once.
 
 ### Added
+
 - **Linked servers.** Two new optional per-process fields in the `.devwebui` schema. `links` names
   sibling process ids that act as one unit: the relationship is symmetric and transitive, so
   starting or stopping any member of a linked group (GUI single-process actions, or MCP
@@ -673,6 +679,7 @@ boot cleanly, clarifies what "Sign in with Connections" actually does, and clean
 internal duplication.
 
 ### Changed
+
 - **Sign in with Connections now uses the official `@cnct/connect` / `@cnct/locker` SDKs**
   instead of a hand-rolled client. Both are optional dependencies that are only ever loaded
   (via dynamic `import()`) when you actually use sign-in - so installing DevWebUI without
@@ -691,6 +698,7 @@ internal duplication.
   product name (no user-visible effect).
 
 ### Fixed
+
 - `/oauth/login` now redirects back to the app with an error instead of returning a server
   error (HTTP 500) when the sign-in machinery isn't available.
 - **CI is green again.** `bun run lint` (Biome) had been failing on pre-existing format drift plus
@@ -700,6 +708,7 @@ internal duplication.
   Linux/macOS (`ls` of a per-OS path under `set -e -o pipefail`).
 
 ### Internal
+
 - De-duplicated several bits of internal logic that had drifted into multiple copies: the
   helper that captures a spawned process's stdout, the shared log-line cap constant, the
   error-event type, and the file-store path normalizer.
@@ -712,22 +721,23 @@ internal duplication.
 First public, open-source release.
 
 ### Added
+
 - **`devwebui` CLI.** A single installable command (new `bin`) so humans, scripts, and AI agents
   can run and drive DevWebUI without `bun run <script>` or raw HTTP/MCP: `devwebui start`
   (boots the daemon detached and prints the URL; `--foreground` runs it attached, `--port N`
   pins the port), `devwebui stop` (graceful shutdown), `devwebui status [--json]` (running? where?
-  + a project/process summary), `devwebui list`/`ps` (managed processes), `devwebui start-process` /
-  `stop-process` / `restart-process` / `enable-process` / `disable-process <id|name>`,
-  `devwebui start-all` / `stop-all`, and `devwebui mcp` (the stdio MCP server). It's a thin wrapper
-  over the daemon's existing REST API + `instance.ts` discovery (`shared/routes.ts`) - no new
-  control logic. Lives in `server/src/cli.ts`.
+  - a project/process summary), `devwebui list`/`ps` (managed processes), `devwebui start-process` /
+    `stop-process` / `restart-process` / `enable-process` / `disable-process <id|name>`,
+    `devwebui start-all` / `stop-all`, and `devwebui mcp` (the stdio MCP server). It's a thin wrapper
+    over the daemon's existing REST API + `instance.ts` discovery (`shared/routes.ts`) - no new
+    control logic. Lives in `server/src/cli.ts`.
 - **Open a dev server from its title.** Click a running process's name (card or table
   view) to open it in a new browser tab. By default it opens the port-derived
   `http://<host>:<port>` (the host is configurable - see below); a new optional per-process
   `url` field overrides it - an absolute `http(s)://…` opens verbatim, or a path like
   `/admin` is appended to that address. The title is only a link while the process is
   running, and `url` is editable from the Add/Edit process form.
-- **Configurable link host** (Settings → *Open in browser*, persisted as `linkHost`). By
+- **Configurable link host** (Settings → _Open in browser_, persisted as `linkHost`). By
   default a process opens on the host you're viewing DevWebUI from (so `localhost` on your
   own machine, the LAN IP from another device); set an explicit host to pin it, e.g. a fixed
   dev-box hostname. A per-process absolute `url` still overrides the host entirely.
@@ -738,7 +748,7 @@ First public, open-source release.
   (`web/src/i18n/locales/en.ts`); every user-facing string - including
   accessibility labels, placeholders, and tooltips - is routed through `t()` /
   `<i18n-t>`. See `web/src/i18n/README.md`.
-- **Language picker** in Settings → *Language* - driven by the locale registry and
+- **Language picker** in Settings → _Language_ - driven by the locale registry and
   persisting the choice. It stays hidden while English is the only registered locale,
   so it appears automatically the moment a second language is added.
 - **i18n compliance checker** (`bun run check:i18n`, also gates `bun run build`).
@@ -755,6 +765,7 @@ First public, open-source release.
   `NotifyIcon`) and regenerates + resolves the root shortcut.
 
 ### Changed
+
 - **Single instance.** Only one DevWebUI daemon runs at a time. On launch it checks the
   runtime pointer (validated with an `/api/health` probe) and, if a daemon is already
   serving, prints where it's running and exits instead of starting a second one - across
@@ -785,7 +796,7 @@ First public, open-source release.
   project-lookup checks in the daemon's routes were factored into small shared helpers
   (identical responses, less boilerplate).
 - **Safer "Free port".** Freeing a process's port now stops a DevWebUI-managed holder
-  cleanly and, for *external* processes, reports the owner (PID + name) and asks for
+  cleanly and, for _external_ processes, reports the owner (PID + name) and asks for
   explicit confirmation before killing only those PIDs - instead of blindly killing
   whatever held the port.
 - **Log backpressure.** The daemon coalesces child output into batched SSE `log` events
@@ -804,6 +815,7 @@ First public, open-source release.
   filters open in a focused modal.
 
 ### Fixed
+
 - **CPU/memory now reflect the whole server, not its shell wrapper.** Managed
   processes are spawned with `shell: true`, so the pid we hold is the OS shell
   (cmd.exe on Windows), not the real Node/Bun server - which lives in a child. The
@@ -814,6 +826,7 @@ First public, open-source release.
   by `tests/metrics.test.ts`.
 
 ### Internal
+
 - **End-to-end type checking** - `bun run typecheck` runs `vue-tsc` over the web app
   and `tsc` over the server (previously only the web build was type-checked).
 - **Biome** for linting + formatting (`bun run lint` / `bun run format`), tuned to the

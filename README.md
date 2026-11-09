@@ -114,8 +114,8 @@ One small file per repo lists the servers to run. Drop it in the repo root and c
 {
   "name": "Connections",
   "processes": [
-    { "id": "main", "name": "Main SPA",  "command": "bun run dev:main", "autostart": true },
-    { "id": "pay",  "name": "Pay plane", "command": "bun run dev:pay",   "port": 4020 }
+    { "id": "main", "name": "Main SPA", "command": "bun run dev:main", "autostart": true },
+    { "id": "pay", "name": "Pay plane", "command": "bun run dev:pay", "port": 4020 }
   ]
 }
 ```
@@ -181,7 +181,7 @@ credential to send, so with the flag on, dev pages cannot connect and the browse
   automatically, so nothing needs configuring; a process that cannot read your data dir is refused.
   The secret is only ever sent to a loopback address, even when `DEVWEBUI_URL` points elsewhere.
 - **Pairing a browser.** A browser cannot read that file, so the GUI shows a pairing screen. Click
-  *Get a pairing code*, then type the 6-digit code the daemon prints (or that
+  _Get a pairing code_, then type the 6-digit code the daemon prints (or that
   `devwebui pairing codes` lists). The browser keeps its own key in the GUI origin's local storage
   and sends it as a header, never as a cookie: browsers share cookies across every localhost port,
   so a cookie would reach the dev servers you open from the dashboard. List paired browsers with
@@ -189,7 +189,7 @@ credential to send, so with the flag on, dev pages cannot connect and the browse
   Codes expire after 5 minutes. Ten wrong guesses (from anyone) lock pairing for 15 minutes, so a
   misbehaving local process can hold pairing shut for that long; the CLI and MCP are unaffected.
 
-The tray's own restart/quit carry its session token and keep working. *Stop all processes* in the
+The tray's own restart/quit carry its session token and keep working. _Stop all processes_ in the
 native tray and the `stopAll` action of `DevWebUI-Tray.ps1` do not send a credential yet, so both
 are refused while enforcement is on; use `devwebui stop-all` instead.
 

@@ -25,7 +25,7 @@ function arm() {
   const hadFocus = !!button.value?.$el.contains(document.activeElement);
   armed.value = true;
   // Mounting the tooltip re-mounts the button, which drops focus; hand it back to the new element.
-  if (hadFocus) nextTick(() => button.value?.$el.focus());
+  if (hadFocus) void nextTick().then(() => button.value?.$el.focus());
 }
 </script>
 

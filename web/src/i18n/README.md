@@ -21,7 +21,7 @@ src/i18n/
 ```ts
 import { useI18n } from "vue-i18n";
 const { t } = useI18n({ useScope: "global" });
-t("filters.title");                      // "Sort & filter"
+t("filters.title"); // "Sort & filter"
 t("header.notificationsCount", { count }); // "Notifications (3)"
 ```
 

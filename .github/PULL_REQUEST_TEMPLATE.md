@@ -2,8 +2,8 @@
 
 ## What this does
 
-
 ## Checklist
+
 - [ ] `bun run lint` is clean
 - [ ] `bun run typecheck` is clean
 - [ ] `bun run test` passes

@@ -29,7 +29,8 @@ function arm() {
   const hadFocus = !!wrapper.value?.contains(document.activeElement);
   armed.value = true;
   // Mounting the tooltip re-mounts the trigger, which drops focus; hand it back to the new element.
-  if (hadFocus) nextTick(() => (wrapper.value?.firstElementChild as HTMLElement | null)?.focus());
+  if (hadFocus)
+    void nextTick().then(() => (wrapper.value?.firstElementChild as HTMLElement | null)?.focus());
 }
 </script>
 
