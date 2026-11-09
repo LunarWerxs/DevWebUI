@@ -7,6 +7,8 @@
 // candidates; whether one is a real file is the daemon's call (POST /api/open-in-editor
 // checks the disk), so a false positive costs a "file not found" toast, never a launch.
 
+import { drivePathFromUrlPath } from "./file-url";
+
 /** One file location found in a log line. */
 export interface SourceFrame {
   /** The path as logged, with a `file://` URL prefix undone. May be relative to the process cwd. */
@@ -72,7 +74,7 @@ export function frameFilePath(raw: string): string {
     /* a stray % in the URL: keep it as logged */
   }
   // `file:///C:/x` leaves `/C:/x`; the drive form must lose that leading slash.
-  return /^\/[A-Za-z]:[\\/]/.test(p) ? p.slice(1) : p;
+  return drivePathFromUrlPath(p);
 }
 
 /** Every source location in `text`, in order of appearance, with no two spans overlapping. */

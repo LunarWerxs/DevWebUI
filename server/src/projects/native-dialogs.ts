@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import treeKill from "tree-kill";
+import { killTree } from "../process-tree";
 
 // ---------------------------------------------------------------------------
 // Native "Browse…" file picker — the daemon runs locally, so it can pop the
@@ -9,16 +9,6 @@ interface RunOpts {
   timeoutMs?: number; // hard cap so an abandoned dialog can't pin the request forever
   signal?: AbortSignal; // kill the picker when the requesting client disconnects
   maxBytes?: number; // bound captured stdout
-}
-
-/** SIGKILL a child's whole process tree (best-effort). */
-export function killTree(pid: number | undefined): void {
-  if (!pid) return;
-  try {
-    treeKill(pid, "SIGKILL", () => {});
-  } catch {
-    /* ignore */
-  }
 }
 
 function run(cmd: string, args: string[], opts: RunOpts = {}): Promise<string> {
@@ -34,7 +24,14 @@ function run(cmd: string, args: string[], opts: RunOpts = {}): Promise<string> {
       done = true;
       clearTimeout(timer);
       if (signal && onAbort) signal.removeEventListener("abort", onAbort);
-      killTree(child?.pid); // close the native dialog if it's still up
+      if (child?.pid) {
+        // close the native dialog if it's still up (best-effort)
+        try {
+          killTree(child.pid);
+        } catch {
+          /* ignore */
+        }
+      }
       resolve(v);
     };
     timer = setTimeout(() => finish(""), timeoutMs);

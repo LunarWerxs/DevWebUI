@@ -129,7 +129,7 @@ process.on("unhandledRejection", (reason) => {
 // auto-update successor (DEVWEBUI_RELAUNCH) are exempt; see skipSingleInstanceGuard
 // for why, and single-instance.test.ts for the regression guard on that exemption.
 if (!skipSingleInstanceGuard()) {
-  const live = await findLiveInstance();
+  const live = await findLiveInstance(1000, 2);
   if (live) {
     console.log(
       `\n  DevWebUI is already running  →  ${live.url}\n  Not starting a second instance.\n`,
@@ -373,20 +373,6 @@ setAutoUpdateHooks({
         detached: plan.detached,
         stdio: "ignore",
         windowsHide: true,
-        env: {
-          ...process.env,
-          DEVWEBUI_RELAUNCH: "1",
-          DEVWEBUI_RELAUNCH_RESUME: resume.join(","),
-          DEVWEBUI_SAFE_MODE: "0",
-          // The port we are actually SERVING on, not the one we preferred. DESIRED_PORT is
-          // daemonPort() (config/env); PORT is where findFreePort actually landed, and they diverge
-          // for every daemon that has ever hopped. The successor derives BOTH its waitForPortFree()
-          // target and its bind from DEVWEBUI_PORT, so without this it waits out the full 8s on a
-          // port its predecessor never held and then binds that port — relocating the app away from
-          // whatever port the user's open tab is talking to. Pinning it here also means a daemon
-          // that hopped once STAYS on the hopped port across updates instead of drifting back.
-          DEVWEBUI_PORT: String(PORT),
-        },
       });
       child.unref();
     } catch (e) {

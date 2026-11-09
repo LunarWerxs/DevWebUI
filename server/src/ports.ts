@@ -1,6 +1,6 @@
 import net from "node:net";
 import { spawn } from "node:child_process";
-import treeKill from "tree-kill";
+import { killTree } from "./process-tree";
 import type { PortOwner } from "../../shared/dto";
 import { collectStdout } from "./spawn-capture";
 
@@ -219,7 +219,7 @@ export function killPids(pids: number[]): Promise<void> {
       (pid) =>
         new Promise<void>((resolve) => {
           try {
-            treeKill(pid, "SIGKILL", () => resolve());
+            killTree(pid, "SIGKILL", () => resolve());
           } catch {
             resolve();
           }

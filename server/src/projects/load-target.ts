@@ -4,6 +4,7 @@ import path from "node:path";
 import { writeJsonAtomic } from "../atomic-write";
 import { detectProject, type Detection } from "../detect";
 import { DevWebUIFileSchema } from "../schema";
+import { drivePathFromUrlPath } from "../../../shared/file-url";
 
 // ---------------------------------------------------------------------------
 // Resolve a user-supplied path (pasted or dropped) to an absolute .devwebui
@@ -79,8 +80,7 @@ export function fileUrlToLocalPath(s: string): string {
   if (!/^file:\/\//i.test(s)) return s;
   try {
     const u = new URL(s);
-    let p = decodeURIComponent(u.pathname);
-    if (/^\/[a-zA-Z]:/.test(p)) p = p.slice(1); // "/D:/x" -> "D:/x"
+    const p = drivePathFromUrlPath(decodeURIComponent(u.pathname)); // "/D:/x" -> "D:/x"
     if (u.host) return `\\\\${u.host}${p.replace(/\//g, "\\")}`; // UNC: \\host\share\...
     return p;
   } catch {

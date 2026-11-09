@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import treeKill from "tree-kill";
+import { killTree } from "../process-tree";
 import { AlertStore, type AlertEvent, type AlertRule, type AlertRuleInput } from "../alerts";
 import { diagnose, type Diagnosis } from "../diagnose";
 import { ErrorRecorder, type ErrorInfo, type ErrorEvent, isErrorActive } from "../errors";
@@ -332,7 +332,7 @@ export abstract class ManagerBase extends EventEmitter {
     this.resolveExitWaiters(e);
     if (pid) {
       try {
-        treeKill(pid, "SIGKILL", () => {});
+        killTree(pid, "SIGKILL", () => {});
       } catch {
         /* ignore */
       }

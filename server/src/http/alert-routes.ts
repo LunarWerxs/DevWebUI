@@ -10,7 +10,9 @@ import { fail, guard, readBody } from "./core";
 
 const METRICS: AlertMetric[] = ["cpu", "memory"];
 
-const isNonNegativeNumber = (v: unknown): boolean => Number.isFinite(Number(v)) && Number(v) >= 0;
+// A real JSON number only: Number() coercion would let null, false, "" or [] through as 0.
+const isNonNegativeNumber = (v: unknown): boolean =>
+  typeof v === "number" && Number.isFinite(v) && v >= 0;
 
 /** Validate a full rule-creation body; returns the typed input or a 400 Response to return. */
 function parseRuleInput(c: Context, body: unknown): AlertRuleInput | Response {
@@ -21,6 +23,8 @@ function parseRuleInput(c: Context, body: unknown): AlertRuleInput | Response {
   if (!isNonNegativeNumber(b.threshold)) return fail(c, "threshold must be a non-negative number");
   if (b.forMs !== undefined && !isNonNegativeNumber(b.forMs))
     return fail(c, "forMs must be a non-negative number");
+  if (b.enabled !== undefined && typeof b.enabled !== "boolean")
+    return fail(c, "enabled must be a boolean");
   return {
     processId: b.processId,
     metric: b.metric as AlertMetric,
@@ -47,6 +51,7 @@ function rulePatchError(b: Record<string, unknown>): string | null {
     return "threshold must be a non-negative number";
   if (b.forMs !== undefined && !isNonNegativeNumber(b.forMs))
     return "forMs must be a non-negative number";
+  if (b.enabled !== undefined && typeof b.enabled !== "boolean") return "enabled must be a boolean";
   return null;
 }
 

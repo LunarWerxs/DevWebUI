@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { killTree } from "./native-dialogs";
+import { killTree } from "../process-tree";
 import { fileUrlToLocalPath } from "./load-target";
 
 // ---------------------------------------------------------------------------
@@ -52,7 +52,14 @@ function execGit(
     };
     const fail = (e: Error) => settle(() => reject(e));
     const stop = (msg: string) => {
-      killTree(child?.pid); // kill git AND its transport children (git-remote-https, etc.)
+      // kill git AND its transport children (git-remote-https, etc.)
+      if (child?.pid) {
+        try {
+          killTree(child.pid);
+        } catch {
+          /* ignore */
+        }
+      }
       fail(new Error(msg));
     };
     timer = setTimeout(

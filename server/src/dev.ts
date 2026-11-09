@@ -15,7 +15,7 @@ import { findLiveInstance } from "./instance";
 // One instance at a time: if a DevWebUI is already running (e.g. the tray app, or
 // another `bun run dev`), refuse rather than spinning up a second daemon that would
 // fight over the runtime pointer. Stop the other one first.
-const running = await findLiveInstance();
+const running = await findLiveInstance(1000, 2);
 if (running) {
   console.log(
     `\n[devwebui] already running → ${running.url}\n[devwebui] stop it before running dev (one instance at a time).\n`,

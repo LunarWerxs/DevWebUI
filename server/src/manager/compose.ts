@@ -435,8 +435,12 @@ async function listComposeServices(
  */
 async function upWantedServices(
   ctx: ComposeRun,
+  config: ComposeConfig,
   before: ComposeService[],
-): Promise<{ wanted: ComposeService[]; started: string[] } | { ok: false; reason: string }> {
+): Promise<
+  | { wanted: ComposeService[]; started: string[] }
+  | { ok: false; reason: string; started?: string[] }
+> {
   const { spec } = ctx;
   const wanted = before.filter(
     (s) => !isIgnored(s) && (!spec.services?.length || spec.services.includes(s.name)),
@@ -446,7 +450,16 @@ async function upWantedServices(
   if (!skip && wanted.length) {
     const names = wanted.map((s) => s.name);
     const up = await ctx.run([...ctx.args, "up", "-d", ...names], ctx.cwd, COMPOSE_UP_TIMEOUT_MS);
-    if (up.code !== 0) return failure("up", up);
+    if (up.code !== 0) {
+      // `up` may start some services before it fails on another: hand back the ones that
+      // are running now but were not before, so a start-and-stop caller can stop them.
+      const now = await listComposeServices(ctx, config);
+      const started =
+        typeof now === "string"
+          ? []
+          : now.filter((s) => s.running && notRunning.includes(s.name)).map((s) => s.name);
+      return { ...failure("up", up), started };
+    }
   }
   return { wanted, started: skip ? [] : notRunning };
 }
@@ -532,7 +545,7 @@ export async function prepareCompose(
 
   const before = await listComposeServices(ctx, config);
   if (typeof before === "string") return { ok: false, reason: before };
-  const plan = await upWantedServices(ctx, before);
+  const plan = await upWantedServices(ctx, config, before);
   if ("reason" in plan) return plan;
 
   // From here on `up` has run: every failure hands back what it started, so a
