@@ -7,9 +7,11 @@ import { collectStdout } from "./spawn-capture";
 export type { PortOwner };
 
 /** Spawn a command, capture stdout, resolve on close (bounded by a short timeout). Port-owner
- *  output (cmdlines) is small, so this caps well below collectStdout's 1 MiB default. */
-const collect = (cmd: string, args: string[], timeoutMs?: number) =>
-  collectStdout(cmd, args, { maxBytes: 1 << 16, ...(timeoutMs ? { timeoutMs } : {}) });
+ *  output (cmdlines) is small, so this caps well below collectStdout's 1 MiB default. A timed-out
+ *  or failed probe is "" here: a partial lsof/ps/tasklist answer is never parsed as complete. */
+const collect = async (cmd: string, args: string[], timeoutMs?: number): Promise<string> =>
+  (await collectStdout(cmd, args, { maxBytes: 1 << 16, ...(timeoutMs ? { timeoutMs } : {}) })) ??
+  "";
 
 /**
  * How long the WINDOWS enrichment probe may take, overriding collectStdout's 5s default.
@@ -69,9 +71,9 @@ export async function portOwners(port: number): Promise<PortOwner[]> {
     // apart for the price of one native process, so the PID — the part a caller acts on — survives
     // a wedged shell. Name is best-effort on top.
     const pids = parseNetstatPids(
-      await collectStdout("netstat", ["-ano", "-p", "TCP"], {
+      (await collectStdout("netstat", ["-ano", "-p", "TCP"], {
         maxBytes: NETSTAT_MAX_BYTES,
-      }),
+      })) ?? "",
       port,
     );
     if (!pids.length) return [];

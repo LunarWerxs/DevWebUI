@@ -337,13 +337,16 @@ async function spawnProcessTree(): Promise<Map<number, number[]>> {
     else map.set(parent, [pid]);
   };
   try {
-    let out: string;
+    // null = timed out or failed: a partial process table would build a wrong tree, so treat it
+    // as no data (single-pid behaviour) rather than parse what happened to arrive.
+    let out: string | null;
     if (process.platform === "win32") {
       const ps = `Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }`;
       out = await collectStdout("powershell", ["-NoProfile", "-Command", ps]);
     } else {
       out = await collectStdout("ps", ["-A", "-o", "pid=,ppid="]);
     }
+    if (out === null) return map;
     for (const line of out.split(/\r?\n/)) {
       const m = line.trim().match(/^(\d+)\s+(\d+)$/);
       if (m) add(Number(m[2]), Number(m[1])); // (ppid → pid)

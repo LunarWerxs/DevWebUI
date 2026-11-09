@@ -120,7 +120,8 @@ async function runningExecutables(platform: NodeJS.Platform): Promise<string[]> 
           { timeoutMs: 8000 },
         )
       : await collectStdout("ps", ["x", "-o", "comm="]);
-  return out.split(/\r?\n/);
+  // null = the probe timed out or failed; no list beats a partial one.
+  return (out ?? "").split(/\r?\n/);
 }
 
 /** Windows only launches a real `.exe` detached (see detached-spawn.mjs); find one for `name`. */
