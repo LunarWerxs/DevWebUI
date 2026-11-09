@@ -114,7 +114,7 @@ export function commandSummary(args, result, where = "") {
 
 /** Lines that name a failure, so the excerpt below can prefer them over surrounding noise. */
 const ERRORISH =
-  /\berror\b|\bfailed\b|\bfailure\b|cannot |can't |could not |not found|unable to|unresolved|does the file exist|ENOENT|EACCES|✗|✘/i;
+  /\berror\b|\bfailed\b|\bfailure\b|cannot |can't |could not |not found|unable to|unresolved|does the file exist|ENOENT|EACCES|EPERM|EBUSY|not permitted|out of memory|✗|✘/i;
 const STEP_ERROR_LINES = 4;
 const STEP_ERROR_CHARS = 400;
 
@@ -136,7 +136,9 @@ export function stepFailureMessage(args, result) {
   const lines = `${result.stderr}\n${result.stdout}`
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line !== "" && !line.startsWith("$ "));
+    .filter((line) => line !== "" && !line.startsWith("$ "))
+    // A zero-count summary ("i18n check: 0 error(s)") matches ERRORISH but names no failure.
+    .filter((line) => !/\b0 (errors?|failures?|failed)\b|\b0 error\(s\)/i.test(line));
   const errorish = lines.filter((line) => ERRORISH.test(line));
   const picked = (errorish.length ? errorish : lines).slice(0, STEP_ERROR_LINES);
   const msg = picked.join(" · ");
