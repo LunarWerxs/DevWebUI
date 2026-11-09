@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import treeKill from "tree-kill";
+import { killTree } from "../process-tree";
 import { freePort, isPortListening, killPids, portOwners } from "../ports";
 import { type AnswerRule, answerText, PromptAnswerer } from "../prompt-answers";
 import { effectiveRuntime, withRuntime } from "../runtime";
@@ -93,9 +93,13 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
     if (waitPort) {
       e.pendingStart = true;
       e.waitingOnPort = waitPort;
+      // A stop-then-start during the wait re-sets pendingStart on this same entry, so the
+      // generation tells this wait apart from the run that replaced it.
+      const generation = e.generation;
       this.setStatus(e, "waiting");
       void this.waitForPort(waitPort).then((ok) => {
-        if (!e.pendingStart || this.entries.get(e.def.id) !== e) return;
+        if (!e.pendingStart || e.generation !== generation || this.entries.get(e.def.id) !== e)
+          return;
         e.waitingOnPort = null;
         if (!ok) {
           e.pendingStart = false;
@@ -213,8 +217,10 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
     // and spawn in the callback only if we weren't cancelled or replaced meanwhile.
     if (this.freePortOnStart && e.def.port) {
       e.pendingStart = true;
+      const generation = e.generation; // same reason as the port wait: see startAfterCompose
       void this.freePortIfBusy(e.def.port).then(() => {
-        if (!e.pendingStart || this.entries.get(e.def.id) !== e) return;
+        if (!e.pendingStart || e.generation !== generation || this.entries.get(e.def.id) !== e)
+          return;
         e.pendingStart = false;
         this.spawnEntry(e);
       });
@@ -363,7 +369,7 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
         this.clearStopTimer(e);
         this.addLog(e, "stderr", `[devwebui] ${reason}; sent SIGKILL.`);
         try {
-          treeKill(pid, "SIGKILL", (err) => {
+          killTree(pid, "SIGKILL", (err) => {
             if (e.child !== child || e.pid !== pid) return;
             if (err) {
               this.addLog(
@@ -399,7 +405,7 @@ export class ManagerWithLifecycle extends ManagerWithMonitoring {
       // spawned in its own process group plus a console-ctrl-event sender; until that
       // exists, forced is both the honest and the faster behavior.
       try {
-        treeKill(pid, "SIGTERM", (err) => {
+        killTree(pid, "SIGTERM", (err) => {
           if (err) forceKill(`SIGTERM failed for process ${pid}: ${err.message}`);
         });
       } catch (err) {

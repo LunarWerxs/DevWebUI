@@ -133,7 +133,17 @@ export class ManagerWithProjects extends ManagerWithLifecycle {
       const execChanged = execDefinitionChanged(e.def, def);
       e.def = def;
       if (execChanged && e.child) this.applyChangedExec(e, def.id, fromWatch);
-      else this.emitStatus(e);
+      else if (execChanged && fromWatch && (e.pendingStart || this.queuedStarts.has(def.id))) {
+        // A start still queued or waiting would spawn the NEW command with no user action:
+        // cancel it, and leave the new definition for an explicit start.
+        void this.stop(def.id);
+        this.addLog(
+          e,
+          "stderr",
+          "[devwebui] this process's .devwebui entry changed on disk while its start was pending; the start was cancelled. Start it to run the new command.",
+        );
+        this.emitStatus(e);
+      } else this.emitStatus(e);
     }
     return newAutostartIds;
   }

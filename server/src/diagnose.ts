@@ -134,6 +134,11 @@ function parseRunScript(command: string): { manager: string; script: string } | 
   // but a bare `npm <script>` is often a real npm subcommand (install, ci, …) — only
   // trust the bare form for the managers whose CLI treats it as a script alias.
   if (/^\s*npm\s+(?!run\b)/i.test(command) && !/^\s*npm\s+run\b/i.test(command)) return null;
+  // A flag is never a script name (`bun --watch index.ts` matches with script "--watch").
+  if (script.startsWith("-")) return null;
+  // A bare `bun index.ts` runs a source file, not a script alias: it is checked as a file below.
+  const isBareRun = !/^\s*\S+\s+run\b/i.test(command);
+  if (isBareRun && /\.(?:js|cjs|mjs|ts|cts|mts|sh|ps1|bat|cmd|exe)$/i.test(script)) return null;
   return { manager: manager.toLowerCase(), script };
 }
 

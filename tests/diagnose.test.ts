@@ -269,6 +269,24 @@ test("diagnose: missing package.json entirely is reported", async () => {
   });
 });
 
+test("diagnose: a bare `bun <file>` is checked as a file, not as a package.json script", async () => {
+  await withTempDir(async (dir) => {
+    await writeFile(path.join(dir, "index.ts"), "export {};\n");
+    await writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name: "app", scripts: { dev: "vite" } }),
+    );
+    const result = await diagnose({
+      def: def({ command: "bun index.ts", cwd: dir }),
+      status: "crashed",
+      exitCode: 1,
+      errors: [],
+    });
+    expect(result.rootCause).not.toContain("doesn't resolve");
+    expect(result.evidence.some((e) => e.includes('"index.ts" script'))).toBe(false);
+  });
+});
+
 test("diagnose: a script that DOES exist doesn't trip the script-check heuristic", async () => {
   await withTempDir(async (dir) => {
     await writeFile(

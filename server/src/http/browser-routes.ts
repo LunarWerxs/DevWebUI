@@ -55,16 +55,37 @@ async function handleQuery(c: Context, manager: Manager, bridge: BrowserBridge) 
   return guard(c, async () => c.json(await bridge.request(kind, { ...opts, timeoutMs })));
 }
 
+/** The request body as text, read chunk by chunk and stopped at MAX_REPLY_BYTES: null when it is
+ *  larger. Counts bytes, not characters, so multibyte JSON is capped at its real size. */
+async function readCappedText(c: Context): Promise<string | null> {
+  const reader = c.req.raw.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_REPLY_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
 async function handleReply(c: Context, bridge: BrowserBridge) {
-  const text = await c.req.text();
-  if (text.length > MAX_REPLY_BYTES) return fail(c, "answer too large", 413);
+  const text = await readCappedText(c);
+  if (text === null) return fail(c, "answer too large", 413);
   let b: Record<string, unknown> | null = null;
   try {
     b = JSON.parse(text);
   } catch {
     /* reported below */
   }
-  if (!b || typeof b !== "object") return fail(c, "answer is not a JSON object");
+  if (!b || typeof b !== "object" || Array.isArray(b))
+    return fail(c, "answer is not a JSON object");
   const ok = bridge.reply(String(b.requestId ?? ""), String(b.tabId ?? ""), {
     result: b.result,
     error: typeof b.error === "string" ? b.error : undefined,
