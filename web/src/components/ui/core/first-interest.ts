@@ -137,8 +137,10 @@ type Listeners = Record<string, (event: any) => void>
  * the chats under it): what it shows lives outside the swap, and counting it left such a row's menus and Tip
  * never armed, so no gesture opened its menus (2026-10-10).
  */
-function holdsOpen(standIn: Element | null): boolean {
-  return !!standIn?.querySelector('[aria-haspopup][aria-expanded="true"], [data-slot$="-trigger"][data-state="open"]')
+const OPEN_TRIGGER = '[aria-haspopup][aria-expanded="true"], [data-slot$="-trigger"][data-state="open"]'
+// The stand-in can be the open trigger itself, so it is checked as well as its descendants.
+export function holdsOpen(standIn: Element | null): boolean {
+  return !!standIn && (standIn.matches(OPEN_TRIGGER) || !!standIn.querySelector(OPEN_TRIGGER))
 }
 type Fire = (event: Event, from: HTMLElement | null, menu: MouseEvent | null) => void
 
