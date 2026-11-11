@@ -7,7 +7,7 @@ import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { $ } from "bun";
 import { createUpdater } from "../../src/updater-engine.mjs";
-import { cleanScratchDirs, cloneRepo, failsOnCallsCmd, landHotfix, loggingCmd, patchByHand, REAL_GIT_TEST_MS, remoteRepo, scratchDir, updaterFor } from "./updater-engine-fixture.ts";
+import { cleanScratchDirs, cloneRepo, failsOnCallsCmd, landHotfix, loggingCmd, patchByHand, REAL_GIT_TEST_MS, remoteRepo, runProcess, scratchDir, updaterFor } from "./updater-engine-fixture.ts";
 
 // 30s: the hook deletes every scratch git repo the file made (I/O time, not assertion time); see the fixture.
 afterEach(cleanScratchDirs, 30_000);
@@ -92,13 +92,7 @@ test("an edit written after the check stops the update before the advance, and i
     run: async (args, { cwd, env }) => {
       // The edit lands between the check and the staging, as a chat still writing would.
       if (args[0] === "git" && args.includes("add")) writeFileSync(join(local, "marker.txt"), "typed after the check\n");
-      const p = Bun.spawn(args, { cwd, env, stdout: "pipe", stderr: "pipe", windowsHide: true });
-      const [stdout, stderr, code] = await Promise.all([
-        new Response(p.stdout).text(),
-        new Response(p.stderr).text(),
-        p.exited,
-      ]);
-      return { code, stdout, stderr, timedOut: false };
+      return runProcess(args, { cwd, env });
     },
   });
 

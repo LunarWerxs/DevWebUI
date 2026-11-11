@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { $ } from "bun";
 import type { UpdateApplyError } from "../../src/updater-engine.mjs";
 import { createUpdater } from "../../src/updater-engine.mjs";
-import { advanceRemote, cleanScratchDirs, cloneRepo, cwdCmd, failableCmd, failsOnCallsCmd, landFile, loggingCmd, REAL_GIT_TEST_MS, remoteRepo, scratchDir, spawnRunner, updaterFor } from "./updater-engine-fixture.ts";
+import { advanceRemote, cleanScratchDirs, cloneRepo, cwdCmd, failableCmd, failsOnCallsCmd, landFile, loggingCmd, REAL_GIT_TEST_MS, remoteRepo, runProcess, scratchDir, spawnRunner, updaterFor } from "./updater-engine-fixture.ts";
 
 // 30s: the hook deletes every scratch git repo the file made (I/O time, not assertion time); see the fixture.
 afterEach(cleanScratchDirs, 30_000);
@@ -67,13 +67,7 @@ test("run: an app's runner carries every git, install and build step, and its an
     buildCmd,
     run: async (args, { cwd, env }) => {
       calls.push({ args, cwd, prompt: env.GIT_TERMINAL_PROMPT });
-      const p = Bun.spawn(args, { cwd, env, stdout: "pipe", stderr: "pipe", windowsHide: true });
-      const [stdout, stderr, code] = await Promise.all([
-        new Response(p.stdout).text(),
-        new Response(p.stderr).text(),
-        p.exited,
-      ]);
-      return { code, stdout, stderr, timedOut: false };
+      return runProcess(args, { cwd, env });
     },
   });
 

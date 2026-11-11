@@ -131,9 +131,6 @@ export default {
     unsupported: "Desktop shortcuts are only available on Windows",
     failed: "Could not create the shortcut: {detail}",
   },
-  overlay: {
-    close: "Close",
-  },
   focus: {
     openDashboard: "Dashboard",
     loading: "Loading…",

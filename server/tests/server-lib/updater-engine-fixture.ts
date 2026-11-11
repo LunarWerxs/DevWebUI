@@ -57,6 +57,13 @@ export function spawnRunner(appRoot: string) {
   };
 }
 
+// The real spawn for a test's own `run` hook: the hook records or edits, then hands the command here.
+export async function runProcess(args: string[], { cwd, env }: { cwd: string; env: Record<string, string | undefined> }) {
+  const p = Bun.spawn(args, { cwd, env, stdout: "pipe", stderr: "pipe", windowsHide: true });
+  const [stdout, stderr, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+  return { code, stdout, stderr, timedOut: false };
+}
+
 // The backstop for a test file that registers no afterEach: whatever is left goes when the process exits.
 process.on("exit", () => {
   if (process.env.UE_SPAWN_LOG) appendFileSync(process.env.UE_SPAWN_LOG, `${spawns}\n`);

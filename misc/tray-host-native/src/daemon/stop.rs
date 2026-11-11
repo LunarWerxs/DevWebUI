@@ -1,7 +1,7 @@
 //! Stopping the daemon: the graceful request, then the kill of whatever still holds its ports.
 
-use super::http::{port_of, request_shutdown};
-use super::probe::live_url;
+use super::http::{port_of, request_shutdown, split_url};
+use super::probe::{health_ok, live_url};
 use super::{CREATE_NO_WINDOW, PROBE_POLL};
 use crate::config::Config;
 use std::os::windows::process::CommandExt;
@@ -84,7 +84,7 @@ pub fn wait_port_free(port: u16, secs: u64) -> bool {
 pub fn stop(cfg: &Config, token: &str, force_kill: bool, skip_graceful: bool) {
     let url = live_url(cfg, PROBE_POLL);
     if token.is_empty() {
-        kill_port_owners(cfg, url.as_deref().unwrap_or(""));
+        kill_port_owners(cfg, url.as_deref());
         wait_gone(cfg, 25, 200);
         return;
     }
@@ -96,7 +96,7 @@ pub fn stop(cfg: &Config, token: &str, force_kill: bool, skip_graceful: bool) {
     if graceful && wait_gone(cfg, 40, 250) {
         return;
     }
-    kill_port_owners(cfg, url);
+    kill_port_owners(cfg, Some(url));
     wait_gone(cfg, 20, 200);
 }
 
@@ -112,19 +112,62 @@ fn wait_gone(cfg: &Config, polls: u32, nap_ms: u64) -> bool {
     false
 }
 
-fn kill_port_owners(cfg: &Config, url: &str) {
-    let mut ports = vec![cfg.port];
-    if let Some(p) = port_of(url) {
-        if p > 0 && !ports.contains(&p) {
-            ports.push(p);
-        }
+/// The ports a stop may force-kill, decided from the live URL the probe just confirmed.
+///
+/// Only that URL's port qualifies. `live_url` returns a URL only after `/api/health` names this
+/// service, so its port is ours. The configured port is never a target on its own: a daemon that
+/// hopped off it leaves that port to whatever else holds it, and with no confirmed daemon there is
+/// no target at all.
+pub fn kill_ports(confirmed_url: Option<&str>) -> Vec<u16> {
+    match confirmed_url.and_then(port_of) {
+        Some(p) if p > 0 => vec![p],
+        _ => Vec::new(),
     }
-    for port in ports {
-        if port == 0 {
+}
+
+fn kill_port_owners(cfg: &Config, url: Option<&str>) {
+    let host = url
+        .and_then(split_url)
+        .map(|(h, _)| h)
+        .unwrap_or_else(|| cfg.url_host.clone());
+    for port in kill_ports(url) {
+        // Re-confirm just before the kill: the probe ran a moment ago, and the port may have changed
+        // hands since. Nothing is killed on a port that no longer answers as this service.
+        if !health_ok(&host, port, &cfg.service_name, PROBE_POLL) {
             continue;
         }
         for pid in port_pids(port) {
             taskkill(pid);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::kill_ports;
+
+    // Old rule, for reference: always the configured port (7787), plus the live URL's port. These
+    // tests assert the new rule, so they fail on the old one: it killed 7787 with no daemon found,
+    // and killed 7787 next to a hopped daemon's port.
+
+    #[test]
+    fn no_confirmed_daemon_kills_nothing() {
+        assert!(kill_ports(None).is_empty());
+    }
+
+    #[test]
+    fn daemon_on_preferred_port_kills_only_that_port() {
+        assert_eq!(kill_ports(Some("http://127.0.0.1:7787")), vec![7787]);
+    }
+
+    #[test]
+    fn hopped_daemon_leaves_the_preferred_port_alone() {
+        assert_eq!(kill_ports(Some("http://127.0.0.1:7790")), vec![7790]);
+    }
+
+    #[test]
+    fn url_without_a_usable_port_kills_nothing() {
+        assert!(kill_ports(Some("http://127.0.0.1")).is_empty());
+        assert!(kill_ports(Some("http://127.0.0.1:0")).is_empty());
     }
 }

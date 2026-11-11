@@ -57,7 +57,6 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     dir: step.dir ?? "",
     cwd: step.dir ? join(appRoot, step.dir) : appRoot,
   }));
-  const anyChange = (paths) => paths.length > 0;
 
   const { runCommand, git, gitText } = createRunner({ appRoot, run });
   const remotes = createRemoteReader({ appRoot, git, gitText, updateRepoEnvVar, cooldownSeconds: cooldownDaysN * DAY_SECONDS });
@@ -200,7 +199,7 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
       await rollbackAfterFailedUpdate(err, before, output, landed, due);
     }
     // An unknown change set restarts: the app's own code may be among what changed.
-    const restartRequired = changed === null ? true : await (restartWhen ?? anyChange)(changed);
+    const restartRequired = changed === null ? true : await (restartWhen ?? ((paths) => paths.length > 0))(changed);
     return {
       ok: true,
       message: restartRequired

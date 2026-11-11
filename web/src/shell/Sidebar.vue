@@ -11,11 +11,12 @@ import {
   DialogTitle,
 } from "reka-ui";
 import { X } from "@lucide/vue";
+import * as sheetSkin from "@ui-skin/sheet";
 import { cn } from "../lib/utils";
-import { useLabels } from "../ui-skin/overlay-labels";
 import { type PushPanelSide, DEFAULT_PANEL_WIDTH, maxOpenPushPanelWidth } from "./usePushPanel";
 
-const labels = useLabels();
+// The close button's words come from this app's skin, as the sheet's do (the app's language where it has one).
+const labels = sheetSkin.useLabels();
 
 /**
  * Sidebar, the ONE slide-in panel every LunarWerx app uses (settings, drawers,

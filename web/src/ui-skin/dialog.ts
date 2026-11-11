@@ -2,7 +2,12 @@
 export { XIcon as CloseIcon } from "@lucide/vue"
 
 export const content = "bg-popover text-popover-foreground ring-foreground/10 text-xs/relaxed"
+export const title = "text-sm"
 export const description = "text-muted-foreground *:[a]:hover:text-foreground text-xs/relaxed"
 export const scrollContent = "bg-background"
 export const scrollClose = "hover:bg-secondary"
-export { title, useLabels } from "./overlay-labels"
+
+/** The words the dialog says, in this app's language. */
+export function useLabels() {
+  return { close: "Close" }
+}

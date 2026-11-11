@@ -145,7 +145,9 @@ $TrayHostServerControl = {
           }
         }
       }
-      $ports = @($port); $pp = Get-PortFromUrl $u; if ($pp -gt 0) { $ports += $pp }
+      # Only the CONFIRMED live URL's port (Get-RunningUrl answers only for this service). Never the
+      # preferred port on its own: a hopped daemon leaves it to whatever else holds it.
+      $ports = @(); $pp = Get-PortFromUrl $u; if ($pp -gt 0) { $ports += $pp }
       foreach ($pp in ($ports | Select-Object -Unique)) {
         foreach ($procId in (Get-PortPids $pp)) { if ($procId -gt 0) { & taskkill /PID $procId /T /F 2>$null | Out-Null } }
       }
@@ -155,7 +157,8 @@ $TrayHostServerControl = {
       }
     } else {
       # --- Force-kill flavor (no token) ---
-      $ports = @($port)
+      # Only a CONFIRMED live URL's port; with no confirmed daemon nothing is killed.
+      $ports = @()
       if ($u) { $pp = Get-PortFromUrl $u; if ($pp -gt 0) { $ports += $pp } }
       foreach ($pp in ($ports | Select-Object -Unique)) {
         foreach ($procId in (Get-PortPids $pp)) { if ($procId -gt 0) { & taskkill /PID $procId /T /F 2>$null | Out-Null } }
