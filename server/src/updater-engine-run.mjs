@@ -153,6 +153,15 @@ export async function runStep(runCommand, args, timeoutMs, output, cwd, where = 
   if (!result.ok) throw new Error(stepFailureMessage(args, result));
 }
 
+/** The steps a rollback reruns after `failed` (a step of `due`, which the update ran up to and including it). The steps
+ *  after it never ran, so they changed nothing and are not rerun. A failed step marked `untouchedOnFailure` left what it
+ *  writes as it was (a build that leaves dist as it was on failure), so it is not rerun either. */
+export function rerunAfterFailure(due, failed) {
+  const at = due.indexOf(failed);
+  const ran = at < 0 ? due : due.slice(0, at + 1);
+  return ran.filter((step) => step !== failed || !step.untouchedOnFailure);
+}
+
 /** The install and build steps in order, each recorded; they run one after another, since a build reads what the
  *  install wrote. Stops at the first that fails and answers it ({ step, result }), or null when every one passed. */
 export async function runDueSteps(runCommand, due, output) {

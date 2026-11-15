@@ -17,7 +17,10 @@
  *                     { cmd, dir?, when? }: `dir` is a folder under appRoot (default: the root), and `when(changed)` says
  *                     whether the step is due for the paths the update changed (a step with no `when` always is). Only the
  *                     due steps run, and a rollback reruns those same ones (2026-10-21: an app whose install and build read
- *                     only part of its checkout does not run them for a change they do not read).
+ *                     only part of its checkout does not run them for a change they do not read). A step may set
+ *                     `untouchedOnFailure: true` when a failure leaves what it writes as it was (a build that swaps its
+ *                     output in only on success): the rollback then does not rerun that failed step. A rollback reruns the
+ *                     due steps up to and including the failed one only; the steps after it never ran.
  *   restartWhen       optional; (changed) => boolean, whether the update needs the app restarted. Default: any path changed.
  *                     The paths are git's own (`git diff --name-only`, renames split): a file moved out of a path counts.
  *   asideDir          optional; where Windows moves a running program the update replaces (updater-engine-aside.mjs)
@@ -39,6 +42,7 @@ import {
   CHECK_TIMEOUT_MS,
   commandSummary,
   createRunner,
+  rerunAfterFailure,
   runDueSteps,
   runStep,
   stepFailureMessage,
@@ -54,6 +58,7 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
   const plan = (steps ?? [{ cmd: installCmd }, { cmd: buildCmd }]).map((step) => ({
     cmd: step.cmd,
     when: step.when ?? null,
+    untouchedOnFailure: step.untouchedOnFailure === true,
     dir: step.dir ?? "",
     cwd: step.dir ? join(appRoot, step.dir) : appRoot,
   }));
@@ -196,7 +201,7 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     const failed = await runDueSteps(runCommand, due, output);
     if (failed) {
       const err = new Error(stepFailureMessage(failed.step.cmd, failed.result));
-      await rollbackAfterFailedUpdate(err, before, output, landed, due);
+      await rollbackAfterFailedUpdate(err, before, output, landed, rerunAfterFailure(due, failed.step));
     }
     // An unknown change set restarts: the app's own code may be among what changed.
     const restartRequired = changed === null ? true : await (restartWhen ?? ((paths) => paths.length > 0))(changed);

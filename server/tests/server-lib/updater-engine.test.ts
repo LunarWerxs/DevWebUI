@@ -405,3 +405,64 @@ test("a failed step rolls back, and the rollback reruns only the steps this upda
   // No install: the update did not make it due, so the rollback does not run it either.
   expect(readFileSync(log, "utf8").trim().split("\n")).toEqual(["build", "build"]);
 }, REAL_GIT_TEST_MS);
+
+/** Writes a fail flag into `dir` and answers its path: the step fails on every call while the flag exists. */
+function flagOn(dir: string, name: string): string {
+  const path = join(dir, name);
+  writeFileSync(path, "1");
+  return path;
+}
+
+/** A failed build the rollback must not rerun: the update made both steps due, the build's failure leaves dist as it was,
+ *  so its flag (`untouchedOnFailure`) says a rerun has nothing to put right. */
+async function untouchedFailureUpdate(steps: (log: string, scratch: string) => Array<Record<string, unknown>>) {
+  const remote = await remoteRepo();
+  const local = await cloneRepo(remote);
+  await advanceRemote(remote, "0.2.0");
+  const scratch = scratchDir("ue-scratch-");
+  const log = join(scratch, "steps.log");
+  const updater = createUpdater({
+    run: spawnRunner(local),
+    appRoot: local,
+    serviceName: "testsvc",
+    appLabel: "TestSvc",
+    updateRepoEnvVar: "UE_TEST_UPDATE_REPO_UNUSED",
+    steps: steps(log, scratch) as never,
+  });
+  const message = await updater.applyUpdate().then(
+    () => "applyUpdate unexpectedly succeeded",
+    (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  );
+  const ran = existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [];
+  return { message, ran };
+}
+
+test("a failed step marked untouchedOnFailure is not rerun by the rollback, and the rollback says it restored the version", async () => {
+  const { message, ran } = await untouchedFailureUpdate((log, scratch) => [
+    { cmd: loggingCmd(log, "install") },
+    { cmd: failableCmd(log, "build", flagOn(scratch, "FAIL_BUILD")), untouchedOnFailure: true },
+  ]);
+  expect(message).toContain("boom; rolled back to the previous version");
+  // Forward: install, then the failed build. Rollback: install again (it ran and changed node_modules), not the build.
+  expect(ran).toEqual(["install", "build", "install"]);
+});
+
+test("the rollback does not run steps after the failed one: they never ran", async () => {
+  const { message, ran } = await untouchedFailureUpdate((log, scratch) => [
+    { cmd: loggingCmd(log, "install") },
+    { cmd: failsOnCallsCmd(log, "build", join(scratch, "build.count"), [1]) },
+    { cmd: loggingCmd(log, "after") },
+  ]);
+  expect(message).toContain("boom; rolled back to the previous version");
+  // Forward: install, the failed build; "after" never ran. Rollback: install and build, no "after".
+  expect(ran).toEqual(["install", "build", "install", "build"]);
+});
+
+test("an unmarked failed install is rerun by the rollback", async () => {
+  const { message, ran } = await untouchedFailureUpdate((log, scratch) => [
+    { cmd: failableCmd(log, "install", flagOn(scratch, "FAIL_INSTALL")) },
+    { cmd: loggingCmd(log, "build") },
+  ]);
+  expect(message).toContain("code was rolled back, but reinstalling/rebuilding it failed");
+  expect(ran).toEqual(["install", "install"]);
+});

@@ -29,7 +29,11 @@ export interface DueStep {
   cmd: string[];
   cwd: string;
   dir: string;
+  untouchedOnFailure: boolean;
 }
+
+/** The steps a rollback reruns after `failed`: the due steps up to and including it, minus it when it is untouchedOnFailure. */
+export function rerunAfterFailure(due: DueStep[], failed: DueStep): DueStep[];
 
 export const CHECK_TIMEOUT_MS: number;
 export const APPLY_TIMEOUT_MS: number;

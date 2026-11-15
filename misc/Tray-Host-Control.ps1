@@ -33,7 +33,7 @@ $TrayHostServerControl = {
     if (-not $u) { return $false }
     try {
       $r = Invoke-RestMethod -Uri "$u/api/health" -TimeoutSec $timeoutSec -ErrorAction Stop
-      if ($service) { return ($r.ok -eq $true -and $r.service -eq $service) }
+      if ($service) { return ($r.ok -eq $true -and $r.service -ceq $service) }
       return [bool]$r.ok
     } catch { return $false }
   }

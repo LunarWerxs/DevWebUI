@@ -55,6 +55,9 @@ export interface UpdaterStep {
   cmd: string[];
   dir?: string;
   when?: (changed: string[]) => boolean;
+  /** A failure leaves what this step writes as it was (a build that swaps its output in only on success): the rollback
+   *  does not rerun it. Not set on an install, which can leave its folder half-written. */
+  untouchedOnFailure?: boolean;
 }
 
 /** What an UpdaterOptions `run` answers for one command. */

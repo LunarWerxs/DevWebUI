@@ -166,7 +166,9 @@ export async function handleRpc(msg, ctx, signal) {
 
 /** Process one already-sliced line; return the JSON string to write (or null for a notification).
  *  `signal` is optional and passed straight through to `handleRpc`; callers that never do
- *  cancellation (e.g. the unit tests) can omit it exactly as before. */
+ *  cancellation (e.g. the unit tests) can omit it exactly as before. This is kit API, not dead
+ *  code when one app stops calling it: RepoYeti's stdio binding (src/mcp/stdio.ts) and its MCP
+ *  tests dispatch through it. */
 export async function processLine(line, ctx, signal) {
   const parsed = parseStdioLine(line);
   if (parsed.blank) return null; // blank keep-alive line, ignore
