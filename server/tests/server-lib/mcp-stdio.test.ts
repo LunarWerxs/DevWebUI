@@ -66,6 +66,11 @@ test("initialize falls back to the engine's protocol version when the client omi
   expect(rpc(res)?.result?.protocolVersion).toBe("2024-11-05");
 });
 
+test("initialize answers an unsupported client protocolVersion with the engine's own version", async () => {
+  const res = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "1999-01-01" } }, ctx);
+  expect(rpc(res)?.result?.protocolVersion).toBe("2024-11-05");
+});
+
 test("initialize carries the app's standing instructions when it supplies any", async () => {
   const res = await handleRpc({ jsonrpc: "2.0", id: 1, method: "initialize" }, {
     ...ctx,

@@ -49,10 +49,17 @@ test("checkForUpdate + applyUpdate happy path: pulls, installs, builds, HEAD adv
 // (AgentHydra: Bun.spawn held that thread for seconds per git call under load). Every step of a check
 // and an apply must go through it, in the checkout with prompts off, and its answers decide the
 // outcome: a step spawned around it would hold the app's thread again.
-test("run: an app's runner carries every git, install and build step, and its answers decide the apply", async () => {
+// The same apply proves the advance merges the checked commit by its id. AgentHydra's live checkout,
+// 2026-11-16: the advance was `git pull`, which merges every for-merge line of FETCH_HEAD, a file every
+// git in the worktree shares. Another program's fetch at the same moment added a second line and the
+// pull died "Cannot fast-forward to multiple branches". So at the advance this runner writes two
+// for-merge lines into FETCH_HEAD and pushes a newer commit: neither may change what the apply lands on.
+// (One test, not two: each real-git test carries the 400 s budget, and the timeout ratchet holds the count.)
+test("run: an app's runner carries every git, install and build step, and the advance merges the checked commit whatever FETCH_HEAD says or the remote gets meanwhile", async () => {
   const remote = await remoteRepo();
   const local = await cloneRepo(remote);
   await advanceRemote(remote, "0.2.0");
+  const checked = (await $`git -C ${remote} rev-parse HEAD`.text()).trim();
   const scratch = scratchDir("ue-scratch-");
   const log = join(scratch, "steps.log");
   const installCmd = loggingCmd(log, "install");
@@ -67,6 +74,12 @@ test("run: an app's runner carries every git, install and build step, and its an
     buildCmd,
     run: async (args, { cwd, env }) => {
       calls.push({ args, cwd, prompt: env.GIT_TERMINAL_PROMPT });
+      if (args[0] === "git" && (args[1] === "pull" || args[1] === "merge")) {
+        // Another fetch's lines in FETCH_HEAD, two of them for merge, and a push after the check.
+        const line = (name: string) => `${checked}\t\tbranch '${name}' of ${remote}\n`;
+        writeFileSync(join(local, ".git", "FETCH_HEAD"), line("main") + line("main"));
+        await advanceRemote(remote, "0.3.0");
+      }
       return runProcess(args, { cwd, env });
     },
   });
@@ -74,14 +87,17 @@ test("run: an app's runner carries every git, install and build step, and its an
   expect((await updater.checkForUpdate()).updateAvailable).toBe(true);
   const result = await updater.applyUpdate();
   expect(result.ok).toBe(true);
+  expect((await $`git -C ${local} rev-parse HEAD`.text()).trim()).toBe(checked);
   expect(readFileSync(join(local, "marker.txt"), "utf8").trim()).toBe("0.2.0");
   expect(readFileSync(log, "utf8").trim().split("\n")).toEqual(["install", "build"]);
   const ran = calls.map((c) => c.args);
   expect(ran.some((a) => a[0] === "git" && a[1] === "ls-remote")).toBe(true);
-  expect(ran.some((a) => a[0] === "git" && a[1] === "pull")).toBe(true);
+  expect(ran.filter((a) => a[0] === "git" && (a[1] === "pull" || a[1] === "merge"))).toEqual([["git", "merge", "--ff-only", checked]]);
   expect(ran).toContainEqual(installCmd);
   expect(ran).toContainEqual(buildCmd);
   expect(calls.every((c) => c.cwd === local && c.prompt === "0")).toBe(true);
+  // The push after the check is the next update's, never taken unchecked.
+  expect((await updater.checkForUpdate()).updateAvailable).toBe(true);
 }, REAL_GIT_TEST_MS);
 
 test("applyUpdate rolls back the checkout when build fails after the code swap", async () => {
@@ -105,7 +121,7 @@ test("applyUpdate rolls back the checkout when build fails after the code swap",
   // The transcript rides on the rejection (RepoYeti issue #24): the pull, the failed build with its
   // stderr, and the rollback steps, in order. Before, it only ever reached a caller on success.
   const transcript = (failure?.output ?? []).join("\n");
-  expect(transcript).toContain("git pull --ff-only");
+  expect(transcript).toContain("git merge --ff-only");
   expect(transcript).toContain("boom");
   expect(transcript).toContain("git reset --hard");
 

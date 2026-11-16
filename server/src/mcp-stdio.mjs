@@ -25,6 +25,10 @@
 
 const PROTOCOL_VERSION = "2024-11-05";
 
+/** Versions this server speaks. `initialize` echoes the client's version only when it is on this
+ *  list; any other version is answered with PROTOCOL_VERSION, as the MCP spec requires. */
+const SUPPORTED_PROTOCOL_VERSIONS = new Set(["2025-06-18", "2025-03-26", PROTOCOL_VERSION]);
+
 /** Default cap on requests dispatched concurrently by `runMcpStdio` (see `opts.maxInFlight`). */
 const DEFAULT_MAX_IN_FLIGHT = 8;
 
@@ -63,7 +67,9 @@ function parseStdioLine(line) {
 function handleInitialize(id, msg, ctx) {
   const params = msg.params && typeof msg.params === "object" ? msg.params : {};
   const protocolVersion =
-    typeof params.protocolVersion === "string" ? params.protocolVersion : PROTOCOL_VERSION;
+    typeof params.protocolVersion === "string" && SUPPORTED_PROTOCOL_VERSIONS.has(params.protocolVersion)
+      ? params.protocolVersion
+      : PROTOCOL_VERSION;
   return rpcResult(id, {
     protocolVersion,
     capabilities: { tools: {} },

@@ -194,7 +194,7 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
       return { ok: true, message, restartRequired: false, status: before, output };
     }
     const landed = await applicableEdits(before);
-    await advance(before, landed, await advanceCommand(before), output);
+    await advance(before, landed, advanceCommand(before), output);
     // What the advance changed decides which installs and builds are due, and whether the app restarts.
     const changed = await changedPaths(before.currentCommit);
     const due = dueSteps(changed);
@@ -226,18 +226,16 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     return landed;
   }
 
-  // The branch the check PROVED fast-forwardable, pulled by name: the configured upstream is the same
-  // branch in the ordinary case, and naming it keeps apply on what check verified when they differ (a
-  // local branch with no remote counterpart follows the remote's HEAD; a URL remote is pulled from that
-  // URL). Under a cooldown the target is the aged commit the check fetched, so the advance merges exactly it.
-  async function advanceCommand(before) {
-    const upstream = await remotes.currentUpstream();
-    const remote = await remotes.remoteForCheck(upstream.remoteName);
-    const branch = before.remoteBranch || upstream.remoteBranch || before.branch;
-    if (!remote.remoteArg || !branch) throw new Error("No update remote/branch is configured.");
-    return before.latestRemoteCommit
-      ? ["git", "merge", "--ff-only", before.remoteCommit]
-      : ["git", "pull", "--ff-only", remote.remoteArg, branch];
+  // The commit the check PROVED fast-forwardable, merged by its id. The check's own fetch brought it in
+  // (under a cooldown it is the aged commit, not the tip), so nothing is fetched again. Never `git pull`:
+  // a pull fetches, then merges every for-merge line of FETCH_HEAD, and every git in the worktree shares
+  // that file. Git empties it when a fetch starts and appends as each fetch ends, so a fetch another
+  // program ran at the same moment added its own line and the pull died "Cannot fast-forward to multiple
+  // branches" (AgentHydra's live checkout, 2026-11-16). A commit id is the same whoever fetches meanwhile,
+  // and a push after the check is taken by the next update, never by one that did not check it.
+  function advanceCommand(before) {
+    if (!before.remoteCommit) throw new Error("No update commit was resolved.");
+    return ["git", "merge", "--ff-only", before.remoteCommit];
   }
 
   // Staged, an edit that is the target's content is the fast-forward's own (git's two-way merge keeps
@@ -248,9 +246,9 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     try {
       if (landedPaths.length) await stageLanded(before.remoteCommit, landedPaths, output);
       // Windows: a running program file cannot be overwritten by the advance, so move the ones it changes aside
-      // first. The target is the commit check already fetched: FETCH_HEAD, or the cooldown's aged commit.
+      // first. The target is the commit the advance lands on, by id (never FETCH_HEAD, which another fetch rewrites).
       if (process.platform === "win32") {
-        await moveAsideRunningPrograms(before.latestRemoteCommit ? before.remoteCommit : "FETCH_HEAD", output);
+        await moveAsideRunningPrograms(before.remoteCommit, output);
       }
       await runStep(runCommand, advanceArgs, APPLY_TIMEOUT_MS, output, appRoot);
     } catch (err) {
