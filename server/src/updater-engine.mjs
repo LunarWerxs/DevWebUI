@@ -50,7 +50,7 @@ import {
 
 const DAY_SECONDS = 86_400;
 
-export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar, installCmd, buildCmd, cooldownDays = 0, run = null, steps = null, restartWhen = null, asideDir = null }) {
+export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar, installCmd, buildCmd, cooldownDays = 0, run = null, gitBinary = null, steps = null, restartWhen = null, asideDir = null }) {
   // Normalized once so a string or negative option is never echoed back in status or reasons.
   const cooldownDaysN = Math.max(0, Number(cooldownDays) || 0);
   // The install and build steps: the app's `steps`, or its two commands as steps that always run. `dir` is shown in the
@@ -63,7 +63,7 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
     cwd: step.dir ? join(appRoot, step.dir) : appRoot,
   }));
 
-  const { runCommand, git, gitText } = createRunner({ appRoot, run });
+  const { runCommand, git, gitText } = createRunner({ appRoot, run, gitBinary });
   const remotes = createRemoteReader({ appRoot, git, gitText, updateRepoEnvVar, cooldownSeconds: cooldownDaysN * DAY_SECONDS });
   const { editsAlreadyIn } = createEditReader({ appRoot, git, gitText });
   const { rollbackAfterFailedUpdate } = createRollback({ serviceName, runCommand, gitText });
@@ -142,6 +142,12 @@ export function createUpdater({ appRoot, serviceName, appLabel, updateRepoEnvVar
       cooldown !== "off",
       knownAncestor,
     );
+    // Without a cooldown the helper fetches the branch and checks FETCH_HEAD. The branch or FETCH_HEAD
+    // may have moved since ls-remote, so only an ancestry check of the advertised SHA can authorize its merge.
+    if (cooldown === "off" && (fastForward.fastForward === "yes" || fastForward.fastForward === "no")) {
+      const exact = await git(["merge-base", "--is-ancestor", status.currentCommit, target]);
+      fastForward.fastForward = exact.ok ? "yes" : exact.code === 1 && !exact.timedOut ? "no" : "unknown";
+    }
     return settleStatus(status, target, fastForward, cooldown);
   }
 

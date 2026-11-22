@@ -147,7 +147,7 @@ function errorMessage(e) {
  * ignores it.
  */
 export async function handleRpc(msg, ctx, signal) {
-  if (msg === null || typeof msg !== "object") {
+  if (msg === null || typeof msg !== "object" || Array.isArray(msg)) {
     return rpcError(null, ERR.INVALID_REQUEST, "Invalid Request");
   }
   const method = typeof msg.method === "string" ? msg.method : "";
@@ -281,7 +281,7 @@ export async function runMcpStdio(ctx, opts = {}) {
       writeLine(JSON.stringify(parseErrorResponse()));
       return;
     }
-    if (parsed.msg === null || typeof parsed.msg !== "object") {
+    if (parsed.msg === null || typeof parsed.msg !== "object" || Array.isArray(parsed.msg)) {
       writeLine(JSON.stringify(rpcError(null, ERR.INVALID_REQUEST, "Invalid Request")));
       return;
     }

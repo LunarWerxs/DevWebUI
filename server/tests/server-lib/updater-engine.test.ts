@@ -123,7 +123,7 @@ test("applyUpdate rolls back the checkout when build fails after the code swap",
   const transcript = (failure?.output ?? []).join("\n");
   expect(transcript).toContain("git merge --ff-only");
   expect(transcript).toContain("boom");
-  expect(transcript).toContain("git reset --hard");
+  expect(transcript).toContain("git read-tree --reset -u");
 
   // Checkout state, not just the log message: HEAD is back at the pre-update commit, the
   // pulled-in file change is gone, and the tree is clean (no half-applied swap left behind).

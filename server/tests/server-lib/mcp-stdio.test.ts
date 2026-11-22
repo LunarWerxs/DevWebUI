@@ -132,6 +132,11 @@ test("a non-object message is INVALID_REQUEST (-32600) with id null", async () =
   expect(res).toEqual({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } });
 });
 
+test("an array message (no batch support) is INVALID_REQUEST, not silently dropped", async () => {
+  const res = await handleRpc([{ jsonrpc: "2.0", id: 1, method: "ping" }], ctx);
+  expect(res).toEqual({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } });
+});
+
 test("a message with no id is a notification → no response", async () => {
   const res = await handleRpc({ jsonrpc: "2.0", method: "ping" }, ctx);
   expect(res).toBeNull();

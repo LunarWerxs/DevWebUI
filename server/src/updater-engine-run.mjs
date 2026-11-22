@@ -22,10 +22,10 @@ const GIT_ENV = () => ({ ...process.env, GIT_TERMINAL_PROMPT: "0" });
  * which is exactly the `.cmd`-shim case. Every arg here is a fixed literal or a git URL (no
  * spaces or shell metacharacters), so the shell's arg concatenation is safe.
  */
-export function createRunner({ appRoot, run = null }) {
+export function createRunner({ appRoot, run = null, gitBinary = null }) {
   function runCommand(args, timeoutMs, cwd = appRoot) {
     if (run) return runThrough(args, timeoutMs, cwd);
-    return new Promise((resolve) => {
+    return withRealGit(args).then((argv) => new Promise((resolve) => {
       let settled = false;
       const finish = (r) => {
         if (!settled) {
@@ -33,9 +33,19 @@ export function createRunner({ appRoot, run = null }) {
           resolve(r);
         }
       };
-      const attempt = (useShell) => spawnAttempt(args, timeoutMs, cwd, useShell, finish, () => attempt(true));
+      const attempt = (useShell) => spawnAttempt(argv, timeoutMs, cwd, useShell, finish, () => attempt(true));
       attempt(false);
-    });
+    }));
+  }
+
+  // `git` on PATH is a launcher shim on Windows (two processes a call); the app's gitBinary() is the real one (one).
+  async function withRealGit(args) {
+    if (args[0] !== "git" || !gitBinary) return args;
+    try {
+      return [await gitBinary(), ...args.slice(1)];
+    } catch {
+      return args;
+    }
   }
 
   // The app's own runner (`run`): the same argv, root, environment and deadline, its answer read

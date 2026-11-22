@@ -86,6 +86,9 @@ export interface UpdaterOptions {
   /** The install and build steps in order, in place of installCmd and buildCmd. Only the steps `when` makes due for the
    *  paths the update changed run, forward and in a rollback. */
   steps?: UpdaterStep[];
+  /** The app's real git binary, for an engine without `run`: on Windows `git` on PATH is a shim that
+   *  starts a second process. Without it the engine spawns `git`. */
+  gitBinary?: (() => Promise<string>) | null;
   /** Whether the update needs the app restarted, given the paths it changed (renames split). Default: any path changed. */
   restartWhen?: (changed: string[]) => boolean | Promise<boolean>;
   /** Folder outside the work tree (same volume) that a running program the update replaces is moved into

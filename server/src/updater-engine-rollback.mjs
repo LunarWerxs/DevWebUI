@@ -21,7 +21,7 @@ function rollbackMessage(msg, reset, restored, stashName, changedCount) {
   const preserved = stashName
     ? `; ${changedCount} file(s) changed during the update were saved to git stash "${stashName}" (git stash pop brings them back; resolve any conflict against the rolled-back files)`
     : "";
-  if (!reset.ok) return `${msg}; rollback failed; the checkout may be partially updated${preserved}`;
+  if (!reset.ok) return `${msg}; rollback incomplete${reset.reason ? `: ${reset.reason}` : "; the checkout may be partially updated"}${preserved}`;
   if (restored) return `${msg}; rolled back to the previous version${preserved}`;
   return `${msg}; code was rolled back, but reinstalling/rebuilding it failed; the previous version may not run until this is fixed${preserved}`;
 }
@@ -64,19 +64,39 @@ export function createRollback({ serviceName, runCommand, gitText }) {
     await oneAtATime(landed.filter((e) => e.deleted), (e) => unlink(join(top, e.path)).catch(() => {}));
   }
 
-  async function resetAndRebuild(currentCommit, output, landed, target, due) {
-    const resetArgs = ["git", "reset", "--hard", currentCommit];
+  async function resetAndRebuild(before, output, landed, due) {
+    // Move only the exact branch and commit advanced by this update. The compare-and-swap
+    // refuses a concurrent commit; read-tree updates the checkout without moving the ref again.
+    const ref = `refs/heads/${before.branch}`;
+    const branch = await gitText(["symbolic-ref", "-q", "HEAD"]);
+    if (!before.branch || branch !== ref) return { reset: { ok: false }, restored: false };
+    const updateArgs = ["git", "update-ref", ref, before.currentCommit, before.remoteCommit];
+    const moved = await runCommand(updateArgs, APPLY_TIMEOUT_MS);
+    output.push(commandSummary(updateArgs, moved));
+    if (!moved.ok) return { reset: moved, restored: false };
+    // HEAD may have switched branches or advanced while update-ref ran. Do not rewrite
+    // that checkout; the ref we moved can be recovered separately if needed.
+    const branchAfter = await gitText(["symbolic-ref", "-q", "HEAD"]);
+    const headAfter = await gitText(["rev-parse", "HEAD"]);
+    if (branchAfter !== ref || headAfter !== before.currentCommit) {
+      return { reset: { ok: false, reason: "HEAD changed after the branch was moved; the index and worktree were left untouched; inspect the checkout and branch by hand" }, restored: false };
+    }
+    const resetArgs = ["git", "read-tree", "--reset", "-u", before.currentCommit];
     const reset = await runCommand(resetArgs, APPLY_TIMEOUT_MS);
     output.push(commandSummary(resetArgs, reset));
     if (!reset.ok) return { reset, restored: false };
-    if (landed?.length && target) await restoreLandedEdits(landed, target, output);
-    // The steps the update made due: the reset puts back the same paths, so the same installs and builds are stale.
+    if (landed?.length) await restoreLandedEdits(landed, before.remoteCommit, output);
     return { reset, restored: !(await runDueSteps(runCommand, due, output)) };
   }
 
   /** Rolls a failed update back as above and throws why it failed, with what the rollback did. Always throws. */
   async function rollbackAfterFailedUpdate(err, before, output, landed = null, due = []) {
     const msg = err instanceof Error ? err.message : String(err);
+    const branch = await gitText(["symbolic-ref", "-q", "HEAD"]);
+    const head = await gitText(["rev-parse", "HEAD"]);
+    if (!before.branch || branch !== `refs/heads/${before.branch}` || head !== before.remoteCommit) {
+      throw new Error(`${msg}; checkout HEAD changed during the update, so it was NOT rolled back; inspect it by hand`);
+    }
     const statusArgs = ["git", "status", "--porcelain"];
     const statusNow = await runCommand(statusArgs, CHECK_TIMEOUT_MS);
     output.push(commandSummary(statusArgs, statusNow));
@@ -87,7 +107,7 @@ export function createRollback({ serviceName, runCommand, gitText }) {
     }
     const changedDuring = statusNow.stdout.split(/\r?\n/).filter(Boolean);
     const stashName = await stashChangedFiles(changedDuring, msg, output);
-    const { reset, restored } = await resetAndRebuild(before.currentCommit, output, landed, before.remoteCommit, due);
+    const { reset, restored } = await resetAndRebuild(before, output, landed, due);
     throw new Error(rollbackMessage(msg, reset, restored, stashName, changedDuring.length));
   }
 
