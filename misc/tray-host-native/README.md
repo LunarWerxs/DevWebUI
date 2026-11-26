@@ -119,16 +119,41 @@ nothing restart it" is answered by the log, not by reading code:
   pointer's own url answers) and waits on it, so a self-update successor or a daemon opened by hand
   leaves its exit code too: `3` is a runtime abort, `1` with no `exiting code=` line in
   `logs/daemon.log` an outside kill, `0xC000013A` a closed console.
+- `watchdog: the daemon is not answering, so it is being revived`, once per revive, before its spawn line.
 - `watchdog: the daemon is not answering, and it is NOT being revived: <guard>`, once per guard,
   not every tick. The guards are a Restart/Rebuild still running, a daemon another session owns
-  (`watchdogRequiresOwnership`), the 20 s grace after a revive, and the crash-loop pause.
-- `watchdog: the daemon answers again` when a stand-down ends, and `watchdog: re-armed` when the
-  crash-loop pause lifts.
+  (`watchdogRequiresOwnership`), the 20 s grace after a revive, the crash-loop backoff's wait, and
+  a daemon whose port still takes connections (busy, not dead).
+- `watchdog: the daemon answers again` when a stand-down ends.
+- `watchdog: re-armed - the daemon has answered for 120s, so the crash-loop backoff is cleared`.
 
-**The crash-loop pause lifts itself.** Four revives inside 120 s pause auto-restart, and a manual
-Restart clears the pause, as before. So does a daemon that then answers for a full 120 s: it has
-stopped crash-looping by the guard's own definition. A pause that outlived that once left
-AgentHydra's watchdog standing down for 31 hours, until a killed daemon stayed dead.
+**The crash-loop guard backs off; it never gives up.** Four revives inside 120 s trip the guard.
+The tray does not stop reviving. Its next revive waits 60 s, and each further death (a revive that
+dies before the daemon has stayed up for 120 s) doubles the wait: 1, 2, 4, 8, then 15 minutes, and
+15 minutes thereafter. Each step is one tray-log line, written once when the step starts (never per
+tick):
+
+`watchdog: the daemon is not answering, and it is NOT being revived: auto-restart is backing off after 4 revives inside 120s: next revive in 60s (at 13:01:04), doubling to a 15 min cap; a tray Restart revives it now`
+
+A balloon says it once per episode, and says when the retry is due:
+`<App> keeps crashing. Auto-restart retries at 13:01:04, and backs off longer while it keeps failing. Use Restart or Restart in Safe Mode now.`
+
+The backoff lifts itself when a daemon answers for a full 120 s (the next death is a new one, and
+gets the fast budget again). A tray Restart lifts it at once, as before.
+
+**The status file.** Each change of the watchdog's state (a backoff step, a revive, answering again,
+re-arming, a stand-down) rewrites `tray-watchdog.json` in the folder of the runtime pointer
+(`infoFile`), atomically (a temp file, then a rename), and only on a change. Its shape:
+
+```json
+{"state":"ok|reviving|backoff|standdown","reason":"<the tray-log line for the change>","revives":4,
+ "nextReviveAt":1732453264000,"at":1732453204000,
+ "lastDeath":{"pid":4242,"exitCode":1,"upSec":3.0,"said":"<the daemon's last stderr, at most 300 chars>"}}
+```
+
+`nextReviveAt` is epoch milliseconds while backing off and `null` otherwise. `lastDeath` is the last
+death of a daemon this tray started, or `null`. Writing it is best effort: a failure never stops
+the tray.
 
 A daemon this tray starts has its stderr in `logs/daemon-stderr.log` beside the runtime pointer
 (the `infoFile` folder). Each launch first writes `-- <why>: <configured start command> --`, never

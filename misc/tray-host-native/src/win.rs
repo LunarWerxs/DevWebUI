@@ -197,6 +197,17 @@ pub fn local_timestamp() -> String {
     )
 }
 
+/// The local clock, `HH:MM:SS`, of the moment `after` from now: the time a wait ends, for a line a
+/// human reads. Adds to the local clock, so it does not account for a daylight-saving change that
+/// falls inside the wait.
+pub fn local_clock_after(after: std::time::Duration) -> String {
+    let mut t = SYSTEMTIME::default();
+    unsafe { GetLocalTime(&mut t) };
+    let now = u64::from(t.wHour) * 3600 + u64::from(t.wMinute) * 60 + u64::from(t.wSecond);
+    let at = (now + after.as_secs()) % 86_400;
+    format!("{:02}:{:02}:{:02}", at / 3600, at / 60 % 60, at % 60)
+}
+
 #[link(name = "user32")]
 extern "system" {
     pub fn RegisterClassW(c: *const WNDCLASSW) -> u16;

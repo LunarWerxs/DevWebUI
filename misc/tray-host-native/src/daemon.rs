@@ -20,7 +20,7 @@ mod witness;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use death::{forget_last_death, CHILD_PID};
+pub(crate) use death::{forget_last_death, last_death_info, DeathInfo, CHILD_PID};
 pub(crate) use http::{post, request_shutdown};
 pub(crate) use log::tray_log;
 pub(crate) use probe::{live_probe, live_url, port_accepts, revive_ports, wait_for_url, Health};

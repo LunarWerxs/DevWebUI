@@ -3,6 +3,7 @@
 
 use crate::tray::icon::{balloon, set_tip, sync_icon_visibility};
 use crate::tray::watchdog::Verdict;
+use crate::tray::watchdog_status;
 use crate::win::*;
 use crate::{app, daemon, set_url, App};
 use std::sync::atomic::Ordering;
@@ -47,7 +48,8 @@ pub(crate) fn port_is_held(accepts: bool, owners: impl FnOnce() -> Vec<u32>) -> 
     accepts || !owners().is_empty()
 }
 
-/// Runs the watchdog's policy on this tick's probe, and writes the tray-log line the verdict earns.
+/// Runs the watchdog's policy on this tick's probe, writes the tray-log line the verdict earns, and
+/// writes the status file when the watchdog's state changed.
 fn judge(a: &App, alive: bool, listening: bool) -> Verdict {
     let busy = a.busy.load(Ordering::Relaxed);
     // Ownership gate: for token apps, leave a daemon another session owns alone. An app can opt out
@@ -56,13 +58,26 @@ fn judge(a: &App, alive: bool, listening: bool) -> Verdict {
     let not_ours = !a.token.is_empty()
         && !a.started_by_us.load(Ordering::Relaxed)
         && a.cfg.watchdog_requires_ownership;
-    let (verdict, line) = {
+    let (verdict, line, status) = {
         let mut watchdog = a.watchdog.lock().unwrap();
-        let verdict = watchdog.tick(Instant::now(), alive, listening, busy, not_ours);
-        (verdict, watchdog.report(verdict))
+        let now = Instant::now();
+        let verdict = watchdog.tick(now, alive, listening, busy, not_ours);
+        let line = watchdog.report(verdict);
+        let status = watchdog.status_change(now, verdict, line.as_deref());
+        (verdict, line, status)
     };
     if let Some(line) = line {
         daemon::tray_log(&a.cfg, &line);
+    }
+    if let Some(status) = status {
+        if let Some(dir) = a
+            .cfg
+            .info_file
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+        {
+            watchdog_status::write(dir, &status, daemon::last_death_info().as_ref());
+        }
     }
     verdict
 }
@@ -79,20 +94,24 @@ fn act_on(a: &App, verdict: Verdict, url: Option<String>) {
             daemon::witness(&a.cfg);
         }
         Verdict::Hiccup | Verdict::StandDown(_) => {}
-        Verdict::CrashLoop => {
-            let offers_safe_mode = note_unclean_exit(a);
-            let hint = if offers_safe_mode {
-                "Restart or Restart in Safe Mode"
-            } else {
-                "Restart to try again"
-            };
-            balloon(
-                &format!(
-                    "{} keeps crashing - auto-restart paused. Use {hint}.",
-                    a.cfg.display_name
-                ),
-                NIIF_ERROR,
-            );
+        Verdict::Backoff { first } => {
+            // The balloon says it once per episode; each later step is only a tray-log line.
+            if first {
+                let offers_safe_mode = note_unclean_exit(a);
+                let hint = if offers_safe_mode {
+                    "Restart or Restart in Safe Mode now"
+                } else {
+                    "Restart now"
+                };
+                let clock = a.watchdog.lock().unwrap().next_revive_clock();
+                balloon(
+                    &format!(
+                        "{} keeps crashing. Auto-restart retries at {clock}, and backs off longer while it keeps failing. Use {hint}.",
+                        a.cfg.display_name
+                    ),
+                    NIIF_ERROR,
+                );
+            }
         }
         Verdict::Revive => {
             note_unclean_exit(a);

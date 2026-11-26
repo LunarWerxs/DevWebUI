@@ -21,6 +21,24 @@ pub(super) fn take_last_death() -> Option<String> {
     LAST_DEATH.lock().ok()?.take()
 }
 
+/// The last death of a daemon wrapper this tray started, structured for the status file. Unlike
+/// `LAST_DEATH` it is not taken by the next spawn: it stays until the next death.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DeathInfo {
+    pub pid: u32,
+    pub exit_code: Option<i32>,
+    pub up_secs: f64,
+    /// The daemon's last stderr output, at most 300 characters.
+    pub said: String,
+}
+
+static LAST_DEATH_INFO: Mutex<Option<DeathInfo>> = Mutex::new(None);
+
+/// The most recent death of a daemon wrapper this tray started, if any.
+pub(crate) fn last_death_info() -> Option<DeathInfo> {
+    LAST_DEATH_INFO.lock().ok()?.clone()
+}
+
 /// Drop the recorded death once a live daemon has been seen after it: a self-update relaunch
 /// answers its own wrapper's death, and a revive hours later must not claim that one.
 pub fn forget_last_death() {
@@ -33,9 +51,12 @@ pub fn forget_last_death() {
 /// can be reused by any process on the machine, and its whole tree would go with it.
 pub static CHILD_PID: AtomicU32 = AtomicU32::new(0);
 
-fn set_last_death(text: String) {
+fn set_last_death(text: String, info: DeathInfo) {
     if let Ok(mut slot) = LAST_DEATH.lock() {
         *slot = Some(text);
+    }
+    if let Ok(mut slot) = LAST_DEATH_INFO.lock() {
+        *slot = Some(info);
     }
 }
 
@@ -77,6 +98,7 @@ pub(super) fn watch_child(
         let _ = CHILD_PID.compare_exchange(pid, 0, Ordering::SeqCst, Ordering::SeqCst);
         let up = started.elapsed();
         let failed = !matches!(&status, Ok(s) if s.success());
+        let exit_code = status.as_ref().ok().and_then(|s| s.code());
         let how = match status {
             Ok(s) => match s.code() {
                 Some(c) => format!("exit code {c}"),
@@ -84,17 +106,21 @@ pub(super) fn watch_child(
             },
             Err(e) => format!("could not be waited on: {e}"),
         };
+        let said = said
+            .map(|(path, from)| stderr_since(&path, from))
+            .unwrap_or_default();
         let mut text = format!("death of pid {pid} ({how}, up {:.1}s)", up.as_secs_f64());
-        if failed && up < FAILED_LAUNCH {
-            let reason = said
-                .map(|(path, from)| stderr_since(&path, from))
-                .unwrap_or_default();
-            if !reason.is_empty() {
-                text.push_str(&format!(" - it said: {reason}"));
-            }
+        if failed && up < FAILED_LAUNCH && !said.is_empty() {
+            text.push_str(&format!(" - it said: {said}"));
         }
+        let info = DeathInfo {
+            pid,
+            exit_code,
+            up_secs: up.as_secs_f64(),
+            said,
+        };
         // Slot first, line second: whoever sees the line can rely on the slot already holding it.
-        set_last_death(text.clone());
+        set_last_death(text.clone(), info);
         log_line(&log, &text);
     });
 }

@@ -9,5 +9,6 @@ pub(crate) mod menu;
 pub(crate) mod quit;
 pub(crate) mod startup;
 pub(crate) mod watchdog;
+pub(crate) mod watchdog_status;
 pub(crate) mod wndproc;
 pub(crate) mod worker;

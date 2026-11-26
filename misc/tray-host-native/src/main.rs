@@ -181,10 +181,13 @@ fn main() {
 #[cfg(test)]
 mod watchdog_tests {
     use super::*;
+    use crate::json;
     use crate::tray::health::{port_is_held, reap_port_owners};
     use crate::tray::watchdog::{
-        StandDown, Verdict, BUSY_PATIENCE, CRASH_LOOP_MAX, CRASH_LOOP_WINDOW, REVIVE_AFTER_MISSES,
+        StandDown, Status, Verdict, BACKOFF_FIRST, BACKOFF_MAX, BUSY_PATIENCE, CRASH_LOOP_MAX,
+        CRASH_LOOP_WINDOW, REVIVE_AFTER_MISSES,
     };
+    use crate::tray::watchdog_status;
 
     /// AgentHydra, 2026-10-21: a revive spawned beside a frozen daemon. A pid that survives every
     /// kill must keep the revive from spawning; one that dies lets it.
@@ -242,48 +245,307 @@ mod watchdog_tests {
 
     const TICK: Duration = Duration::from_millis(HEALTH_INTERVAL_MS as u64);
 
-    /// Silent ticks until the watchdog does something other than wait (a hiccup or a revive's
-    /// grace), which is what one daemon death looks like from here.
-    fn die(w: &mut Watchdog, now: &mut Instant) -> Verdict {
-        loop {
-            *now += TICK;
-            let v = w.tick(*now, false, false, false, false);
-            if v != Verdict::Hiccup && v != Verdict::StandDown(StandDown::Grace) {
-                return v;
-            }
+    /// One health tick, run the way `judge` runs it: the verdict, the tray-log line, the status change.
+    struct Seen {
+        verdict: Verdict,
+        line: Option<String>,
+        status: Option<Status>,
+    }
+
+    fn tick_at(w: &mut Watchdog, now: Instant, alive: bool) -> Seen {
+        let verdict = w.tick(now, alive, false, false, false);
+        let line = w.report(verdict);
+        let status = w.status_change(now, verdict, line.as_deref());
+        Seen {
+            verdict,
+            line,
+            status,
         }
     }
 
+    /// Health ticks (every 5 s) until one of them satisfies `done`; the ticks run, the last one is the stop.
+    fn run_until(
+        w: &mut Watchdog,
+        now: &mut Instant,
+        alive: bool,
+        done: impl Fn(&Seen) -> bool,
+    ) -> Vec<Seen> {
+        let mut seen = Vec::new();
+        loop {
+            *now += TICK;
+            let tick = tick_at(w, *now, alive);
+            let stop = done(&tick);
+            seen.push(tick);
+            if stop {
+                return seen;
+            }
+            assert!(
+                seen.len() < 100_000,
+                "the watchdog never reached the wanted verdict"
+            );
+        }
+    }
+
+    fn revive_or_backoff(s: &Seen) -> bool {
+        s.verdict == Verdict::Revive || matches!(s.verdict, Verdict::Backoff { .. })
+    }
+
+    /// A tick that only waits: a missed probe on the way to "dead", or the backoff's wait.
+    fn is_waiting(s: &Seen) -> bool {
+        s.verdict == Verdict::Hiccup || s.verdict == Verdict::StandDown(StandDown::Backoff)
+    }
+
+    /// Dead daemon, revived until the fast budget trips: returns the trip's tick (`Backoff{first}`).
+    fn trip_the_guard(w: &mut Watchdog, now: &mut Instant) -> Seen {
+        // Daemons that never answer, revived back to back until the guard stops resurrecting them.
+        for _ in 0..CRASH_LOOP_MAX {
+            let ticks = run_until(w, now, false, |s| s.verdict == Verdict::Revive);
+            assert_eq!(ticks.last().unwrap().verdict, Verdict::Revive);
+        }
+        let mut ticks = run_until(w, now, false, revive_or_backoff);
+        let trip = ticks.pop().unwrap();
+        assert_eq!(trip.verdict, Verdict::Backoff { first: true });
+        trip
+    }
+
+    /// The seconds in a backoff line's "next revive in Ns".
+    fn wait_in(line: &str) -> u64 {
+        let tail = line.split("next revive in ").nth(1).expect(line);
+        tail.split('s').next().unwrap().parse().unwrap()
+    }
+
     #[test]
-    fn a_crash_loop_pause_is_reported_once_and_lifts_once_the_daemon_stays_up() {
+    fn a_crash_loop_trips_into_a_one_minute_backoff_with_one_revive_at_its_end() {
         let mut w = Watchdog::default();
         let mut now = Instant::now();
-        // AgentHydra, 2026-09-25: daemons that never answered, revived back to back until the guard
-        // paused auto-restart.
-        for _ in 0..CRASH_LOOP_MAX {
-            assert_eq!(die(&mut w, &mut now), Verdict::Revive);
-        }
-        assert_eq!(die(&mut w, &mut now), Verdict::CrashLoop);
-        assert!(w.report(Verdict::CrashLoop).is_some());
-        // Paused and dead: the tray log hears it once, not every 5 s.
-        for _ in 0..10 {
-            now += TICK;
-            let v = w.tick(now, false, false, false, false);
-            assert_eq!(v, Verdict::StandDown(StandDown::Paused));
-            assert_eq!(w.report(v), None);
-        }
-        // The next daemon comes up and stays up for the whole window (that one served 15 hours).
-        let mut lifted = false;
-        for _ in 0..=CRASH_LOOP_WINDOW.as_secs() / TICK.as_secs() {
-            now += TICK;
-            lifted |= w.tick(now, true, false, false, false) == Verdict::Rearmed;
-        }
-        assert!(
-            lifted,
-            "a daemon healthy for the whole crash-loop window must lift the pause"
+        let trip = trip_the_guard(&mut w, &mut now);
+        let at = now;
+        let line = trip.line.clone().unwrap();
+        assert_eq!(
+            wait_in(&line),
+            BACKOFF_FIRST.as_secs(),
+            "the first wait is a minute"
         );
-        // Then it is killed, and that death is a new one: it gets revived.
-        assert_eq!(die(&mut w, &mut now), Verdict::Revive);
+        assert!(
+            line.contains(
+                "auto-restart is backing off after 4 revives inside 120s: next revive in 60s (at "
+            ),
+            "{line}"
+        );
+        assert!(
+            line.ends_with("doubling to a 15 min cap; a tray Restart revives it now"),
+            "{line}"
+        );
+        assert!(!line.contains("paused"), "{line}");
+        // The clock in the line is HH:MM:SS.
+        let clock = line
+            .split("(at ")
+            .nth(1)
+            .unwrap()
+            .split(')')
+            .next()
+            .unwrap();
+        assert_eq!(clock.len(), 8, "{clock}");
+        assert_eq!(&clock[2..3], ":");
+        assert_eq!(&clock[5..6], ":");
+        let status = trip.status.clone().expect("the trip writes the status");
+        assert_eq!(status.state, "backoff");
+        assert_eq!(status.revives, CRASH_LOOP_MAX);
+        assert!(status.next_revive_ms.is_some());
+
+        // Silent until the wait is over, and no line or status write on the way.
+        let waiting = run_until(&mut w, &mut now, false, |s| !is_waiting(s));
+        let (last, quiet) = waiting.split_last().unwrap();
+        assert_eq!(
+            last.verdict,
+            Verdict::Revive,
+            "one revive at the end of the wait"
+        );
+        assert_eq!(
+            now.duration_since(at),
+            BACKOFF_FIRST,
+            "not before, not after"
+        );
+        for s in quiet {
+            assert!(
+                s.line.is_none() && s.status.is_none(),
+                "a tick of the wait is silent"
+            );
+        }
+        assert_eq!(last.status.as_ref().map(|s| s.state), Some("reviving"));
+    }
+
+    #[test]
+    fn a_further_death_doubles_the_wait_to_the_fifteen_minute_cap_and_each_step_is_reported_once() {
+        let mut w = Watchdog::default();
+        let mut now = Instant::now();
+        let trip = trip_the_guard(&mut w, &mut now);
+        let mut backoff_lines = vec![trip.line.clone().unwrap()];
+        let mut waits = vec![wait_in(&trip.line.unwrap())];
+        let mut step_start = now;
+        // Each revive dies again before it stays up: the wait doubles, capped at 15 min.
+        for expected in [120u64, 240, 480, 900, 900] {
+            // Wait out the current step: silent, then one revive at its end.
+            let quiet = run_until(&mut w, &mut now, false, |s| !is_waiting(s));
+            let (revive, silent) = quiet.split_last().unwrap();
+            assert_eq!(revive.verdict, Verdict::Revive);
+            assert_eq!(
+                now.duration_since(step_start),
+                Duration::from_secs(*waits.last().unwrap())
+            );
+            assert!(silent
+                .iter()
+                .all(|s| s.line.is_none() && s.status.is_none()));
+            // The revive's grace is silent apart from the line it earns; then it dies: a further death.
+            let ticks = run_until(&mut w, &mut now, false, |s| {
+                matches!(s.verdict, Verdict::Backoff { first: false })
+            });
+            let line = ticks.last().unwrap().line.clone().unwrap();
+            assert!(
+                line.starts_with("watchdog: the daemon is not answering, and it is NOT being revived: a revive died before the daemon stayed up for 120s, so auto-restart is backing off: next revive in "),
+                "{line}"
+            );
+            assert_eq!(wait_in(&line), expected, "{line}");
+            if expected < BACKOFF_MAX.as_secs() {
+                assert!(
+                    line.ends_with("doubling to a 15 min cap; a tray Restart revives it now"),
+                    "{line}"
+                );
+            } else {
+                assert!(
+                    line.ends_with("held at the 15 min cap; a tray Restart revives it now"),
+                    "{line}"
+                );
+            }
+            backoff_lines.push(line);
+            waits.push(expected);
+            step_start = now;
+        }
+        assert_eq!(
+            waits,
+            vec![60, 120, 240, 480, 900, 900],
+            "1, 2, 4, 8, 15, 15 minutes"
+        );
+        // Six steps, six lines: the trip plus five further deaths. The grace and wait ticks stay silent.
+        assert_eq!(backoff_lines.len(), 6, "{backoff_lines:#?}");
+    }
+
+    #[test]
+    fn a_daemon_that_stays_up_for_the_window_rearms_the_backoff() {
+        let mut w = Watchdog::default();
+        let mut now = Instant::now();
+        trip_the_guard(&mut w, &mut now);
+        let start = now;
+        // The next daemon comes up, and stays up for the whole window.
+        let up = run_until(&mut w, &mut now, true, |s| s.verdict == Verdict::Rearmed);
+        let rearmed = up.last().unwrap();
+        assert_eq!(now.duration_since(start), CRASH_LOOP_WINDOW + TICK);
+        let line = rearmed.line.clone().unwrap();
+        assert!(line.starts_with("watchdog: re-armed"), "{line}");
+        assert!(!line.contains("paused"), "{line}");
+        let status = rearmed.status.clone().unwrap();
+        assert_eq!((status.state, status.revives), ("ok", 0));
+        // Then it is killed: that death is a new one, revived at once by the fresh budget.
+        let death = run_until(&mut w, &mut now, false, revive_or_backoff);
+        assert_eq!(death.last().unwrap().verdict, Verdict::Revive);
+    }
+
+    #[test]
+    fn a_restart_from_the_menu_rearms_the_backoff_at_once() {
+        let mut w = Watchdog::default();
+        let mut now = Instant::now();
+        trip_the_guard(&mut w, &mut now);
+        // What a tray Restart does first (start_worker): the backoff is lifted.
+        w.rearm();
+        let ticks = run_until(&mut w, &mut now, false, revive_or_backoff);
+        assert_eq!(ticks.last().unwrap().verdict, Verdict::Revive);
+    }
+
+    #[test]
+    fn the_status_file_follows_each_transition_and_is_written_only_on_a_change() {
+        let dir =
+            std::env::temp_dir().join(format!("lunarwerx-tray-status-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let read = |dir: &std::path::Path| {
+            json::parse(&std::fs::read_to_string(dir.join(watchdog_status::STATUS_FILE)).unwrap())
+                .unwrap()
+        };
+        // What the health tick does with each tick's status change: write it, and count the writes.
+        let persist = |dir: &std::path::Path, ticks: &[Seen]| {
+            let mut writes = 0;
+            for s in ticks {
+                if let Some(status) = &s.status {
+                    watchdog_status::write(dir, status, None);
+                    writes += 1;
+                }
+            }
+            writes
+        };
+
+        let mut w = Watchdog::default();
+        let mut now = Instant::now();
+        // A steady daemon: the first status is written at once, and then nothing.
+        let mut steady = Vec::new();
+        for _ in 0..3 {
+            now += TICK;
+            steady.push(tick_at(&mut w, now, true));
+        }
+        assert_eq!(persist(&dir, &steady), 1);
+        assert_eq!(read(&dir).str_at("state"), Some("ok"));
+
+        // The first revive writes "reviving"; the misses before it wrote nothing.
+        let first = run_until(&mut w, &mut now, false, |s| s.verdict == Verdict::Revive);
+        assert_eq!(persist(&dir, &first), 1);
+        let file = read(&dir);
+        assert_eq!(file.str_at("state"), Some("reviving"));
+        assert!(file.str_at("reason").unwrap().contains("is being revived"));
+        assert!(file.get("nextReviveAt") == Some(&json::Json::Null));
+
+        // The rest of the crash loop, each revive's death and grace, and the trip to a backoff.
+        for _ in 0..CRASH_LOOP_MAX - 1 {
+            let ticks = run_until(&mut w, &mut now, false, |s| s.verdict == Verdict::Revive);
+            persist(&dir, &ticks);
+        }
+        let trip = run_until(&mut w, &mut now, false, revive_or_backoff);
+        assert!(persist(&dir, &trip) >= 1);
+        let file = read(&dir);
+        assert_eq!(file.str_at("state"), Some("backoff"));
+        assert_eq!(file.num_at("revives"), Some(CRASH_LOOP_MAX as f64));
+        assert!(file.num_at("nextReviveAt").is_some());
+
+        // The wait writes nothing; the revive at its end writes "reviving" once.
+        let waiting = run_until(&mut w, &mut now, false, |s| !is_waiting(s));
+        assert_eq!(
+            persist(&dir, &waiting),
+            1,
+            "only the revive at the wait's end writes"
+        );
+        assert_eq!(read(&dir).str_at("state"), Some("reviving"));
+
+        // Its grace line and the further death's step each write once: the file names the doubled wait.
+        let death = run_until(&mut w, &mut now, false, |s| {
+            matches!(s.verdict, Verdict::Backoff { first: false })
+        });
+        assert_eq!(persist(&dir, &death), 2);
+        let file = read(&dir);
+        assert_eq!(file.str_at("state"), Some("backoff"));
+        assert!(file
+            .str_at("reason")
+            .unwrap()
+            .contains("next revive in 120s"));
+
+        // It stays up for the window: "answers again", then "re-armed", and the file ends "ok".
+        let up = run_until(&mut w, &mut now, true, |s| s.verdict == Verdict::Rearmed);
+        assert_eq!(persist(&dir, &up), 2);
+        let file = read(&dir);
+        assert_eq!(file.str_at("state"), Some("ok"));
+        assert!(file
+            .str_at("reason")
+            .unwrap()
+            .starts_with("watchdog: re-armed"));
+        assert!(file.get("nextReviveAt") == Some(&json::Json::Null));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
