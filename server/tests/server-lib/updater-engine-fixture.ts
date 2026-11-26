@@ -150,7 +150,7 @@ export function failsOnCallsCmd(
 
 // The budget of every test below: each one is a dozen-plus real git and bun spawns (init, commit,
 // clone, fetch, pull, install, build, reset, stash). 30s was a race, not a bound: run 1 of five
-// back-to-back runs under the fair-job wrapper (BelowNormal priority, other suites beside it) spent
+// back-to-back runs at BelowNormal priority (other suites beside it) spent
 // 109.55s on this file and the stash test timed out at 30536ms (2026-10-03), while the same test
 // passes in a few seconds on an idle machine. 120s was a race too: beside a full app suite run four
 // files at a time, on a box at ~90% CPU from other work (2026-10-11), every git or bun spawn took
